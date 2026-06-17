@@ -45,7 +45,7 @@ Fix root causes — never suppress a linter finding with an ignore/skip directiv
 ## Tech stack
 
 - Go (`go.mod` declares `go 1.23`; toolchain pinned to **1.26.4** via `mise.toml`).
-- Module `github.com/Automaat/v3-readiness`; build uses `GOFLAGS=-mod=mod` (`mise.toml`).
+- Module `github.com/Kong/kong-mesh-v3-readiness`; build uses `GOFLAGS=-mod=mod` (`mise.toml`).
 - Tests: stdlib `testing` only — table-driven + substring "golden" assertions.
 - **Dependencies: none** (stdlib-only; README advertises this). Adding a third-party dep is
   allowed when it clearly earns its place — then update the README's stdlib-only claim, run
