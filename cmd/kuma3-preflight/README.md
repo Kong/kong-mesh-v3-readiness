@@ -26,9 +26,33 @@ go run ./cmd/kuma3-preflight --output report.md
 | `--token` | _(none)_ | Bearer token, if the API requires auth |
 | `--mesh` | _(all)_ | Limit the audit to one mesh |
 | `--output` | _(stdout)_ | Write the report to a file |
+| `--format` | `markdown` | Output format: `markdown`, `json`, or `html` |
+| `--from-json` | _(none)_ | Render a previously captured JSON report (path, or `-` for stdin) instead of auditing |
 | `--timeout` | `60s` | Overall audit timeout |
 
 Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse — the result is not a proven clean bill of health).
+
+## Output formats
+
+All three formats render from the same underlying data, so they never disagree.
+
+- **`markdown`** (default) — the plain report shown above.
+- **`json`** — a stable, machine-readable document (`schema`, `status`, `summary`,
+  `findings[]`, `coverageGaps[]`, `manualChecks[]`). Status maps to the same exit codes.
+- **`html`** — a single, self-contained page (inline CSS + JS, no network requests, works
+  offline from `file://`): status banner, clickable severity filters, full-text search, and
+  a manual-checks checklist whose progress is saved per report in the browser.
+
+```bash
+# Capture machine-readable JSON in CI…
+./bin/kuma3-preflight --address http://localhost:5681 --format json --output report.json
+
+# …then build the static site from that JSON later, without touching the control plane:
+./bin/kuma3-preflight --from-json report.json --format html --output report.html
+
+# (or pipe it)
+cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.html
+```
 
 ## What it checks
 

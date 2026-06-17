@@ -107,7 +107,7 @@ func (c *client) getJSON(ctx context.Context, path string, v any) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("GET %s: %w", full.String(), err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return resp.StatusCode, nil
 	}

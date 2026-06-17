@@ -6,10 +6,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -21,9 +24,39 @@ func run() int {
 	addr := flag.String("address", "http://localhost:5681", "Control plane REST API base URL")
 	token := flag.String("token", "", "Bearer token for the CP API (optional)")
 	mesh := flag.String("mesh", "", "Limit the audit to a single mesh (default: all meshes)")
-	out := flag.String("output", "", "Write the markdown report to this file (default: stdout)")
+	out := flag.String("output", "", "Write the report to this file (default: stdout)")
+	format := flag.String("format", "markdown", "Output format: markdown, json, or html")
+	fromJSON := flag.String("from-json", "", "Render a previously captured JSON report (path, or - for stdin) instead of auditing")
 	timeout := flag.Duration("timeout", 60*time.Second, "Overall timeout for the audit")
 	flag.Parse()
+
+	fmtName, err := normalizeFormat(*format)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 2
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// --from-json renders an existing JSON report in any format without touching
+	// the control plane (capture once in CI, regenerate the HTML site offline).
+	if *fromJSON != "" {
+		model, err := loadModel(*fromJSON)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error reading --from-json: %v\n", err)
+			return 2
+		}
+		content, err := renderFormat(fmtName, model)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return 2
+		}
+		if err := emit(*out, content); err != nil {
+			fmt.Fprintf(os.Stderr, "error writing %s: %v\n", *out, err)
+			return 2
+		}
+		return exitForStatus(model.Status)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
@@ -38,18 +71,20 @@ func run() int {
 
 	// Always make the output reflect this run: on failure, stamp the destination
 	// so a stale clean report is never mistaken for an up-to-date one.
-	content := failureStamp(*addr, auditErr)
-	if auditErr == nil {
-		content = report.render()
+	var content string
+	if auditErr != nil {
+		content, err = failureContent(fmtName, *addr, auditErr, now)
+	} else {
+		content, err = renderFormat(fmtName, report.toModel(now))
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 2
 	}
 
-	if *out == "" {
-		fmt.Print(content)
-	} else if err := writeReport(*out, content); err != nil {
+	if err := emit(*out, content); err != nil {
 		fmt.Fprintf(os.Stderr, "error writing %s: %v\n", *out, err)
 		return 2
-	} else {
-		fmt.Fprintf(os.Stderr, "report written to %s\n", *out)
 	}
 
 	// Exit codes (so CI can gate on $?):
@@ -67,6 +102,96 @@ func run() int {
 	default:
 		return 0
 	}
+}
+
+// normalizeFormat canonicalizes the --format value, accepting common aliases.
+func normalizeFormat(f string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(f)) {
+	case "", "markdown", "md":
+		return "markdown", nil
+	case "json":
+		return "json", nil
+	case "html", "htm":
+		return "html", nil
+	default:
+		return "", fmt.Errorf("invalid --format %q: want markdown, json, or html", f)
+	}
+}
+
+func renderFormat(format string, m reportModel) (string, error) {
+	switch format {
+	case "json":
+		return renderJSON(m)
+	case "html":
+		return renderHTML(m)
+	default:
+		return renderMarkdown(m), nil
+	}
+}
+
+// failureContent renders the "audit did not complete" payload in the requested
+// format. Markdown keeps the original plain stamp; json/html carry a structured
+// failed-status model so they round-trip and render a red banner.
+func failureContent(format, addr string, auditErr error, generatedAt string) (string, error) {
+	switch format {
+	case "json":
+		return renderJSON(failureModel(addr, auditErr, generatedAt))
+	case "html":
+		return renderHTML(failureModel(addr, auditErr, generatedAt))
+	default:
+		return failureStamp(addr, auditErr), nil
+	}
+}
+
+func exitForStatus(status string) int {
+	switch status {
+	case statusFailed:
+		return 2
+	case statusBlockers:
+		return 1
+	case statusInconclusive:
+		return 3
+	default:
+		return 0
+	}
+}
+
+// loadModel reads a JSON report from a file (or stdin when path is "-") and
+// validates it is a kuma3-preflight payload.
+func loadModel(path string) (reportModel, error) {
+	var (
+		data []byte
+		err  error
+	)
+	if path == "-" {
+		data, err = io.ReadAll(io.LimitReader(os.Stdin, maxBodyBytes))
+	} else {
+		data, err = os.ReadFile(path)
+	}
+	if err != nil {
+		return reportModel{}, err
+	}
+	var m reportModel
+	if err := json.Unmarshal(data, &m); err != nil {
+		return reportModel{}, fmt.Errorf("parsing JSON report: %w", err)
+	}
+	if m.Schema == "" {
+		return reportModel{}, fmt.Errorf("does not look like a %s JSON report (missing schema)", toolName)
+	}
+	return m, nil
+}
+
+// emit writes content to stdout, or to a file when out is set.
+func emit(out, content string) error {
+	if out == "" {
+		fmt.Print(content)
+		return nil
+	}
+	if err := writeReport(out, content); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "report written to %s\n", out)
+	return nil
 }
 
 func failureStamp(addr string, err error) string {
@@ -88,9 +213,9 @@ func writeReport(path, content string) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op after a successful rename
+	defer func() { _ = os.Remove(tmpName) }() // no-op after a successful rename
 	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {

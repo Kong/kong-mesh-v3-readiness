@@ -6,8 +6,9 @@ Tooling and manual-test material for auditing a running **Kuma 2.x** control pla
 ## Contents
 
 - **[`cmd/kuma3-preflight`](cmd/kuma3-preflight/)** — a stdlib-only Go CLI that audits a
-  CP over its REST API and prints a Markdown pre-upgrade report (blockers / warnings /
-  manual checks). See its [README](cmd/kuma3-preflight/README.md) for checks and flags.
+  CP over its REST API and emits a pre-upgrade report (blockers / warnings / manual checks)
+  as Markdown (default), JSON, or a self-contained HTML page. See its
+  [README](cmd/kuma3-preflight/README.md) for checks, flags, and output formats.
 - **[`examples/`](examples/)** — real reports captured against live Kubernetes and
   Universal control planes, so you can see the output without running anything.
 - **[`docs/`](docs/)**
@@ -26,6 +27,10 @@ go build -o bin/kuma3-preflight ./cmd/kuma3-preflight
 # Point at a CP (port-forward a k8s zone CP, or run a local universal CP — see docs/test-setup.md)
 ./bin/kuma3-preflight --address http://localhost:5681 --output report.md
 echo "exit=$?"   # 0 clean · 1 blockers · 2 operational error · 3 inconclusive
+
+# Or emit JSON / a self-contained HTML page instead of Markdown:
+./bin/kuma3-preflight --address http://localhost:5681 --format json --output report.json
+./bin/kuma3-preflight --from-json report.json --format html --output report.html
 ```
 
 The tool is **stdlib-only** (no external dependencies).
