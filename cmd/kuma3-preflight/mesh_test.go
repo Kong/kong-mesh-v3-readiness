@@ -1,68 +1,16 @@
 package main
 
-import (
-	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-	"time"
-)
+import "testing"
 
 // auditMesh audits a mock control plane whose only resource is the given Mesh
-// (every other collection answers an empty list), then renders the report to
-// JSON and parses it back — so assertions run against the actual serialized
-// JSON contract, not the in-memory report.
+// (every other collection answers an empty list).
 func auditMesh(t *testing.T, mesh map[string]any) reportModel {
 	t.Helper()
 	mesh["type"] = "Mesh"
 	if mesh["name"] == nil {
 		mesh["name"] = "default"
 	}
-	body, err := json.Marshal(map[string]any{"total": 1, "items": []any{mesh}, "next": nil})
-	if err != nil {
-		t.Fatalf("marshal mesh: %v", err)
-	}
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/":
-			_, _ = w.Write([]byte(`{"product":"Kuma","version":"2.9.0","mode":"zone"}`))
-		case "/meshes":
-			_, _ = w.Write(body)
-		default:
-			_, _ = w.Write([]byte(`{"total":0,"items":[],"next":null}`))
-		}
-	}))
-	t.Cleanup(srv.Close)
-
-	c, err := newClient(srv.URL, "", 30*time.Second)
-	if err != nil {
-		t.Fatalf("newClient: %v", err)
-	}
-	rep, err := audit(context.Background(), c, "")
-	if err != nil {
-		t.Fatalf("audit: %v", err)
-	}
-	out, err := renderJSON(rep.toModel(""))
-	if err != nil {
-		t.Fatalf("renderJSON: %v", err)
-	}
-	var m reportModel
-	if err := json.Unmarshal([]byte(out), &m); err != nil {
-		t.Fatalf("unmarshal rendered JSON: %v", err)
-	}
-	return m
-}
-
-func findFinding(m reportModel, severity, category, title string) (findingModel, bool) {
-	for _, f := range m.Findings {
-		if f.Severity == severity && f.Category == category && f.Title == title {
-			return f, true
-		}
-	}
-	return findingModel{}, false
+	return auditResponses(t, map[string]string{"/meshes": listBody(t, mesh)})
 }
 
 // TestMeshDeprecatedFeatureReportedAsIssue checks that each deprecated Mesh
