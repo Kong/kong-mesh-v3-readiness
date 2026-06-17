@@ -99,23 +99,13 @@ func audit(ctx context.Context, c *client, meshFilter string) (*report, error) {
 		return nil, fmt.Errorf("mesh %q not found on the control plane", meshFilter)
 	}
 
-	if err := a.checkLegacyResources(ctx); err != nil {
-		return nil, err
-	}
-	if err := a.checkNewPolicies(ctx); err != nil {
-		return nil, err
-	}
-	if err := a.checkDataplanes(ctx); err != nil {
-		return nil, err
-	}
-	if err := a.checkZoneProxies(ctx); err != nil {
-		return nil, err
-	}
-	if err := a.checkResourceNames(ctx); err != nil {
-		return nil, err
-	}
-	if err := a.checkMeshTrust(ctx); err != nil {
-		return nil, err
+	for _, check := range []func(context.Context) error{
+		a.checkLegacyResources, a.checkNewPolicies, a.checkDataplanes,
+		a.checkZoneProxies, a.checkResourceNames, a.checkMeshTrust,
+	} {
+		if err := check(ctx); err != nil {
+			return nil, err
+		}
 	}
 	a.rep.manual = manualChecks
 	return a.rep, nil
@@ -142,6 +132,30 @@ func (a *auditor) listColl(ctx context.Context, path string) ([]resourceItem, er
 		return nil, nil
 	}
 	return items, nil
+}
+
+// listIfServed lists a collection, returning nil when the endpoint is
+// unregistered (404) — for resource types newer than the CP may serve, where a
+// 404 is "not applicable", not a coverage gap (cf. listColl).
+func (a *auditor) listIfServed(ctx context.Context, path string) ([]resourceItem, error) {
+	items, found, err := a.c.list(ctx, path)
+	if err != nil || !found {
+		return nil, err
+	}
+	return items, nil
+}
+
+// unmarshalSpec decodes the resource spec into v, recording a parse error +
+// warning (and returning false) when the spec is malformed. ref is supplied by
+// the caller so system-tagging applies where relevant.
+func (a *auditor) unmarshalSpec(it resourceItem, v any, ref string) bool {
+	if err := json.Unmarshal(it.specBytes(), v); err != nil {
+		a.rep.parseErrors++
+		a.rep.add(warning, "Unparseable resources", it.Type+" spec could not be parsed",
+			"Could not parse this resource; audit it manually before upgrading.", ref)
+		return false
+	}
+	return true
 }
 
 // ref formats the example reference for a flagged resource, marking CP-managed
@@ -181,21 +195,18 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 				"Replace with MeshLoadBalancingStrategy.", ref("routing.localityAwareLoadBalancing"))
 		}
 	}
-	if hasJSON(spec.Metrics) {
-		a.rep.add(blocker, "Mesh object settings", "Inline metrics on Mesh",
-			"Replace `mesh.metrics` with the MeshMetric policy.", ref("metrics"))
-	}
-	if hasJSON(spec.Tracing) {
-		a.rep.add(blocker, "Mesh object settings", "Inline tracing on Mesh",
-			"Replace `mesh.tracing` with the MeshTrace policy.", ref("tracing"))
-	}
-	if hasJSON(spec.Logging) {
-		a.rep.add(blocker, "Mesh object settings", "Inline logging on Mesh",
-			"Replace `mesh.logging` with the MeshAccessLog policy.", ref("logging"))
-	}
-	if hasJSON(spec.Constraints) {
-		a.rep.add(blocker, "Mesh object settings", "Mesh membership constraints",
-			"`mesh.constraints` (membership) is removed.", ref("constraints"))
+	for _, c := range []struct {
+		present              bool
+		title, detail, field string
+	}{
+		{hasJSON(spec.Metrics), "Inline metrics on Mesh", "Replace `mesh.metrics` with the MeshMetric policy.", "metrics"},
+		{hasJSON(spec.Tracing), "Inline tracing on Mesh", "Replace `mesh.tracing` with the MeshTrace policy.", "tracing"},
+		{hasJSON(spec.Logging), "Inline logging on Mesh", "Replace `mesh.logging` with the MeshAccessLog policy.", "logging"},
+		{hasJSON(spec.Constraints), "Mesh membership constraints", "`mesh.constraints` (membership) is removed.", "constraints"},
+	} {
+		if c.present {
+			a.rep.add(blocker, "Mesh object settings", c.title, c.detail, ref(c.field))
+		}
 	}
 	mode := ""
 	if spec.MeshServices != nil {
@@ -232,14 +243,11 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 			return fmt.Errorf("listing %s: %w", wsPath, err)
 		}
 		for _, it := range items {
+			ref := a.ref(it)
 			var spec policySpec
-			if err := json.Unmarshal(it.specBytes(), &spec); err != nil {
-				a.rep.parseErrors++
-				a.rep.add(warning, "Unparseable resources", it.Type+" spec could not be parsed",
-					"Could not parse this resource; audit it manually before upgrading.", a.ref(it))
+			if !a.unmarshalSpec(it, &spec, ref) {
 				continue
 			}
-			ref := a.ref(it)
 			if len(spec.From) > 0 {
 				a.rep.add(blocker, "Policy `from` field", it.Type+" uses `from`",
 					"Rewrite `from` as `rules` (with spiffeID where applicable).", ref)
@@ -375,10 +383,7 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 	}
 	for _, it := range items {
 		var spec dataplaneSpec
-		if err := json.Unmarshal(it.specBytes(), &spec); err != nil {
-			a.rep.parseErrors++
-			a.rep.add(warning, "Unparseable resources", "Dataplane spec could not be parsed",
-				"Could not parse this dataplane; audit it manually before upgrading.", qualified(it))
+		if !a.unmarshalSpec(it, &spec, qualified(it)) {
 			continue
 		}
 		// Universal-only: spec.probes is removed in 3.0. On Kubernetes probes are
@@ -425,12 +430,9 @@ func (a *auditor) checkResourceNames(ctx context.Context) error {
 		{"meshexternalservices", "MeshExternalService"},
 		{"meshmultizoneservices", "MeshMultiZoneService"},
 	} {
-		items, found, err := a.c.list(ctx, a.scopedPath(rc.wsPath))
+		items, err := a.listIfServed(ctx, a.scopedPath(rc.wsPath))
 		if err != nil {
 			return fmt.Errorf("listing %s: %w", rc.wsPath, err)
-		}
-		if !found {
-			continue
 		}
 		for _, it := range items {
 			a.checkName(it, rc.kind)
@@ -442,12 +444,9 @@ func (a *auditor) checkResourceNames(ctx context.Context) error {
 // checkMeshTrust flags MeshTrust resources still carrying the deprecated
 // spec.origin (moved to status.origin in 3.0).
 func (a *auditor) checkMeshTrust(ctx context.Context) error {
-	items, found, err := a.c.list(ctx, a.scopedPath("meshtrusts"))
+	items, err := a.listIfServed(ctx, a.scopedPath("meshtrusts"))
 	if err != nil {
 		return fmt.Errorf("listing meshtrusts: %w", err)
-	}
-	if !found {
-		return nil
 	}
 	for _, it := range items {
 		var spec struct {

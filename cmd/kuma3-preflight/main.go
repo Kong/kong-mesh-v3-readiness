@@ -93,7 +93,7 @@ func run() int {
 	case auditErr != nil:
 		fmt.Fprintf(os.Stderr, "error: %v\n", auditErr)
 		return 2
-	case report.countBlockers() > 0:
+	case report.count(blocker) > 0:
 		return 1
 	case report.incomplete():
 		// Coverage gaps / unparseable resources mean the audit could not prove a
@@ -133,14 +133,10 @@ func renderFormat(format string, m reportModel) (string, error) {
 // format. Markdown keeps the original plain stamp; json/html carry a structured
 // failed-status model so they round-trip and render a red banner.
 func failureContent(format, addr string, auditErr error, generatedAt string) (string, error) {
-	switch format {
-	case "json":
-		return renderJSON(failureModel(addr, auditErr, generatedAt))
-	case "html":
-		return renderHTML(failureModel(addr, auditErr, generatedAt))
-	default:
+	if format == "markdown" {
 		return failureStamp(addr, auditErr), nil
 	}
+	return renderFormat(format, failureModel(addr, auditErr, generatedAt))
 }
 
 func exitForStatus(status string) int {

@@ -86,7 +86,7 @@ func (s severity) String() string {
 // failing audit is never softened by a coverage gap.
 func (r *report) status() string {
 	switch {
-	case r.countBlockers() > 0:
+	case r.count(blocker) > 0:
 		return statusBlockers
 	case r.incomplete():
 		return statusInconclusive

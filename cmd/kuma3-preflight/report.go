@@ -64,16 +64,6 @@ func (r *report) add(sev severity, category, title, detail, example string) {
 	})
 }
 
-func (r *report) countBlockers() int {
-	n := 0
-	for _, f := range r.findings {
-		if f.severity == blocker {
-			n += f.count
-		}
-	}
-	return n
-}
-
 func (r *report) count(sev severity) int {
 	n := 0
 	for _, f := range r.findings {
