@@ -1,0 +1,7 @@
+{
+  "total": 1,
+  "items": [
+    { "type": "TrafficPermission", "mesh": "default", "name": "allow-all" }
+  ],
+  "next": null
+}

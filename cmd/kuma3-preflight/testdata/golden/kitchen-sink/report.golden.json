@@ -1,0 +1,121 @@
+{
+  "schema": "kuma3-preflight/v1",
+  "tool": "kuma3-preflight",
+  "status": "blockers",
+  "controlPlane": {
+    "product": "Kuma",
+    "version": "2.9.0",
+    "mode": "zone"
+  },
+  "meshes": [
+    "default"
+  ],
+  "summary": {
+    "blockers": 5,
+    "warnings": 3,
+    "info": 1,
+    "coverageGaps": 0,
+    "parseErrors": 0,
+    "systemFindings": 1
+  },
+  "findings": [
+    {
+      "severity": "blocker",
+      "category": "Mesh object settings",
+      "title": "Inline mTLS on Mesh",
+      "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust.",
+      "count": 1,
+      "examples": [
+        "default (mtls)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "category": "Policy `from` field",
+      "title": "MeshTrafficPermission uses `from`",
+      "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
+      "count": 2,
+      "examples": [
+        "default/mtp-user",
+        "default/mtp-system (system — CP-managed, update before 3.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "category": "Removed resources",
+      "title": "TrafficPermission (removed in 3.0)",
+      "detail": "Replace with MeshTrafficPermission (rules + spiffeID).",
+      "count": 1,
+      "examples": [
+        "default/allow-all"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "category": "reachableServices",
+      "title": "Dataplane uses reachableServices",
+      "detail": "Replace `reachableServices` with `reachableBackends` (MeshService-based).",
+      "count": 1,
+      "examples": [
+        "default/dp-1"
+      ]
+    },
+    {
+      "severity": "warning",
+      "category": "Dataplane probes",
+      "title": "Dataplane has a probes section",
+      "detail": "Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).",
+      "count": 1,
+      "examples": [
+        "default/dp-1"
+      ]
+    },
+    {
+      "severity": "warning",
+      "category": "MeshService mode",
+      "title": "meshServices.mode is not Exclusive",
+      "detail": "Move to `meshServices.mode: Exclusive` before upgrading (current: Disabled).",
+      "count": 1,
+      "examples": [
+        "default"
+      ]
+    },
+    {
+      "severity": "warning",
+      "category": "Non-RFC-1035 names",
+      "title": "MeshService name is not a valid RFC-1035 DNS label",
+      "detail": "Rename to a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter); non-conforming names are deprecated in 3.0.",
+      "count": 1,
+      "examples": [
+        "default/My_Service"
+      ]
+    },
+    {
+      "severity": "info",
+      "category": "Zone proxies",
+      "title": "zoneingresses present",
+      "detail": "ZoneIngress/ZoneEgress are superseded by the unified Zone Proxy in Exclusive mode.",
+      "count": 1,
+      "examples": [
+        "zi-1"
+      ]
+    }
+  ],
+  "coverageGaps": [],
+  "manualChecks": [
+    "Unified resource naming enabled (`dataPlane.features.unifiedResourceNaming: true`)",
+    "Inbound tags disabled (`KUMA_EXPERIMENTAL_INBOUND_TAGS_DISABLED=true`)",
+    "Experimental flags moved to defaults: deltaXds (becomes the only option), kdsEventBasedWatchdog, sidecarContainers",
+    "autoReachableServices removed entirely — stop relying on it",
+    "Global control plane on Kubernetes is dropped as a deployment mode",
+    "Gateway API / GAMMA usage migrated off built-in support",
+    "Observability: KRI-based config only; `install observability` command removed; metrics-via-Dataplane-annotations removed",
+    "DNS: CoreDNS + Envoy DNS filter removed; eBPF transparent proxy removed",
+    "Old inspect APIs removed (switch to the new inspect API)",
+    "Pod resources instead of container resources",
+    "Adopt the Workload resource for proxy grouping (metrics/traces dimension) instead of kuma.io/service tags",
+    "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
+    "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
+    "Routing MeshExternalService through a specific zone is removed"
+  ]
+}

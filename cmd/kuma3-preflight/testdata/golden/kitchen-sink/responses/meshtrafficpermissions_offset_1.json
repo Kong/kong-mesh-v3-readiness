@@ -1,0 +1,16 @@
+{
+  "total": 2,
+  "items": [
+    {
+      "type": "MeshTrafficPermission",
+      "mesh": "default",
+      "name": "mtp-system",
+      "labels": { "kuma.io/policy-role": "system" },
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "from": [ { "targetRef": { "kind": "Mesh" }, "default": { "action": "Allow" } } ]
+      }
+    }
+  ],
+  "next": null
+}

@@ -1,0 +1,16 @@
+{
+  "total": 1,
+  "items": [
+    {
+      "type": "Dataplane",
+      "mesh": "default",
+      "name": "dp-1",
+      "labels": { "kuma.io/env": "universal" },
+      "networking": {
+        "transparentProxying": { "reachableServices": [ "svc-a", "svc-b" ] }
+      },
+      "probes": { "port": 9000, "endpoints": [ { "inboundPort": 8080, "path": "/healthz" } ] }
+    }
+  ],
+  "next": null
+}

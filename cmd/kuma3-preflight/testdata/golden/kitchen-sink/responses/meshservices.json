@@ -1,0 +1,7 @@
+{
+  "total": 1,
+  "items": [
+    { "type": "MeshService", "mesh": "default", "name": "My_Service" }
+  ],
+  "next": null
+}

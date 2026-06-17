@@ -1,0 +1,7 @@
+{
+  "total": 1,
+  "items": [
+    { "type": "Mesh", "name": "default", "meshServices": { "mode": "Exclusive" } }
+  ],
+  "next": null
+}

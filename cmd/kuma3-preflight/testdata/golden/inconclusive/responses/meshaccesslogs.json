@@ -1,0 +1,12 @@
+{
+  "total": 1,
+  "items": [
+    {
+      "type": "MeshAccessLog",
+      "mesh": "default",
+      "name": "bad-log",
+      "spec": { "from": "this-should-be-an-array-not-a-string" }
+    }
+  ],
+  "next": null
+}

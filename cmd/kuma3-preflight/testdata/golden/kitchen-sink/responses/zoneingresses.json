@@ -1,0 +1,7 @@
+{
+  "total": 1,
+  "items": [
+    { "type": "ZoneIngress", "name": "zi-1" }
+  ],
+  "next": null
+}

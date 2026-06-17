@@ -1,0 +1,15 @@
+{
+  "total": 2,
+  "items": [
+    {
+      "type": "MeshTrafficPermission",
+      "mesh": "default",
+      "name": "mtp-user",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "from": [ { "targetRef": { "kind": "Mesh" }, "default": { "action": "Allow" } } ]
+      }
+    }
+  ],
+  "next": "/meshtrafficpermissions?offset=1"
+}
