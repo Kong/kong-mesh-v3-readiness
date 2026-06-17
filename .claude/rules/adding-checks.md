@@ -22,7 +22,12 @@ identical `(severity, category, title)` tuples merge and accumulate example refs
 (`policy-role: system`) resources are tagged and counted; use `qualified(it)` only where
 system-tagging doesn't apply.
 
-Then add a case to `sampleReport()` (`render_test.go:11`) / golden assertions.
+Then add a case to `sampleReport()` (`render_test.go:11`) / golden assertions. To cover
+the check end-to-end (CP API → JSON), add a fixture under
+`testdata/golden/kitchen-sink/responses/<wsPath>.json` that triggers it (or a new scenario
+dir) and run `go test -run TestGoldenReports -update` to refresh the reference JSON — the
+mock CP defaults any unlisted collection to an empty list, and `404.txt` forces coverage
+gaps. Review the golden diff before committing.
 
 New manual (non-CP-detectable) items go in the `manualChecks` slice in `audit.go`.
 

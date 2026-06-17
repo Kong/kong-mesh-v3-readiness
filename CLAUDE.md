@@ -10,7 +10,9 @@ self-contained HTML. Single-purpose repo — keep it focused on the preflight CL
 - `cmd/kuma3-preflight/` — the entire CLI (one `package main`):
   - `main.go` flags / `--from-json` / exit codes / atomic write · `client.go` HTTP client
   - `audit.go` **all audit logic + deprecation check definitions** · `report.go` finding types
-  - `model.go` `reportModel` + renderers · `html.go` embedded HTML · `render_test.go` tests
+  - `model.go` `reportModel` + renderers · `html.go` embedded HTML
+  - `render_test.go` unit/render tests · `golden_test.go` mock-CP golden tests
+    (fixtures + reference JSON under `testdata/golden/<scenario>/`)
 - `docs/` — `deprecated-features.md` (3.0 deprecations the checks track), `test-plan.md`,
   `test-setup.md` (k3d + Universal CP), `test-results.md`
 - `examples/` real captured reports · `bin/` build output (gitignored) · `mise.toml` tool pins
@@ -22,6 +24,7 @@ go build -o bin/kuma3-preflight ./cmd/kuma3-preflight       # build
 go run ./cmd/kuma3-preflight --address http://localhost:5681 --output report.md  # audit a CP
 go test ./...                                               # all tests
 go test ./... -run TestRenderMarkdownGolden -v              # one test
+go test ./... -run TestGoldenReports -update                # refresh golden JSON refs
 ```
 
 JSON-in-CI then HTML offline: `--format json --output report.json`, then
@@ -46,7 +49,10 @@ Fix root causes — never suppress a linter finding with an ignore/skip directiv
 
 - Go (`go.mod` declares `go 1.23`; toolchain pinned to **1.26.4** via `mise.toml`).
 - Module `github.com/Kong/kong-mesh-v3-readiness`; build uses `GOFLAGS=-mod=mod` (`mise.toml`).
-- Tests: stdlib `testing` only — table-driven + substring "golden" assertions.
+- Tests: stdlib `testing` only — table-driven + substring assertions, plus
+  file-based golden tests (`golden_test.go`) that audit a mock CP (`httptest`)
+  and diff the rendered JSON against `testdata/golden/<scenario>/report.golden.json`
+  (regenerate with `-update`).
 - **Dependencies: none** (stdlib-only; README advertises this). Adding a third-party dep is
   allowed when it clearly earns its place — then update the README's stdlib-only claim, run
   `go mod tidy`, prefer the smallest option.
