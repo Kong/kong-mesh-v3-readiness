@@ -4,3 +4,40 @@ golangci-lint = "2.12.2"
 
 [env]
 GOFLAGS = "-mod=mod"
+
+[tasks.build]
+description = "Build the kuma3-preflight CLI into bin/"
+sources = ["cmd/**/*.go", "go.mod"]
+outputs = ["bin/kuma3-preflight"]
+run = "go build -o bin/kuma3-preflight ./cmd/kuma3-preflight"
+
+[tasks.test]
+description = "Run all tests"
+run = "go test ./..."
+
+[tasks.lint]
+description = "Run golangci-lint (must report 0 issues)"
+run = "golangci-lint run"
+
+[tasks.vet]
+description = "Run go vet"
+run = "go vet ./..."
+
+[tasks.fmt]
+description = "Format Go sources in place"
+run = "gofmt -w cmd/"
+
+[tasks.fmt-check]
+description = "Fail if any Go source is unformatted"
+run = '''
+unformatted=$(gofmt -l cmd/)
+if [ -n "$unformatted" ]; then
+  echo "unformatted files:" >&2
+  echo "$unformatted" >&2
+  exit 1
+fi
+'''
+
+[tasks.check]
+description = "Run all pre-commit quality gates"
+depends = ["test", "lint", "vet", "fmt-check"]
