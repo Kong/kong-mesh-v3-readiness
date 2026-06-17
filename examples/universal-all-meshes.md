@@ -4,7 +4,6 @@
 - Meshes scanned: 1badname, clean, default, legacy
 - Findings: 24 blockers, 36 warnings, 0 info
 
-❌ Blockers found. Resolve them before upgrading to 3.0.
 
 ## Blockers — must resolve before upgrading
 

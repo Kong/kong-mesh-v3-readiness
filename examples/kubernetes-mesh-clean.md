@@ -5,7 +5,6 @@
 - Findings: 2 blockers, 6 warnings, 0 info
 - Includes 4 CP-managed (policy-role: system) resource(s) — update these before upgrading
 
-❌ Blockers found. Resolve them before upgrading to 3.0.
 
 ## Blockers — must resolve before upgrading
 

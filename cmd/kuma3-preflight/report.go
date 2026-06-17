@@ -122,7 +122,7 @@ func (r *report) render() string {
 
 	switch {
 	case r.countBlockers() > 0:
-		fmt.Fprintln(&b, "❌ Blockers found. Resolve them before upgrading to 3.0.")
+		// Blocker count is already in the header; the section below lists them.
 	case r.incomplete():
 		fmt.Fprintln(&b, "⚠️ No blockers found, but the audit was inconclusive (coverage gaps and/or unparseable resources) — this is NOT a clean bill of health.")
 	default:

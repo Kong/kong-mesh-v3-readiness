@@ -4,7 +4,6 @@
 - Meshes scanned: clean
 - Findings: 2 blockers, 6 warnings, 0 info
 
-❌ Blockers found. Resolve them before upgrading to 3.0.
 
 ## Blockers — must resolve before upgrading
 
