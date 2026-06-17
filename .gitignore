@@ -1,0 +1,18 @@
+# Build output
+/bin/
+/dist/
+/kuma3-preflight
+
+# Reports produced by the tool
+*.md.out
+/tmp/
+
+# Go
+*.test
+*.out
+vendor/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
