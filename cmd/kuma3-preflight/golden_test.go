@@ -43,7 +43,7 @@ func TestGoldenReports(t *testing.T) {
 			if err != nil {
 				t.Fatalf("newClient: %v", err)
 			}
-			rep, err := audit(context.Background(), c, "")
+			rep, err := audit(context.Background(), c, auditOptions{})
 			if err != nil {
 				t.Fatalf("audit: %v", err)
 			}

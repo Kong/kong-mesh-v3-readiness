@@ -28,6 +28,7 @@ func run() int {
 	format := flag.String("format", "markdown", "Output format: markdown, json, or html")
 	fromJSON := flag.String("from-json", "", "Render a previously captured JSON report (path, or - for stdin) instead of auditing")
 	timeout := flag.Duration("timeout", 60*time.Second, "Overall timeout for the audit")
+	inspect := flag.Int("inspect-dataplanes", 0, "Fetch up to N dataplanes' Envoy config dumps to detect removed features (0 = skip; expensive)")
 	flag.Parse()
 
 	fmtName, err := normalizeFormat(*format)
@@ -67,7 +68,7 @@ func run() int {
 		return 2
 	}
 
-	report, auditErr := audit(ctx, c, *mesh)
+	report, auditErr := audit(ctx, c, auditOptions{meshFilter: *mesh, inspectDataplanes: *inspect})
 
 	// Always make the output reflect this run: on failure, stamp the destination
 	// so a stale clean report is never mistaken for an up-to-date one.

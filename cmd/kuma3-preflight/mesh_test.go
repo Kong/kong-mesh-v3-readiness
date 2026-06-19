@@ -71,12 +71,12 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 		{
 			name:     "meshServices.mode not Exclusive",
 			mesh:     map[string]any{"meshServices": map[string]any{"mode": "Everywhere"}},
-			severity: "warning", category: "MeshService mode", title: "meshServices.mode is not Exclusive",
+			severity: "blocker", category: "MeshService mode", title: "meshServices.mode is not Exclusive",
 		},
 		{
 			name:     "meshServices absent defaults to Disabled",
 			mesh:     map[string]any{},
-			severity: "warning", category: "MeshService mode", title: "meshServices.mode is not Exclusive",
+			severity: "blocker", category: "MeshService mode", title: "meshServices.mode is not Exclusive",
 		},
 		{
 			name:     "non-RFC-1035 mesh name",

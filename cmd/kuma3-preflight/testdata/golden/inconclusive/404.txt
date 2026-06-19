@@ -1,3 +1,4 @@
 # Collections the mock CP answers with 404, to exercise coverage-gap handling.
 /traffic-permissions
 /dataplanes
+/config

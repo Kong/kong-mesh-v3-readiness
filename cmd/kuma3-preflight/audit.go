@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -60,13 +62,22 @@ func isSystem(it resourceItem) bool {
 	return it.Labels[policyRoleLabel] == "system"
 }
 
-type auditor struct {
-	c          *client
+// auditOptions configures one audit run.
+type auditOptions struct {
 	meshFilter string
-	rep        *report
+	// inspectDataplanes is the cap on how many dataplanes' Envoy config dumps to
+	// fetch (0 = skip the expensive per-proxy inspection entirely).
+	inspectDataplanes int
 }
 
-func audit(ctx context.Context, c *client, meshFilter string) (*report, error) {
+type auditor struct {
+	c                 *client
+	meshFilter        string
+	inspectDataplanes int
+	rep               *report
+}
+
+func audit(ctx context.Context, c *client, opts auditOptions) (*report, error) {
 	idx, err := c.index(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to control plane: %w", err)
@@ -77,7 +88,7 @@ func audit(ctx context.Context, c *client, meshFilter string) (*report, error) {
 		return nil, fmt.Errorf("endpoint at %s does not look like a Kuma control plane (GET / returned no version)", c.base)
 	}
 
-	a := &auditor{c: c, meshFilter: meshFilter, rep: &report{cp: idx}}
+	a := &auditor{c: c, meshFilter: opts.meshFilter, inspectDataplanes: opts.inspectDataplanes, rep: &report{cp: idx}}
 
 	meshes, found, err := c.list(ctx, "/meshes")
 	if err != nil {
@@ -87,7 +98,7 @@ func audit(ctx context.Context, c *client, meshFilter string) (*report, error) {
 		return nil, fmt.Errorf("GET /meshes returned 404; is %s a Kuma control plane?", c.base)
 	}
 	for _, m := range meshes {
-		if meshFilter != "" && m.Name != meshFilter {
+		if opts.meshFilter != "" && m.Name != opts.meshFilter {
 			continue
 		}
 		a.rep.meshes = append(a.rep.meshes, m.Name)
@@ -95,13 +106,14 @@ func audit(ctx context.Context, c *client, meshFilter string) (*report, error) {
 		a.checkName(m, "Mesh")
 	}
 	// A --mesh that matches nothing must not pass as a clean audit.
-	if meshFilter != "" && len(a.rep.meshes) == 0 {
-		return nil, fmt.Errorf("mesh %q not found on the control plane", meshFilter)
+	if opts.meshFilter != "" && len(a.rep.meshes) == 0 {
+		return nil, fmt.Errorf("mesh %q not found on the control plane", opts.meshFilter)
 	}
 
 	for _, check := range []func(context.Context) error{
 		a.checkLegacyResources, a.checkNewPolicies, a.checkDataplanes,
 		a.checkZoneProxies, a.checkResourceNames, a.checkMeshTrust,
+		a.checkControlPlaneConfig, a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
 	} {
 		if err := check(ctx); err != nil {
 			return nil, err
@@ -217,8 +229,8 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 		if shown == "" {
 			shown = "Disabled"
 		}
-		a.rep.add(warning, "MeshService mode", "meshServices.mode is not Exclusive",
-			"Move to `meshServices.mode: Exclusive` before upgrading (current: "+shown+").", m.Name)
+		a.rep.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive",
+			"3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: "+shown+").", m.Name)
 	}
 }
 
@@ -392,6 +404,12 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 			a.rep.add(warning, "Dataplane probes", "Dataplane has a probes section",
 				"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", qualified(it))
 		}
+		// A per-proxy metrics backend (on k8s, translated from the deprecated
+		// `prometheus.metrics.kuma.io/*` pod annotations) moves to MeshMetric.
+		if hasJSON(spec.Metrics) {
+			a.rep.add(warning, "Dataplane metrics", "Dataplane has a per-proxy metrics override",
+				"`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.", qualified(it))
+		}
 		if spec.Networking == nil {
 			continue
 		}
@@ -456,6 +474,197 @@ func (a *auditor) checkMeshTrust(ctx context.Context) error {
 			a.rep.add(warning, "Relocated policy fields", "MeshTrust uses spec.origin",
 				"`spec.origin` is deprecated; it moves to `status.origin` in 3.0.", qualified(it))
 		}
+	}
+	return nil
+}
+
+// cpConfig captures only the control-plane settings the readiness checks inspect.
+// The full GET /config payload is large and carries secrets (e.g. a masked DB
+// password); decode just these fields (cf. the resource decode anti-pattern) so
+// unknown fields are ignored and the body never has to be echoed.
+type cpConfig struct {
+	Mode         string `json:"mode"`
+	Environment  string `json:"environment"`
+	Experimental struct {
+		AutoReachableServices bool `json:"autoReachableServices"`
+		DeltaXds              bool `json:"deltaXds"`
+		SidecarContainers     bool `json:"sidecarContainers"`
+		InboundTagsDisabled   bool `json:"inboundTagsDisabled"`
+		KdsEventBasedWatchdog struct {
+			Enabled bool `json:"enabled"`
+		} `json:"kdsEventBasedWatchdog"`
+	} `json:"experimental"`
+	Runtime struct {
+		Kubernetes struct {
+			Injector struct {
+				UnifiedResourceNamingEnabled bool `json:"unifiedResourceNamingEnabled"`
+				Ebpf                         struct {
+					Enabled bool `json:"enabled"`
+				} `json:"ebpf"`
+			} `json:"injector"`
+		} `json:"kubernetes"`
+	} `json:"runtime"`
+}
+
+const cpConfigCategory = "Control plane configuration"
+
+// checkControlPlaneConfig audits the live CP settings exposed by GET /config for
+// 3.0 readiness: flags for features removed in 3.0 (blockers) and settings that
+// become the default and should be enabled and validated first (warnings). The
+// Kubernetes-injector knobs are gated on environment so Universal CPs (which
+// have no injector) are not flagged for missing them. A CP that does not serve
+// /config (404, older builds) is a coverage gap, never a clean pass.
+func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
+	var cfg cpConfig
+	status, err := a.c.getJSON(ctx, "/config", &cfg)
+	if err != nil {
+		return fmt.Errorf("reading /config: %w", err)
+	}
+	if status == http.StatusNotFound {
+		a.rep.addGap("/config", "endpoint returned 404 — control-plane settings NOT audited")
+		return nil
+	}
+	onK8s := strings.EqualFold(cfg.Environment, "kubernetes")
+
+	// Hard removals — the upgrade breaks while these are in use.
+	if onK8s && strings.EqualFold(cfg.Mode, "global") {
+		a.rep.add(blocker, cpConfigCategory, "Global control plane on Kubernetes",
+			"Global CP on Kubernetes is dropped as a deployment mode in 3.0; migrate the global CP to Universal.",
+			"mode=global")
+	}
+	if cfg.Experimental.AutoReachableServices {
+		a.rep.add(blocker, cpConfigCategory, "autoReachableServices enabled",
+			"`autoReachableServices` is removed entirely in 3.0; stop relying on it before upgrading.",
+			"experimental.autoReachableServices=true")
+	}
+	if onK8s && cfg.Runtime.Kubernetes.Injector.Ebpf.Enabled {
+		a.rep.add(blocker, cpConfigCategory, "eBPF transparent proxy enabled",
+			"The eBPF transparent proxy is removed in 3.0; switch to the iptables transparent proxy.",
+			"runtime.kubernetes.injector.ebpf.enabled=true")
+	}
+
+	// Required 3.0 baseline — the upgrade assumes these are already on (they pair
+	// with meshServices.mode: Exclusive), so an estate without them is broken on 3.0.
+	if onK8s && !cfg.Runtime.Kubernetes.Injector.UnifiedResourceNamingEnabled {
+		a.rep.add(blocker, cpConfigCategory, "Unified resource naming not enabled",
+			"3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
+			"runtime.kubernetes.injector.unifiedResourceNamingEnabled=false")
+	}
+	if !cfg.Experimental.InboundTagsDisabled {
+		a.rep.add(blocker, cpConfigCategory, "Inbound tags still enabled",
+			"3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
+			"experimental.inboundTagsDisabled=false")
+	}
+
+	// Settings that become the default in 3.0 — enable and validate before upgrading.
+	if !cfg.Experimental.DeltaXds {
+		a.rep.add(warning, cpConfigCategory, "Delta xDS not enabled",
+			"Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
+			"experimental.deltaXds=false")
+	}
+	if !cfg.Experimental.KdsEventBasedWatchdog.Enabled {
+		a.rep.add(warning, cpConfigCategory, "KDS event-based watchdog not enabled",
+			"The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
+			"experimental.kdsEventBasedWatchdog.enabled=false")
+	}
+	if !cfg.Experimental.SidecarContainers {
+		a.rep.add(warning, cpConfigCategory, "Native sidecar containers not enabled",
+			"Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
+			"experimental.sidecarContainers=false")
+	}
+	return nil
+}
+
+// dpInsight captures just the per-subscription version data exposed by
+// /dataplanes+insights — enough to read the control plane's own compatibility
+// verdict for each connected proxy.
+type dpInsight struct {
+	DataplaneInsight struct {
+		Subscriptions []struct {
+			Version struct {
+				KumaDp struct {
+					Version          string `json:"version"`
+					KumaCpCompatible *bool  `json:"kumaCpCompatible"`
+				} `json:"kumaDp"`
+				Envoy struct {
+					Version string `json:"version"`
+				} `json:"envoy"`
+			} `json:"version"`
+		} `json:"subscriptions"`
+	} `json:"dataplaneInsight"`
+}
+
+// checkDataplaneVersions flags data planes the control plane itself reports as
+// version-incompatible (`kumaCpCompatible: false`): they are already outside the
+// supported CP/DP skew window and must be upgraded before a major-version bump.
+// Sourced from /dataplanes+insights (the data behind the GUI dashboard), so no
+// version parsing is reimplemented here — the CP's verdict is authoritative.
+func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
+	items, err := a.listColl(ctx, a.scopedPath("dataplanes+insights"))
+	if err != nil {
+		return fmt.Errorf("listing dataplane insights: %w", err)
+	}
+	for _, it := range items {
+		var ins dpInsight
+		// Insights are not policy specs; a decode failure is skipped, not counted
+		// as a parse error (the tool survives CP version skew by ignoring it).
+		if json.Unmarshal(it.specBytes(), &ins) != nil {
+			continue
+		}
+		subs := ins.DataplaneInsight.Subscriptions
+		if len(subs) == 0 {
+			continue
+		}
+		kd := subs[len(subs)-1].Version.KumaDp
+		if kd.KumaCpCompatible != nil && !*kd.KumaCpCompatible {
+			a.rep.add(warning, "Dataplane version", "Dataplane is version-incompatible with the control plane",
+				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
+				qualified(it)+" (kuma-dp "+kd.Version+")")
+		}
+	}
+	return nil
+}
+
+// dnsFilterMarker is the Envoy UDP DNS filter name; its presence in a proxy's
+// config dump means that proxy still uses the built-in DNS path 3.0 removes.
+var dnsFilterMarker = []byte("envoy.filters.udp.dns_filter")
+
+// checkDataplaneEnvoyConfig is the opt-in deep check (--inspect-dataplanes N):
+// it fetches up to N dataplanes' Envoy config dumps and flags use of the legacy
+// Envoy DNS filter. Each dump is large, so this is an O(N) heavy fetch gated
+// behind the flag; it records how many proxies it actually sampled so a partial
+// sweep never reads as full coverage.
+func (a *auditor) checkDataplaneEnvoyConfig(ctx context.Context) error {
+	if a.inspectDataplanes <= 0 {
+		return nil
+	}
+	items, err := a.listColl(ctx, a.scopedPath("dataplanes"))
+	if err != nil {
+		return fmt.Errorf("listing dataplanes for inspection: %w", err)
+	}
+	limit := a.inspectDataplanes
+	if limit > len(items) {
+		limit = len(items)
+	}
+	inspected := 0
+	for _, it := range items[:limit] {
+		path := "/meshes/" + url.PathEscape(it.Mesh) + "/dataplanes/" + url.PathEscape(it.Name) + "/xds"
+		var dump json.RawMessage
+		status, err := a.c.getJSON(ctx, path, &dump)
+		if err != nil || status == http.StatusNotFound {
+			continue // best-effort: skip offline / unreadable proxies
+		}
+		inspected++
+		if bytes.Contains(dump, dnsFilterMarker) {
+			a.rep.add(warning, "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter",
+				"This proxy's Envoy config still uses the built-in `envoy.filters.udp.dns_filter`; 3.0 drops the Envoy DNS filter for the embedded DNS server — upgrade kuma-dp.",
+				qualified(it))
+		}
+	}
+	if inspected < len(items) {
+		a.rep.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes",
+			fmt.Sprintf("Inspected the Envoy config of %d of %d dataplane(s); raise --inspect-dataplanes to cover more.", inspected, len(items)),
+			fmt.Sprintf("%d/%d", inspected, len(items)))
 	}
 	return nil
 }
@@ -537,6 +746,7 @@ type ruleEntry struct {
 
 type dataplaneSpec struct {
 	Probes     json.RawMessage `json:"probes"`
+	Metrics    json.RawMessage `json:"metrics"`
 	Networking *struct {
 		Gateway             json.RawMessage `json:"gateway"`
 		TransparentProxying *struct {
@@ -573,19 +783,17 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 }
 
 // manualChecks are 3.0 drops that cannot be detected from CP resources alone.
+// Settings exposed by GET /config (unified naming, inbound tags, experimental
+// flags, autoReachableServices, global-on-k8s, eBPF transparent proxy) are
+// audited automatically by checkControlPlaneConfig and are not repeated here.
 var manualChecks = []string{
-	"Unified resource naming enabled (`dataPlane.features.unifiedResourceNaming: true`)",
-	"Inbound tags disabled (`KUMA_EXPERIMENTAL_INBOUND_TAGS_DISABLED=true`)",
-	"Experimental flags moved to defaults: deltaXds (becomes the only option), kdsEventBasedWatchdog, sidecarContainers",
-	"autoReachableServices removed entirely — stop relying on it",
-	"Global control plane on Kubernetes is dropped as a deployment mode",
 	"Gateway API / GAMMA usage migrated off built-in support",
-	"Observability: KRI-based config only; `install observability` command removed; metrics-via-Dataplane-annotations removed",
-	"DNS: CoreDNS + Envoy DNS filter removed; eBPF transparent proxy removed",
+	"Observability: KRI-based config only; `install observability` command removed",
+	"DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)",
 	"Old inspect APIs removed (switch to the new inspect API)",
 	"Pod resources instead of container resources",
 	"Adopt the Workload resource for proxy grouping (metrics/traces dimension) instead of kuma.io/service tags",
 	"Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
 	"Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
-	"Routing MeshExternalService through a specific zone is removed",
+	"Zone-pinned external services (legacy ExternalService `kuma.io/zone` tag — already a blocker; MeshExternalService has no zone field)",
 }

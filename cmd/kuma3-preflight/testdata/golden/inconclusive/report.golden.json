@@ -14,7 +14,7 @@
     "blockers": 0,
     "warnings": 1,
     "info": 0,
-    "coverageGaps": 2,
+    "coverageGaps": 3,
     "parseErrors": 1,
     "systemFindings": 0
   },
@@ -32,6 +32,10 @@
   ],
   "coverageGaps": [
     {
+      "path": "/config",
+      "reason": "endpoint returned 404 — control-plane settings NOT audited"
+    },
+    {
       "path": "/dataplanes",
       "reason": "endpoint returned 404 — NOT audited"
     },
@@ -41,19 +45,14 @@
     }
   ],
   "manualChecks": [
-    "Unified resource naming enabled (`dataPlane.features.unifiedResourceNaming: true`)",
-    "Inbound tags disabled (`KUMA_EXPERIMENTAL_INBOUND_TAGS_DISABLED=true`)",
-    "Experimental flags moved to defaults: deltaXds (becomes the only option), kdsEventBasedWatchdog, sidecarContainers",
-    "autoReachableServices removed entirely — stop relying on it",
-    "Global control plane on Kubernetes is dropped as a deployment mode",
     "Gateway API / GAMMA usage migrated off built-in support",
-    "Observability: KRI-based config only; `install observability` command removed; metrics-via-Dataplane-annotations removed",
-    "DNS: CoreDNS + Envoy DNS filter removed; eBPF transparent proxy removed",
+    "Observability: KRI-based config only; `install observability` command removed",
+    "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)",
     "Old inspect APIs removed (switch to the new inspect API)",
     "Pod resources instead of container resources",
     "Adopt the Workload resource for proxy grouping (metrics/traces dimension) instead of kuma.io/service tags",
     "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
     "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
-    "Routing MeshExternalService through a specific zone is removed"
+    "Zone-pinned external services (legacy ExternalService `kuma.io/zone` tag — already a blocker; MeshExternalService has no zone field)"
   ]
 }

@@ -1,0 +1,38 @@
+{
+  "total": 2,
+  "items": [
+    {
+      "type": "DataplaneOverview",
+      "mesh": "default",
+      "name": "legacy-dp.kuma-demo",
+      "dataplaneInsight": {
+        "subscriptions": [
+          {
+            "id": "sub-1",
+            "version": {
+              "kumaDp": { "version": "2.5.0", "kumaCpCompatible": false },
+              "envoy": { "version": "1.30.0" }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "DataplaneOverview",
+      "mesh": "default",
+      "name": "current-dp.kuma-demo",
+      "dataplaneInsight": {
+        "subscriptions": [
+          {
+            "id": "sub-2",
+            "version": {
+              "kumaDp": { "version": "2.9.0", "kumaCpCompatible": true },
+              "envoy": { "version": "1.34.0" }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "next": null
+}

@@ -9,6 +9,7 @@
       "networking": {
         "transparentProxying": { "reachableServices": [ "svc-a", "svc-b" ] }
       },
+      "metrics": { "type": "prometheus", "conf": { "port": 5670, "path": "/metrics" } },
       "probes": { "port": 9000, "endpoints": [ { "inboundPort": 8080, "path": "/healthz" } ] }
     }
   ],

@@ -10,11 +10,32 @@ import (
 	"time"
 )
 
+// readyConfigJSON is a GET /config payload with every setting already in its
+// 3.0-ready state, so checkControlPlaneConfig produces no findings. It is the
+// default /config served by auditResponses; a test exercising config findings
+// overrides "/config" in its responses map.
+const readyConfigJSON = `{
+  "mode": "zone",
+  "environment": "kubernetes",
+  "experimental": {
+    "autoReachableServices": false,
+    "deltaXds": true,
+    "sidecarContainers": true,
+    "inboundTagsDisabled": true,
+    "kdsEventBasedWatchdog": {"enabled": true}
+  },
+  "runtime": {"kubernetes": {"injector": {
+    "unifiedResourceNamingEnabled": true,
+    "ebpf": {"enabled": false}
+  }}}
+}`
+
 // auditResponses audits a mock control plane that serves the given path->JSON
-// body map. GET / returns a Kuma index and any unlisted collection returns an
-// empty list, so a test declares only the endpoints it cares about. The report
-// is rendered to JSON and parsed back, so assertions run against the actual
-// serialized JSON contract rather than the in-memory report.
+// body map. GET / returns a Kuma index, GET /config returns a 3.0-ready config,
+// and any unlisted collection returns an empty list, so a test declares only the
+// endpoints it cares about. The report is rendered to JSON and parsed back, so
+// assertions run against the actual serialized JSON contract rather than the
+// in-memory report.
 func auditResponses(t *testing.T, responses map[string]string) reportModel {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +48,10 @@ func auditResponses(t *testing.T, responses map[string]string) reportModel {
 			_, _ = io.WriteString(w, `{"product":"Kuma","version":"2.9.0","mode":"zone"}`)
 			return
 		}
+		if r.URL.Path == "/config" {
+			_, _ = io.WriteString(w, readyConfigJSON)
+			return
+		}
 		_, _ = io.WriteString(w, `{"total":0,"items":[],"next":null}`)
 	}))
 	t.Cleanup(srv.Close)
@@ -35,7 +60,7 @@ func auditResponses(t *testing.T, responses map[string]string) reportModel {
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
-	rep, err := audit(context.Background(), c, "")
+	rep, err := audit(context.Background(), c, auditOptions{})
 	if err != nil {
 		t.Fatalf("audit: %v", err)
 	}
