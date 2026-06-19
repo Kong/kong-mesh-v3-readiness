@@ -35,6 +35,6 @@ New manual (non-CP-detectable) items go in the `manualChecks` slice in `audit.go
 
 | Severity  | Meaning | Use for |
 |-----------|---------|---------|
-| `blocker` | Hard-removed in 3.0; upgrade breaks until fixed (exit 1) | removed resources, inline mTLS/metrics/tracing/logging on Mesh, `routing.*`, `reachableServices`, gateway-in-Dataplane, policy `from`, non-Mesh/Dataplane top-level `targetRef.kind` |
-| `warning` | Deprecated/relocated/should-fix, not a hard removal | `meshServices.mode != Exclusive`, `proxyTypes`, non-service `to` kinds, OTel `endpoint`, relocated fields, non-RFC-1035 names, Universal Dataplane `probes`, unparseable specs |
-| `info`    | Informational, no action mandated | zone proxy counts |
+| `blocker` | Hard-removed/required in 3.0; upgrade breaks until fixed (exit 1) | removed resources, inline mTLS/metrics/tracing/logging on Mesh, `routing.*`, `reachableServices`, gateway-in-Dataplane, policy `from`, non-Mesh/Dataplane top-level `targetRef.kind`, **`meshServices.mode != Exclusive`**, CP-config **unified naming off** / **inbound tags still enabled** / global-on-k8s / autoReachableServices / eBPF |
+| `warning` | Deprecated/relocated/should-fix, not a hard removal | `proxyTypes`, non-service `to` kinds, OTel `endpoint`, relocated fields, non-RFC-1035 names, Universal Dataplane `probes`, per-proxy `spec.metrics`, version-incompatible dataplanes, CP-config deltaXds/KDS-watchdog/sidecar-containers off, unparseable specs |
+| `info`    | Informational, no action mandated | zone proxy counts, sampled-dataplane inspection coverage |

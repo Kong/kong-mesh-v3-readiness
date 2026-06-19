@@ -29,6 +29,7 @@ go run ./cmd/kuma3-preflight --output report.md
 | `--format` | `markdown` | Output format: `markdown`, `json`, or `html` |
 | `--from-json` | _(none)_ | Render a previously captured JSON report (path, or `-` for stdin) instead of auditing |
 | `--timeout` | `60s` | Overall audit timeout |
+| `--inspect-dataplanes` | `0` | Fetch up to N dataplanes' Envoy config dumps to detect removed features (`0` = skip; expensive per-proxy fetch) |
 
 Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse — the result is not a proven clean bill of health).
 
@@ -69,11 +70,19 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   and the `SourceIP` hash type; MeshHealthCheck `healthyPanicThreshold` (→ MeshCircuitBreaker);
   MeshTrust `spec.origin` (→ `status.origin`).
 - **Dataplanes** — `reachableServices`, builtin `networking.gateway` section, Universal
-  `spec.probes`.
+  `spec.probes`, and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
+- **Dataplane versions** — proxies the CP reports as version-incompatible
+  (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
+- **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
+  eBPF transparent proxy (blockers); unified resource naming, inbound-tags-disabled, delta
+  xDS, KDS event-based watchdog, native sidecar containers not yet enabled (warnings).
 - **Resource names** — Mesh/MeshService/MeshExternalService/MeshMultiZoneService names that
   are not valid RFC-1035 DNS labels.
 - **Zone proxies** — informational count of ZoneIngress/ZoneEgress.
+- **Envoy config (opt-in, `--inspect-dataplanes N`)** — fetches up to N proxies' config
+  dumps and flags use of the legacy Envoy DNS filter.
 
-It also lists **manual checks** for config/runtime-level drops that can't be seen
-through CP resources (unified naming, inbound-tags-disabled, experimental flag
-defaults, DNS/eBPF, observability install, etc.).
+It also lists **manual checks** for the remaining 3.0 drops that aren't observable
+through the CP API (Gateway API/GAMMA migration, observability install command, CoreDNS,
+old inspect-API clients, pod-vs-container resources, Workload adoption, HMAC256 signing-key
+rotation, `kuma.io/mesh` annotation→label).

@@ -290,6 +290,10 @@ current binary:
 | Dataplane reachableServices / gateway / probes | ✅ yes | `probes` is Universal-only (see §7) |
 | OTel `endpoint`, LB hashPolicies/SourceIP, healthyPanicThreshold, RFC-1035 names | ✅ yes | warnings |
 | CP `policy-role: system` defaults | ✅ flagged + marked | header `Includes N CP-managed…` (**K8s only** — see §7) |
+| Control-plane config (`GET /config`) | ✅ yes | `checkControlPlaneConfig`: blockers global-on-k8s / autoReachableServices / eBPF; warnings unified-naming / inbound-tags / deltaXds / KDS-watchdog / sidecar-containers off. Injector + global checks gated on `environment: kubernetes`. 404 → coverage gap |
+| Dataplane version compatibility | ✅ yes | `checkDataplaneVersions` from `/dataplanes+insights`: warns on proxies with `kumaCpCompatible: false`. (preview/dev kuma-dp is bypassed by the CP → no warning on the preview fixture) |
+| Dataplane per-proxy metrics override | ✅ yes | `checkDataplanes` flags non-empty `spec.metrics` (k8s: translated from `prometheus.metrics.kuma.io/*` pod annotations) → MeshMetric |
+| Envoy DNS filter (`--inspect-dataplanes N`) | ⚙️ opt-in | `checkDataplaneEnvoyConfig` fetches up to N config dumps; warns on `envoy.filters.udp.dns_filter`. Off by default (expensive per-proxy fetch) |
 
 ---
 

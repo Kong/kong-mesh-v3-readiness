@@ -238,7 +238,10 @@ Run these first — they confirm the tool works at all before the edge-case TCs.
 | B-11 | `--token bogus` against the CP | If CP requires auth → exit 2 with auth message; else normal report (token simply unused). |
 | B-12 | Run twice, `diff` the two reports | Byte-identical (determinism). |
 | B-13 | Point `--address` at a closed port | exit 2, `connection refused`; no panic, no partial report. |
-| B-14 | Confirm the **manual checks** checklist renders | `## Manual checks` section present with the unified-naming / inbound-tags / DNS / eBPF / etc. items. |
+| B-14 | Confirm the **manual checks** checklist renders | `## Manual checks` section present with the gateway-API / observability / DNS / inspect-API / pod-resources / Workload / HMAC-key / mesh-label / MES-zone-routing items. (Unified-naming, inbound-tags, deltaXds, autoReachableServices, global-on-k8s and eBPF moved to automated findings — see B-15.) |
+| B-15 | Confirm the **Control plane configuration** findings render from `GET /config` | Findings category `Control plane configuration`; blockers for global-on-k8s / autoReachableServices / eBPF, warnings for unified-naming / inbound-tags / deltaXds / KDS-watchdog / sidecar-containers off. A CP that 404s `/config` yields a `/config` coverage gap, not a clean pass. |
+| B-16 | Confirm **dataplane version** + **per-proxy metrics** findings | `Dataplane version` warning for any proxy with `kumaCpCompatible: false` (from `/dataplanes+insights`); `Dataplane metrics` warning for any Dataplane with `spec.metrics`. Preview/dev kuma-dp is reported compatible → no version warning. |
+| B-17 | Confirm opt-in **Envoy DNS filter** inspection | With `--inspect-dataplanes N`, the audit fetches up to N config dumps and warns on `envoy.filters.udp.dns_filter`; reports `Inspected … X of M` when sampled. With the flag at `0` (default) no config dumps are fetched and no DNS-filter finding appears. |
 
 #### TC-27: Full expected-findings verification on a running cluster
 **Setup:** Provision the documented fixture cluster (`docs/test-setup.md`): on `default` — the 9 legacy resources, a `from` MeshTrafficPermission, a bad-targetRef MeshHTTPRoute, an injected Dataplane with `reachableServices`; Mesh `legacy` with all inline settings; Mesh `clean` in `meshServices.mode: Exclusive`. Note the CP also auto-creates `policy-role: system` defaults.
