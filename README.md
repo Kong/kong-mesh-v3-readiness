@@ -6,7 +6,7 @@ Tooling and manual-test material for auditing a running **Kuma 2.x** control pla
 ## Contents
 
 - **[`cmd/kuma3-preflight`](cmd/kuma3-preflight/)** — a stdlib-only Go CLI that audits a
-  CP over its REST API and emits a pre-upgrade report (blockers / warnings / manual checks)
+  CP over its REST API and emits a pre-upgrade report (blockers / manual checks)
   as Markdown (default), JSON, or a self-contained HTML page. See its
   [README](cmd/kuma3-preflight/README.md) for checks, flags, and output formats.
 - **[`examples/`](examples/)** — real reports captured against live Kubernetes and

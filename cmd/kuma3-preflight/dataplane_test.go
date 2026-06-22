@@ -47,12 +47,12 @@ func TestDataplaneDeprecatedFeatureReportedAsIssue(t *testing.T) {
 				"labels": map[string]any{"kuma.io/env": "universal"},
 				"probes": map[string]any{"port": 9000, "endpoints": []any{map[string]any{"inboundPort": 8080, "path": "/healthz"}}},
 			},
-			severity: "warning", category: "Dataplane probes", title: "Dataplane has a probes section",
+			severity: "blocker", category: "Dataplane probes", title: "Dataplane has a probes section",
 		},
 		{
 			name:     "unparseable spec",
 			dp:       map[string]any{"networking": "this-should-be-an-object-not-a-string"},
-			severity: "warning", category: "Unparseable resources", title: "Dataplane spec could not be parsed",
+			severity: "blocker", category: "Unparseable resources", title: "Dataplane spec could not be parsed",
 		},
 	}
 	for _, tc := range cases {
@@ -72,7 +72,7 @@ func TestDataplaneDeprecatedFeatureReportedAsIssue(t *testing.T) {
 	}
 }
 
-// TestDataplaneProbesIgnoredOnKubernetes confirms the probes warning is
+// TestDataplaneProbesIgnoredOnKubernetes confirms the probes check is
 // Universal-only: on Kubernetes probes are derived from the pod and need no
 // action, so they must not be flagged.
 func TestDataplaneProbesIgnoredOnKubernetes(t *testing.T) {
@@ -80,7 +80,7 @@ func TestDataplaneProbesIgnoredOnKubernetes(t *testing.T) {
 		"labels": map[string]any{"kuma.io/env": "kubernetes"},
 		"probes": map[string]any{"port": 9000},
 	})
-	if _, ok := findFinding(m, "warning", "Dataplane probes", "Dataplane has a probes section"); ok {
+	if _, ok := findFinding(m, "blocker", "Dataplane probes", "Dataplane has a probes section"); ok {
 		t.Errorf("probes on a Kubernetes dataplane must not be flagged\nfindings: %+v", m.Findings)
 	}
 	if m.Status != statusClean {

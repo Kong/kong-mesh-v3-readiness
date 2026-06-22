@@ -158,12 +158,12 @@ func (a *auditor) listIfServed(ctx context.Context, path string) ([]resourceItem
 }
 
 // unmarshalSpec decodes the resource spec into v, recording a parse error +
-// warning (and returning false) when the spec is malformed. ref is supplied by
+// blocker (and returning false) when the spec is malformed. ref is supplied by
 // the caller so system-tagging applies where relevant.
 func (a *auditor) unmarshalSpec(it resourceItem, v any, ref string) bool {
 	if err := json.Unmarshal(it.specBytes(), v); err != nil {
 		a.rep.parseErrors++
-		a.rep.add(warning, "Unparseable resources", it.Type+" spec could not be parsed",
+		a.rep.add(blocker, "Unparseable resources", it.Type+" spec could not be parsed",
 			"Could not parse this resource; audit it manually before upgrading.", ref)
 		return false
 	}
@@ -270,13 +270,13 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 						"Top-level targetRef must be Mesh or Dataplane; use labels.", ref)
 				}
 				if len(spec.TargetRef.ProxyTypes) > 0 {
-					a.rep.add(warning, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
+					a.rep.add(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
 						"`proxyTypes` is removed (gateway support dropped).", ref)
 				}
 			}
 			for _, to := range spec.To {
 				if k := to.TargetRef.Kind; k != "" && !allowedToTargetRefKinds[k] {
-					a.rep.add(warning, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
+					a.rep.add(blocker, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
 						"`to` may only target MeshService/MeshExternalService/MeshMultiZoneService.", ref)
 				}
 			}
@@ -288,8 +288,8 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 
 // checkPolicyFields flags per-policy deprecated fields visible in the spec but not
 // covered by the generic from/targetRef/to checks. These are documented field
-// deprecations/relocations (not hard 3.0 removals), so they are warnings. ref is
-// reused from the caller so a system policy is counted once.
+// deprecations/relocations; like every finding they are blockers. ref is reused
+// from the caller so a system policy is counted once.
 func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 	spec := it.specBytes()
 	switch it.Type {
@@ -335,7 +335,7 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 		}
 		for _, t := range s.To {
 			if t.Default.HealthyPanicThreshold != nil {
-				a.rep.add(warning, "Relocated policy fields", "MeshHealthCheck uses healthyPanicThreshold",
+				a.rep.add(blocker, "Relocated policy fields", "MeshHealthCheck uses healthyPanicThreshold",
 					"`healthyPanicThreshold` moves to MeshCircuitBreaker in 3.0.", ref)
 				break
 			}
@@ -373,18 +373,18 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 			}
 		}
 		if relocated {
-			a.rep.add(warning, "Relocated policy fields", "MeshLoadBalancingStrategy nests hashPolicies under loadBalancer",
+			a.rep.add(blocker, "Relocated policy fields", "MeshLoadBalancingStrategy nests hashPolicies under loadBalancer",
 				"Move `loadBalancer.{ringHash,maglev}.hashPolicies` up to `to[].default.hashPolicies`.", ref)
 		}
 		if sourceIP {
-			a.rep.add(warning, "Relocated policy fields", "MeshLoadBalancingStrategy uses SourceIP hash policy",
+			a.rep.add(blocker, "Relocated policy fields", "MeshLoadBalancingStrategy uses SourceIP hash policy",
 				"The `SourceIP` hash policy type is deprecated; use `Connection`.", ref)
 		}
 	}
 }
 
 func (a *auditor) addOtelEndpoint(typ, ref string) {
-	a.rep.add(warning, "OpenTelemetry endpoint", typ+" uses OpenTelemetry `endpoint`",
+	a.rep.add(blocker, "OpenTelemetry endpoint", typ+" uses OpenTelemetry `endpoint`",
 		"The OpenTelemetry `endpoint` field is deprecated; use `backendRef` (MeshOpenTelemetryBackend).", ref)
 }
 
@@ -401,13 +401,13 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 		// Universal-only: spec.probes is removed in 3.0. On Kubernetes probes are
 		// derived from the pod and need no action, so only flag non-k8s dataplanes.
 		if hasJSON(spec.Probes) && it.Labels["kuma.io/env"] != "kubernetes" {
-			a.rep.add(warning, "Dataplane probes", "Dataplane has a probes section",
+			a.rep.add(blocker, "Dataplane probes", "Dataplane has a probes section",
 				"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", qualified(it))
 		}
 		// A per-proxy metrics backend (on k8s, translated from the deprecated
 		// `prometheus.metrics.kuma.io/*` pod annotations) moves to MeshMetric.
 		if hasJSON(spec.Metrics) {
-			a.rep.add(warning, "Dataplane metrics", "Dataplane has a per-proxy metrics override",
+			a.rep.add(blocker, "Dataplane metrics", "Dataplane has a per-proxy metrics override",
 				"`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.", qualified(it))
 		}
 		if spec.Networking == nil {
@@ -471,7 +471,7 @@ func (a *auditor) checkMeshTrust(ctx context.Context) error {
 			Origin json.RawMessage `json:"origin"`
 		}
 		if json.Unmarshal(it.specBytes(), &spec) == nil && hasJSON(spec.Origin) {
-			a.rep.add(warning, "Relocated policy fields", "MeshTrust uses spec.origin",
+			a.rep.add(blocker, "Relocated policy fields", "MeshTrust uses spec.origin",
 				"`spec.origin` is deprecated; it moves to `status.origin` in 3.0.", qualified(it))
 		}
 	}
@@ -568,8 +568,8 @@ func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
 
 // addCPConfigFindings audits the data-plane-relevant CP settings (injector +
 // experimental flags) of one control plane's config: flags for features removed
-// in 3.0 (blockers) and settings that become the default and should be enabled
-// and validated first (warnings). The Kubernetes-injector knobs are gated on
+// in 3.0 and settings that become the default and should be enabled and
+// validated first — all reported as blockers. The Kubernetes-injector knobs are gated on
 // environment so Universal CPs (which have no injector) are not flagged for
 // missing them. zone is "" for the CP the tool connects to, or the zone name when
 // the config was sourced from a global's ZoneInsight; it qualifies each example
@@ -610,17 +610,17 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 
 	// Settings that become the default in 3.0 — enable and validate before upgrading.
 	if !cfg.Experimental.DeltaXds {
-		a.rep.add(warning, cpConfigCategory, "Delta xDS not enabled",
+		a.rep.add(blocker, cpConfigCategory, "Delta xDS not enabled",
 			"Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
 			ref("experimental.deltaXds=false"))
 	}
 	if !cfg.Experimental.KdsEventBasedWatchdog.Enabled {
-		a.rep.add(warning, cpConfigCategory, "KDS event-based watchdog not enabled",
+		a.rep.add(blocker, cpConfigCategory, "KDS event-based watchdog not enabled",
 			"The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
 			ref("experimental.kdsEventBasedWatchdog.enabled=false"))
 	}
 	if !cfg.Experimental.SidecarContainers {
-		a.rep.add(warning, cpConfigCategory, "Native sidecar containers not enabled",
+		a.rep.add(blocker, cpConfigCategory, "Native sidecar containers not enabled",
 			"Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
 			ref("experimental.sidecarContainers=false"))
 	}
@@ -743,7 +743,7 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 		}
 		kd := subs[len(subs)-1].Version.KumaDp
 		if kd.KumaCpCompatible != nil && !*kd.KumaCpCompatible {
-			a.rep.add(warning, "Dataplane version", "Dataplane is version-incompatible with the control plane",
+			a.rep.add(blocker, "Dataplane version", "Dataplane is version-incompatible with the control plane",
 				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
 				qualified(it)+" (kuma-dp "+kd.Version+")")
 		}
@@ -782,7 +782,7 @@ func (a *auditor) checkDataplaneEnvoyConfig(ctx context.Context) error {
 		}
 		inspected++
 		if bytes.Contains(dump, dnsFilterMarker) {
-			a.rep.add(warning, "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter",
+			a.rep.add(blocker, "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter",
 				"This proxy's Envoy config still uses the built-in `envoy.filters.udp.dns_filter`; 3.0 drops the Envoy DNS filter for the embedded DNS server — upgrade kuma-dp.",
 				qualified(it))
 		}
@@ -814,7 +814,7 @@ func displayName(it resourceItem) string {
 
 func (a *auditor) checkName(it resourceItem, kind string) {
 	if name := displayName(it); !validRFC1035(name) {
-		a.rep.add(warning, "Non-RFC-1035 names", kind+" name is not a valid RFC-1035 DNS label",
+		a.rep.add(blocker, "Non-RFC-1035 names", kind+" name is not a valid RFC-1035 DNS label",
 			"Rename to a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter); non-conforming names are deprecated in 3.0.", qualified(it))
 	}
 }

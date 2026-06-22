@@ -1,7 +1,7 @@
 {
-  "schema": "kuma3-preflight/v1",
+  "schema": "kuma3-preflight/v2",
   "tool": "kuma3-preflight",
-  "status": "inconclusive",
+  "status": "blockers",
   "controlPlane": {
     "product": "Kuma",
     "version": "2.9.0",
@@ -11,8 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 0,
-    "warnings": 1,
+    "blockers": 1,
     "info": 0,
     "coverageGaps": 3,
     "parseErrors": 1,
@@ -20,7 +19,7 @@
   },
   "findings": [
     {
-      "severity": "warning",
+      "severity": "blocker",
       "category": "Unparseable resources",
       "title": "MeshAccessLog spec could not be parsed",
       "detail": "Could not parse this resource; audit it manually before upgrading.",

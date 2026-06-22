@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// sampleReport builds a report exercising every severity, the example cap, a
+// sampleReport builds a report exercising both severities, the example cap, a
 // coverage gap, parse errors and system findings.
 func sampleReport() *report {
 	r := &report{
@@ -21,7 +21,7 @@ func sampleReport() *report {
 	for i := 0; i < 12; i++ {
 		r.add(blocker, "Policy `from` field", "MeshTimeout uses `from`", "Rewrite from.", "default/t")
 	}
-	r.add(warning, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")
+	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")
 	r.add(info, "Zone proxies", "zoneingresses present", "Superseded.", "zi-1")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
@@ -32,11 +32,11 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Status != statusBlockers {
 		t.Fatalf("status = %q, want %q", m.Status, statusBlockers)
 	}
-	if m.Summary.Blockers != 13 { // 1 + 12
-		t.Errorf("blockers = %d, want 13", m.Summary.Blockers)
+	if m.Summary.Blockers != 14 { // 1 + 12 + 1 (MeshService mode)
+		t.Errorf("blockers = %d, want 14", m.Summary.Blockers)
 	}
-	if m.Summary.Warnings != 1 || m.Summary.Info != 1 {
-		t.Errorf("warnings/info = %d/%d, want 1/1", m.Summary.Warnings, m.Summary.Info)
+	if m.Summary.Info != 1 {
+		t.Errorf("info = %d, want 1", m.Summary.Info)
 	}
 	if m.Summary.CoverageGaps != 1 || m.Summary.ParseErrors != 1 {
 		t.Errorf("coverageGaps/parseErrors = %d/%d, want 1/1", m.Summary.CoverageGaps, m.Summary.ParseErrors)
@@ -53,7 +53,7 @@ func TestRenderMarkdownGolden(t *testing.T) {
 		"# Kuma 3.0 Upgrade Pre-flight Report",
 		"- Control plane: Kuma 2.9.0 (mode: zone)",
 		"- Meshes scanned: default, legacy",
-		"- Findings: 13 blockers, 1 warnings, 1 info",
+		"- Findings: 14 blockers, 1 info",
 		"- Unparseable resources: 1",
 		"- Includes 2 CP-managed (policy-role: system) resource(s) — update these before upgrading",
 		"## Blockers — must resolve before upgrading",
