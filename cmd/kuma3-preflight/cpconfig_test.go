@@ -7,7 +7,7 @@ import (
 )
 
 // badK8sConfig is a Kubernetes CP config that trips every data-plane-relevant
-// readiness check (4 blockers + 3 warnings).
+// readiness check (7 blockers).
 func badK8sConfig() cpConfig {
 	var c cpConfig
 	c.Mode = "zone"
@@ -16,9 +16,9 @@ func badK8sConfig() cpConfig {
 	c.Runtime.Kubernetes.Injector.Ebpf.Enabled = true                  // blocker (k8s)
 	c.Runtime.Kubernetes.Injector.UnifiedResourceNamingEnabled = false // blocker (k8s)
 	c.Experimental.InboundTagsDisabled = false                         // blocker
-	c.Experimental.DeltaXds = false                                    // warning
-	c.Experimental.KdsEventBasedWatchdog.Enabled = false               // warning
-	c.Experimental.SidecarContainers = false                           // warning
+	c.Experimental.DeltaXds = false                                    // blocker
+	c.Experimental.KdsEventBasedWatchdog.Enabled = false               // blocker
+	c.Experimental.SidecarContainers = false                           // blocker
 	return c
 }
 
@@ -40,11 +40,8 @@ func TestAddCPConfigFindings(t *testing.T) {
 	t.Run("k8s bad config, unqualified examples", func(t *testing.T) {
 		a := &auditor{rep: &report{}}
 		a.addCPConfigFindings(badK8sConfig(), "")
-		if got, want := a.rep.count(blocker), 4; got != want {
+		if got, want := a.rep.count(blocker), 7; got != want {
 			t.Errorf("blockers = %d, want %d", got, want)
-		}
-		if got, want := a.rep.count(warning), 3; got != want {
-			t.Errorf("warnings = %d, want %d", got, want)
 		}
 		for _, f := range a.rep.findings {
 			for _, ex := range f.examples {
@@ -86,7 +83,9 @@ func TestAddCPConfigFindings(t *testing.T) {
 				t.Errorf("k8s-gated check %q fired on a Universal CP", f.title)
 			}
 		}
-		if got, want := a.rep.count(blocker), 2; got != want { // autoReachable + inboundTags
+		// autoReachable + inboundTags + deltaXds + kdsWatchdog + sidecarContainers
+		// (eBPF + unified-naming are injector-gated, so 5 of 7 still fire).
+		if got, want := a.rep.count(blocker), 5; got != want {
 			t.Errorf("universal blockers = %d, want %d", got, want)
 		}
 	})

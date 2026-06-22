@@ -81,7 +81,7 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 		{
 			name:     "non-RFC-1035 mesh name",
 			mesh:     map[string]any{"name": "My_Mesh", "meshServices": map[string]any{"mode": "Exclusive"}},
-			severity: "warning", category: "Non-RFC-1035 names", title: "Mesh name is not a valid RFC-1035 DNS label",
+			severity: "blocker", category: "Non-RFC-1035 names", title: "Mesh name is not a valid RFC-1035 DNS label",
 		},
 	}
 	for _, tc := range cases {

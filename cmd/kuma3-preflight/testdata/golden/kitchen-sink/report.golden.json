@@ -1,5 +1,5 @@
 {
-  "schema": "kuma3-preflight/v1",
+  "schema": "kuma3-preflight/v2",
   "tool": "kuma3-preflight",
   "status": "blockers",
   "controlPlane": {
@@ -11,14 +11,23 @@
     "default"
   ],
   "summary": {
-    "blockers": 11,
-    "warnings": 7,
+    "blockers": 18,
     "info": 1,
     "coverageGaps": 1,
     "parseErrors": 0,
     "systemFindings": 1
   },
   "findings": [
+    {
+      "severity": "blocker",
+      "category": "Control plane configuration",
+      "title": "Delta xDS not enabled",
+      "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
+      "count": 1,
+      "examples": [
+        "zone zone-1: experimental.deltaXds=false"
+      ]
+    },
     {
       "severity": "blocker",
       "category": "Control plane configuration",
@@ -37,6 +46,26 @@
       "count": 1,
       "examples": [
         "zone zone-1: experimental.inboundTagsDisabled=false"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "category": "Control plane configuration",
+      "title": "KDS event-based watchdog not enabled",
+      "detail": "The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
+      "count": 1,
+      "examples": [
+        "zone zone-1: experimental.kdsEventBasedWatchdog.enabled=false"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "category": "Control plane configuration",
+      "title": "Native sidecar containers not enabled",
+      "detail": "Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
+      "count": 1,
+      "examples": [
+        "zone zone-1: experimental.sidecarContainers=false"
       ]
     },
     {
@@ -71,6 +100,36 @@
     },
     {
       "severity": "blocker",
+      "category": "Dataplane metrics",
+      "title": "Dataplane has a per-proxy metrics override",
+      "detail": "`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.",
+      "count": 1,
+      "examples": [
+        "default/dp-1"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "category": "Dataplane probes",
+      "title": "Dataplane has a probes section",
+      "detail": "Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).",
+      "count": 1,
+      "examples": [
+        "default/dp-1"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "category": "Dataplane version",
+      "title": "Dataplane is version-incompatible with the control plane",
+      "detail": "The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
+      "count": 1,
+      "examples": [
+        "default/legacy-dp.kuma-demo (kuma-dp 2.5.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
       "category": "Mesh object settings",
       "title": "Inline mTLS on Mesh",
       "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust.",
@@ -87,6 +146,16 @@
       "count": 1,
       "examples": [
         "default"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "category": "Non-RFC-1035 names",
+      "title": "MeshService name is not a valid RFC-1035 DNS label",
+      "detail": "Rename to a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter); non-conforming names are deprecated in 3.0.",
+      "count": 1,
+      "examples": [
+        "default/My_Service"
       ]
     },
     {
@@ -118,76 +187,6 @@
       "count": 1,
       "examples": [
         "default/dp-1"
-      ]
-    },
-    {
-      "severity": "warning",
-      "category": "Control plane configuration",
-      "title": "Delta xDS not enabled",
-      "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
-      "count": 1,
-      "examples": [
-        "zone zone-1: experimental.deltaXds=false"
-      ]
-    },
-    {
-      "severity": "warning",
-      "category": "Control plane configuration",
-      "title": "KDS event-based watchdog not enabled",
-      "detail": "The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
-      "count": 1,
-      "examples": [
-        "zone zone-1: experimental.kdsEventBasedWatchdog.enabled=false"
-      ]
-    },
-    {
-      "severity": "warning",
-      "category": "Control plane configuration",
-      "title": "Native sidecar containers not enabled",
-      "detail": "Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
-      "count": 1,
-      "examples": [
-        "zone zone-1: experimental.sidecarContainers=false"
-      ]
-    },
-    {
-      "severity": "warning",
-      "category": "Dataplane metrics",
-      "title": "Dataplane has a per-proxy metrics override",
-      "detail": "`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.",
-      "count": 1,
-      "examples": [
-        "default/dp-1"
-      ]
-    },
-    {
-      "severity": "warning",
-      "category": "Dataplane probes",
-      "title": "Dataplane has a probes section",
-      "detail": "Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).",
-      "count": 1,
-      "examples": [
-        "default/dp-1"
-      ]
-    },
-    {
-      "severity": "warning",
-      "category": "Dataplane version",
-      "title": "Dataplane is version-incompatible with the control plane",
-      "detail": "The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
-      "count": 1,
-      "examples": [
-        "default/legacy-dp.kuma-demo (kuma-dp 2.5.0)"
-      ]
-    },
-    {
-      "severity": "warning",
-      "category": "Non-RFC-1035 names",
-      "title": "MeshService name is not a valid RFC-1035 DNS label",
-      "detail": "Rename to a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter); non-conforming names are deprecated in 3.0.",
-      "count": 1,
-      "examples": [
-        "default/My_Service"
       ]
     },
     {

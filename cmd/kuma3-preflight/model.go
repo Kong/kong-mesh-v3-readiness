@@ -10,7 +10,7 @@ import (
 // Schema/tool identifiers stamped into every JSON report so a consumer (or the
 // --from-json renderer) can recognize and version the payload.
 const (
-	reportSchema = "kuma3-preflight/v1"
+	reportSchema = "kuma3-preflight/v2"
 	toolName     = "kuma3-preflight"
 )
 
@@ -48,7 +48,6 @@ type controlPlane struct {
 
 type summary struct {
 	Blockers       int `json:"blockers"`
-	Warnings       int `json:"warnings"`
 	Info           int `json:"info"`
 	CoverageGaps   int `json:"coverageGaps"`
 	ParseErrors    int `json:"parseErrors"`
@@ -73,8 +72,6 @@ func (s severity) String() string {
 	switch s {
 	case blocker:
 		return "blocker"
-	case warning:
-		return "warning"
 	case info:
 		return "info"
 	default:
@@ -112,7 +109,6 @@ func (r *report) toModel(generatedAt string) reportModel {
 		Meshes:       append([]string{}, r.meshes...),
 		Summary: summary{
 			Blockers:       r.count(blocker),
-			Warnings:       r.count(warning),
 			Info:           r.count(info),
 			CoverageGaps:   len(r.coverage),
 			ParseErrors:    r.parseErrors,
@@ -202,7 +198,7 @@ func renderMarkdown(m reportModel) string {
 		meshes = strings.Join(m.Meshes, ", ")
 	}
 	fmt.Fprintf(&b, "- Meshes scanned: %s\n", meshes)
-	fmt.Fprintf(&b, "- Findings: %d blockers, %d warnings, %d info\n", m.Summary.Blockers, m.Summary.Warnings, m.Summary.Info)
+	fmt.Fprintf(&b, "- Findings: %d blockers, %d info\n", m.Summary.Blockers, m.Summary.Info)
 	if m.Summary.CoverageGaps > 0 {
 		fmt.Fprintf(&b, "- Coverage gaps: %d collection(s) could not be audited\n", m.Summary.CoverageGaps)
 	}
@@ -220,12 +216,11 @@ func renderMarkdown(m reportModel) string {
 	case statusInconclusive:
 		fmt.Fprintln(&b, "⚠️ No blockers found, but the audit was inconclusive (coverage gaps and/or unparseable resources) — this is NOT a clean bill of health.")
 	default:
-		fmt.Fprintln(&b, "✅ No blocking resources or Mesh settings found. Review the warnings and manual checks below before upgrading.")
+		fmt.Fprintln(&b, "✅ No blocking resources or Mesh settings found. Review the informational notes and manual checks below before upgrading.")
 	}
 	fmt.Fprintln(&b)
 
 	renderMarkdownSection(&b, m, "Blockers — must resolve before upgrading", "blocker")
-	renderMarkdownSection(&b, m, "Warnings — should resolve", "warning")
 	renderMarkdownCoverage(&b, m)
 	renderMarkdownSection(&b, m, "Informational", "info")
 

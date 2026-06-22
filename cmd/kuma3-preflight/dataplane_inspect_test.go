@@ -11,7 +11,7 @@ import (
 )
 
 // TestDataplaneVersionIncompatibleReported checks that a proxy the CP reports as
-// version-incompatible (kumaCpCompatible=false) surfaces as a warning, while a
+// version-incompatible (kumaCpCompatible=false) surfaces as a blocker, while a
 // compatible one does not.
 func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 	insights := `{"total":2,"items":[
@@ -21,9 +21,9 @@ func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.9.0","kumaCpCompatible":true}}}]}}
 	],"next":null}`
 	m := auditResponses(t, map[string]string{"/dataplanes+insights": insights})
-	f, ok := findFinding(m, "warning", "Dataplane version", "Dataplane is version-incompatible with the control plane")
+	f, ok := findFinding(m, "blocker", "Dataplane version", "Dataplane is version-incompatible with the control plane")
 	if !ok {
-		t.Fatalf("expected a version-incompatibility warning, got %+v", m.Findings)
+		t.Fatalf("expected a version-incompatibility blocker, got %+v", m.Findings)
 	}
 	if f.Count != 1 {
 		t.Errorf("count = %d, want 1 (only the incompatible proxy)", f.Count)
@@ -34,14 +34,14 @@ func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 }
 
 // TestDataplaneMetricsOverrideReported checks that a per-proxy metrics backend on
-// a Dataplane surfaces as a warning (deprecated → MeshMetric).
+// a Dataplane surfaces as a blocker (deprecated → MeshMetric).
 func TestDataplaneMetricsOverrideReported(t *testing.T) {
 	m := auditDataplane(t, map[string]any{
 		"networking": map[string]any{"inbound": []any{map[string]any{"port": 8080}}},
 		"metrics":    map[string]any{"type": "prometheus", "conf": map[string]any{"port": 5670}},
 	})
-	if _, ok := findFinding(m, "warning", "Dataplane metrics", "Dataplane has a per-proxy metrics override"); !ok {
-		t.Errorf("expected a per-proxy metrics warning, got %+v", m.Findings)
+	if _, ok := findFinding(m, "blocker", "Dataplane metrics", "Dataplane has a per-proxy metrics override"); !ok {
+		t.Errorf("expected a per-proxy metrics blocker, got %+v", m.Findings)
 	}
 }
 
@@ -75,7 +75,7 @@ func TestInspectDataplanesDetectsEnvoyDNSFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("audit (off): %v", err)
 	}
-	if _, ok := findFinding(off.toModel(""), "warning", "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter"); ok {
+	if _, ok := findFinding(off.toModel(""), "blocker", "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter"); ok {
 		t.Error("DNS filter must not be inspected when --inspect-dataplanes is 0")
 	}
 
@@ -84,7 +84,7 @@ func TestInspectDataplanesDetectsEnvoyDNSFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("audit (on): %v", err)
 	}
-	if _, ok := findFinding(on.toModel(""), "warning", "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter"); !ok {
-		t.Errorf("expected an Envoy DNS filter warning, got %+v", on.toModel("").Findings)
+	if _, ok := findFinding(on.toModel(""), "blocker", "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter"); !ok {
+		t.Errorf("expected an Envoy DNS filter blocker, got %+v", on.toModel("").Findings)
 	}
 }

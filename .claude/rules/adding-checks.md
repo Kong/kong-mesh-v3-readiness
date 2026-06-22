@@ -12,7 +12,7 @@ Pick the site by check shape:
 - **Deprecated/relocated field in a policy spec:** add/extend a `case` in `checkPolicyFields`
   (`audit.go:273`, switch on `it.Type`). Unmarshal only the fields you inspect into a local
   anonymous struct; on unmarshal error `return` (already counted as a parse error upstream).
-  Field deprecations are **warnings**, not blockers.
+  Field deprecations are **blockers** — the tool has only two severities: `blocker` and `info`.
 - **Mesh object setting:** extend `checkMeshSettings` (`audit.go:157`, decode into `meshSpec`).
 - **Dataplane / zone-proxy / resource-name check:** extend the matching `check*` method.
 
@@ -33,8 +33,11 @@ New manual (non-CP-detectable) items go in the `manualChecks` slice in `audit.go
 
 ## Severity — choose deliberately
 
+There are only two severities: **everything actionable is a `blocker`** (there is no
+`warning` tier — deprecations, relocations and should-fix items are blockers too), and `info`
+is reserved for non-actionable counts.
+
 | Severity  | Meaning | Use for |
 |-----------|---------|---------|
-| `blocker` | Hard-removed/required in 3.0; upgrade breaks until fixed (exit 1) | removed resources, inline mTLS/metrics/tracing/logging on Mesh, `routing.*`, `reachableServices`, gateway-in-Dataplane, policy `from`, non-Mesh/Dataplane top-level `targetRef.kind`, **`meshServices.mode != Exclusive`**, CP-config **unified naming off** / **inbound tags still enabled** / global-on-k8s / autoReachableServices / eBPF |
-| `warning` | Deprecated/relocated/should-fix, not a hard removal | `proxyTypes`, non-service `to` kinds, OTel `endpoint`, relocated fields, non-RFC-1035 names, Universal Dataplane `probes`, per-proxy `spec.metrics`, version-incompatible dataplanes, CP-config deltaXds/KDS-watchdog/sidecar-containers off, unparseable specs |
+| `blocker` | Anything the operator must act on before 3.0; gates CI (exit 1) | removed resources, inline mTLS/metrics/tracing/logging on Mesh, `routing.*`, `reachableServices`, gateway-in-Dataplane, policy `from`, non-Mesh/Dataplane top-level `targetRef.kind`, **`meshServices.mode != Exclusive`**, CP-config **unified naming off** / **inbound tags still enabled** / global-on-k8s / autoReachableServices / eBPF; plus the former warnings: `proxyTypes`, non-service `to` kinds, OTel `endpoint`, relocated fields, non-RFC-1035 names, Universal Dataplane `probes`, per-proxy `spec.metrics`, version-incompatible dataplanes, CP-config deltaXds/KDS-watchdog/sidecar-containers off, unparseable specs |
 | `info`    | Informational, no action mandated | zone proxy counts, sampled-dataplane inspection coverage |

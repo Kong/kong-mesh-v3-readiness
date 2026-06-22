@@ -1,5 +1,5 @@
 {
-  "schema": "kuma3-preflight/v1",
+  "schema": "kuma3-preflight/v2",
   "tool": "kuma3-preflight",
   "status": "clean",
   "controlPlane": {
@@ -12,7 +12,6 @@
   ],
   "summary": {
     "blockers": 0,
-    "warnings": 0,
     "info": 0,
     "coverageGaps": 0,
     "parseErrors": 0,

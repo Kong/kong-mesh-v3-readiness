@@ -62,7 +62,7 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   VirtualOutbound, ExternalService, MeshGateway, MeshGatewayRoute.
 - **Mesh object settings** — inline mTLS, outbound passthrough, `routing.zoneEgress`,
   `defaultForbidMeshExternalServiceAccess`, locality-aware LB, inline metrics/tracing/logging,
-  membership `constraints`; warns when `meshServices.mode` is not `Exclusive`.
+  membership `constraints`; flags when `meshServices.mode` is not `Exclusive`.
 - **New policies** — `from` usage, top-level `targetRef` kinds other than Mesh/Dataplane,
   `to` targets other than `Mesh*Service`, `proxyTypes`.
 - **Per-policy field deprecations** — OpenTelemetry `endpoint` (→ `backendRef`) on
@@ -74,8 +74,8 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
 - **Dataplane versions** — proxies the CP reports as version-incompatible
   (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
 - **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
-  eBPF transparent proxy (blockers); unified resource naming, inbound-tags-disabled, delta
-  xDS, KDS event-based watchdog, native sidecar containers not yet enabled (warnings). The
+  eBPF transparent proxy, unified resource naming, inbound-tags-disabled, delta
+  xDS, KDS event-based watchdog, native sidecar containers not yet enabled (all blockers). The
   report's control-plane line shows the CP mode (read from `/config`). Against a **global**
   CP the data-plane-relevant checks run **per zone**, sourced from each zone's config in
   `GET /zones+insights` (examples read `zone <name>: …`); the global keeps only the
