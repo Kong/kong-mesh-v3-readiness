@@ -5,7 +5,7 @@
   "controlPlane": {
     "product": "Kuma",
     "version": "2.9.0",
-    "mode": "zone"
+    "mode": "global"
   },
   "meshes": [
     "default"
@@ -14,7 +14,7 @@
     "blockers": 11,
     "warnings": 7,
     "info": 1,
-    "coverageGaps": 0,
+    "coverageGaps": 1,
     "parseErrors": 0,
     "systemFindings": 1
   },
@@ -36,7 +36,7 @@
       "detail": "3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
       "count": 1,
       "examples": [
-        "experimental.inboundTagsDisabled=false"
+        "zone zone-1: experimental.inboundTagsDisabled=false"
       ]
     },
     {
@@ -46,7 +46,7 @@
       "detail": "3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
       "count": 1,
       "examples": [
-        "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        "zone zone-1: runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
       ]
     },
     {
@@ -56,7 +56,7 @@
       "detail": "`autoReachableServices` is removed entirely in 3.0; stop relying on it before upgrading.",
       "count": 1,
       "examples": [
-        "experimental.autoReachableServices=true"
+        "zone zone-1: experimental.autoReachableServices=true"
       ]
     },
     {
@@ -66,7 +66,7 @@
       "detail": "The eBPF transparent proxy is removed in 3.0; switch to the iptables transparent proxy.",
       "count": 1,
       "examples": [
-        "runtime.kubernetes.injector.ebpf.enabled=true"
+        "zone zone-1: runtime.kubernetes.injector.ebpf.enabled=true"
       ]
     },
     {
@@ -127,7 +127,7 @@
       "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
       "count": 1,
       "examples": [
-        "experimental.deltaXds=false"
+        "zone zone-1: experimental.deltaXds=false"
       ]
     },
     {
@@ -137,7 +137,7 @@
       "detail": "The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
       "count": 1,
       "examples": [
-        "experimental.kdsEventBasedWatchdog.enabled=false"
+        "zone zone-1: experimental.kdsEventBasedWatchdog.enabled=false"
       ]
     },
     {
@@ -147,7 +147,7 @@
       "detail": "Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
       "count": 1,
       "examples": [
-        "experimental.sidecarContainers=false"
+        "zone zone-1: experimental.sidecarContainers=false"
       ]
     },
     {
@@ -201,7 +201,12 @@
       ]
     }
   ],
-  "coverageGaps": [],
+  "coverageGaps": [
+    {
+      "path": "/zones+insights (zone-2)",
+      "reason": "zone reported no control-plane config over KDS — config NOT audited (upgrade the zone CP or audit the zone directly)"
+    }
+  ],
   "manualChecks": [
     "Gateway API / GAMMA usage migrated off built-in support",
     "Observability: KRI-based config only; `install observability` command removed",

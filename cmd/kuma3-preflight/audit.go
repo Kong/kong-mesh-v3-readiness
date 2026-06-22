@@ -509,38 +509,90 @@ type cpConfig struct {
 const cpConfigCategory = "Control plane configuration"
 
 // checkControlPlaneConfig audits the live CP settings exposed by GET /config for
-// 3.0 readiness: flags for features removed in 3.0 (blockers) and settings that
-// become the default and should be enabled and validated first (warnings). The
-// Kubernetes-injector knobs are gated on environment so Universal CPs (which
-// have no injector) are not flagged for missing them. A CP that does not serve
-// /config (404, older builds) is a coverage gap, never a clean pass.
+// 3.0 readiness. The data-plane-relevant settings (injector + experimental flags)
+// only govern the CP that actually runs proxies, so they are audited on the CP we
+// connect to — UNLESS that CP is global. A global CP injects nothing; its own
+// injector/experimental settings are inert, while every zone already reports its
+// config to the global over KDS (ZoneInsight). So for a global we audit only its
+// global-specific risk here and fan out to each zone's config (one global audit
+// then covers the whole multizone estate). A CP that does not serve /config (404,
+// older builds) is a coverage gap, never a clean pass.
 func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 	var cfg cpConfig
 	status, err := a.c.getJSON(ctx, "/config", &cfg)
-	if err != nil {
-		return fmt.Errorf("reading /config: %w", err)
-	}
-	if status == http.StatusNotFound {
+	switch {
+	case err != nil && (status == http.StatusUnauthorized || status == http.StatusForbidden):
+		// Kong Mesh gates /config behind RBAC. Missing/insufficient auth must not
+		// abort the whole audit — every ungated resource check already ran — so
+		// record a coverage gap (inconclusive) instead of a misleading hard failure.
+		a.rep.addGap("/config", "requires authentication — pass --token to audit control-plane settings (NOT audited)")
+		return nil
+	case err != nil:
+		// Any other read failure (timeout, decode, non-2xx) is a /config-specific
+		// coverage gap, not a dead CP: earlier checks already reached the CP.
+		a.rep.addGap("/config", "could not read /config — control-plane settings NOT audited")
+		return nil
+	case status == http.StatusNotFound:
 		a.rep.addGap("/config", "endpoint returned 404 — control-plane settings NOT audited")
 		return nil
 	}
-	onK8s := strings.EqualFold(cfg.Environment, "kubernetes")
+	// GET / does not expose the CP mode on most builds; /config is authoritative,
+	// so stamp the report with it — otherwise a report can't say which CP (or
+	// which mode) it audited.
+	if cfg.Mode != "" {
+		a.rep.cp.Mode = cfg.Mode
+	}
 
-	// Hard removals — the upgrade breaks while these are in use.
-	if onK8s && strings.EqualFold(cfg.Mode, "global") {
+	a.addGlobalOnK8sFinding(cfg) // a no-op unless this CP is itself global
+
+	if strings.EqualFold(cfg.Mode, "global") {
+		// The global's own injector/experimental flags govern no proxies; audit
+		// each zone's config instead, which the global aggregates in ZoneInsight.
+		return a.checkZoneControlPlaneConfigs(ctx)
+	}
+	// Standalone or a directly-connected zone CP: audit the config we reached.
+	a.addCPConfigFindings(cfg, "")
+	return nil
+}
+
+// addGlobalOnK8sFinding flags a Global CP running on Kubernetes, a deployment
+// mode dropped in 3.0. It fires only for mode=global on k8s, so it is safe to
+// call on any CP's config.
+func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
+	if strings.EqualFold(cfg.Environment, "kubernetes") && strings.EqualFold(cfg.Mode, "global") {
 		a.rep.add(blocker, cpConfigCategory, "Global control plane on Kubernetes",
 			"Global CP on Kubernetes is dropped as a deployment mode in 3.0; migrate the global CP to Universal.",
 			"mode=global")
 	}
+}
+
+// addCPConfigFindings audits the data-plane-relevant CP settings (injector +
+// experimental flags) of one control plane's config: flags for features removed
+// in 3.0 (blockers) and settings that become the default and should be enabled
+// and validated first (warnings). The Kubernetes-injector knobs are gated on
+// environment so Universal CPs (which have no injector) are not flagged for
+// missing them. zone is "" for the CP the tool connects to, or the zone name when
+// the config was sourced from a global's ZoneInsight; it qualifies each example
+// reference so per-zone findings merge under one title while still naming origin.
+func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
+	onK8s := strings.EqualFold(cfg.Environment, "kubernetes")
+	ref := func(s string) string {
+		if zone != "" {
+			return "zone " + zone + ": " + s
+		}
+		return s
+	}
+
+	// Hard removals — the upgrade breaks while these are in use.
 	if cfg.Experimental.AutoReachableServices {
 		a.rep.add(blocker, cpConfigCategory, "autoReachableServices enabled",
 			"`autoReachableServices` is removed entirely in 3.0; stop relying on it before upgrading.",
-			"experimental.autoReachableServices=true")
+			ref("experimental.autoReachableServices=true"))
 	}
 	if onK8s && cfg.Runtime.Kubernetes.Injector.Ebpf.Enabled {
 		a.rep.add(blocker, cpConfigCategory, "eBPF transparent proxy enabled",
 			"The eBPF transparent proxy is removed in 3.0; switch to the iptables transparent proxy.",
-			"runtime.kubernetes.injector.ebpf.enabled=true")
+			ref("runtime.kubernetes.injector.ebpf.enabled=true"))
 	}
 
 	// Required 3.0 baseline — the upgrade assumes these are already on (they pair
@@ -548,31 +600,105 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 	if onK8s && !cfg.Runtime.Kubernetes.Injector.UnifiedResourceNamingEnabled {
 		a.rep.add(blocker, cpConfigCategory, "Unified resource naming not enabled",
 			"3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
-			"runtime.kubernetes.injector.unifiedResourceNamingEnabled=false")
+			ref("runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"))
 	}
 	if !cfg.Experimental.InboundTagsDisabled {
 		a.rep.add(blocker, cpConfigCategory, "Inbound tags still enabled",
 			"3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
-			"experimental.inboundTagsDisabled=false")
+			ref("experimental.inboundTagsDisabled=false"))
 	}
 
 	// Settings that become the default in 3.0 — enable and validate before upgrading.
 	if !cfg.Experimental.DeltaXds {
 		a.rep.add(warning, cpConfigCategory, "Delta xDS not enabled",
 			"Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
-			"experimental.deltaXds=false")
+			ref("experimental.deltaXds=false"))
 	}
 	if !cfg.Experimental.KdsEventBasedWatchdog.Enabled {
 		a.rep.add(warning, cpConfigCategory, "KDS event-based watchdog not enabled",
 			"The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
-			"experimental.kdsEventBasedWatchdog.enabled=false")
+			ref("experimental.kdsEventBasedWatchdog.enabled=false"))
 	}
 	if !cfg.Experimental.SidecarContainers {
 		a.rep.add(warning, cpConfigCategory, "Native sidecar containers not enabled",
 			"Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
-			"experimental.sidecarContainers=false")
+			ref("experimental.sidecarContainers=false"))
+	}
+}
+
+// zoneOverview is the slice of GET /zones+insights this audit reads: each zone's
+// KDS subscriptions, which carry the zone CP's own config (the zone sends it on
+// every (re)connect).
+type zoneOverview struct {
+	ZoneInsight struct {
+		Subscriptions []zoneSubscription `json:"subscriptions"`
+	} `json:"zoneInsight"`
+}
+
+// zoneSubscription is one zone->global KDS subscription. Config is the zone CP's
+// config as a JSON string — config.ConfigForDisplay on the zone, i.e. the same
+// sanitized payload GET /config serves (secrets already redacted), so it is safe
+// to read here and carries the exact fields addCPConfigFindings inspects.
+type zoneSubscription struct {
+	Config string `json:"config"`
+}
+
+// checkZoneControlPlaneConfigs audits the data-plane-relevant CP settings of
+// every zone of a global CP, sourcing each zone's config from ZoneInsight so a
+// single audit of the global covers all zones. A zone that has reported no
+// config, or whose collection is unreachable, is a coverage gap — never a silent
+// pass (an unobserved zone is not a clean zone).
+func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
+	items, found, err := a.c.list(ctx, "/zones+insights")
+	if err != nil {
+		// Same rationale as /config: an unreadable zones overview (e.g. auth) is a
+		// coverage gap, not a reason to abort the whole global audit.
+		a.rep.addGap("/zones+insights", "could not read /zones+insights — per-zone control-plane settings NOT audited (pass --token if the CP requires auth)")
+		return nil
+	}
+	if !found {
+		a.rep.addGap("/zones+insights", "endpoint returned 404 — per-zone control-plane settings NOT audited")
+		return nil
+	}
+	if len(items) == 0 {
+		a.rep.add(info, cpConfigCategory, "No zones connected to the global control plane",
+			"This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
+			"zones=0")
+		return nil
+	}
+	for _, it := range items {
+		var zo zoneOverview
+		if err := json.Unmarshal(it.specBytes(), &zo); err != nil {
+			a.rep.addGap("/zones+insights ("+it.Name+")", "zone insight could not be parsed — config NOT audited")
+			continue
+		}
+		cfg, ok := latestZoneConfig(zo)
+		if !ok {
+			a.rep.addGap("/zones+insights ("+it.Name+")",
+				"zone reported no control-plane config over KDS — config NOT audited (upgrade the zone CP or audit the zone directly)")
+			continue
+		}
+		a.addCPConfigFindings(cfg, it.Name)
 	}
 	return nil
+}
+
+// latestZoneConfig returns the most recent subscription's parsed config (zones
+// re-send it on each (re)connect, so the last one with a config is the freshest).
+// It returns false when no subscription carried a config or it cannot be parsed.
+func latestZoneConfig(zo zoneOverview) (cpConfig, bool) {
+	subs := zo.ZoneInsight.Subscriptions
+	for i := len(subs) - 1; i >= 0; i-- {
+		if subs[i].Config == "" {
+			continue
+		}
+		var cfg cpConfig
+		if err := json.Unmarshal([]byte(subs[i].Config), &cfg); err != nil {
+			return cpConfig{}, false
+		}
+		return cfg, true
+	}
+	return cpConfig{}, false
 }
 
 // dpInsight captures just the per-subscription version data exposed by

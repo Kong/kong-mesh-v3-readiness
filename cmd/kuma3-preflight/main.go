@@ -22,7 +22,7 @@ func main() {
 
 func run() int {
 	addr := flag.String("address", "http://localhost:5681", "Control plane REST API base URL")
-	token := flag.String("token", "", "Bearer token for the CP API (optional)")
+	token := flag.String("token", "", "Bearer token for the CP API (needed to read /config on access-controlled Kong Mesh CPs; otherwise /config is a coverage gap)")
 	mesh := flag.String("mesh", "", "Limit the audit to a single mesh (default: all meshes)")
 	out := flag.String("output", "", "Write the report to this file (default: stdout)")
 	format := flag.String("format", "markdown", "Output format: markdown, json, or html")

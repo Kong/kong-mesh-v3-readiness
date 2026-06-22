@@ -1,0 +1,28 @@
+{
+  "total": 2,
+  "items": [
+    {
+      "type": "ZoneOverview",
+      "name": "zone-1",
+      "zoneInsight": {
+        "subscriptions": [
+          {
+            "config": "{\"mode\": \"zone\", \"environment\": \"kubernetes\", \"experimental\": {\"autoReachableServices\": true, \"deltaXds\": false, \"sidecarContainers\": false, \"inboundTagsDisabled\": false, \"kdsEventBasedWatchdog\": {\"enabled\": false}}, \"runtime\": {\"kubernetes\": {\"injector\": {\"unifiedResourceNamingEnabled\": false, \"ebpf\": {\"enabled\": true}}}}}"
+          }
+        ]
+      }
+    },
+    {
+      "type": "ZoneOverview",
+      "name": "zone-2",
+      "zoneInsight": {
+        "subscriptions": [
+          {
+            "config": ""
+          }
+        ]
+      }
+    }
+  ],
+  "next": null
+}

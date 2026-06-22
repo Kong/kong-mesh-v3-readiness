@@ -23,7 +23,7 @@ go run ./cmd/kuma3-preflight --output report.md
 | Flag | Default | Purpose |
 |---|---|---|
 | `--address` | `http://localhost:5681` | CP REST API base URL |
-| `--token` | _(none)_ | Bearer token, if the API requires auth |
+| `--token` | _(none)_ | Bearer token. Optional, but Kong Mesh gates `GET /config` behind RBAC — without it that endpoint becomes a coverage gap (run is inconclusive, not failed) |
 | `--mesh` | _(all)_ | Limit the audit to one mesh |
 | `--output` | _(stdout)_ | Write the report to a file |
 | `--format` | `markdown` | Output format: `markdown`, `json`, or `html` |
@@ -75,7 +75,12 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
 - **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
   eBPF transparent proxy (blockers); unified resource naming, inbound-tags-disabled, delta
-  xDS, KDS event-based watchdog, native sidecar containers not yet enabled (warnings).
+  xDS, KDS event-based watchdog, native sidecar containers not yet enabled (warnings). The
+  report's control-plane line shows the CP mode (read from `/config`). Against a **global**
+  CP the data-plane-relevant checks run **per zone**, sourced from each zone's config in
+  `GET /zones+insights` (examples read `zone <name>: …`); the global keeps only the
+  global-on-Kubernetes blocker. A zone that reported no config, or an unreadable/auth-gated
+  `/config`/`/zones+insights`, is a coverage gap — never a silent pass.
 - **Resource names** — Mesh/MeshService/MeshExternalService/MeshMultiZoneService names that
   are not valid RFC-1035 DNS labels.
 - **Zone proxies** — informational count of ZoneIngress/ZoneEgress.

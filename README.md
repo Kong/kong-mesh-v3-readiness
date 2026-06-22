@@ -33,4 +33,13 @@ echo "exit=$?"   # 0 clean · 1 blockers · 2 operational error · 3 inconclusiv
 ./bin/kuma3-preflight --from-json report.json --format html --output report.html
 ```
 
+Point it at **either a zone or the global** CP. Against a global it covers the whole
+multizone estate from one run: resources/policies are global already (KDS sync), and each
+zone's control-plane settings are read from `GET /zones+insights` (the zone ships its config
+over KDS), so per-zone config findings read `zone <name>: …`.
+
+`--token` is optional, but Kong Mesh gates `GET /config` behind RBAC — without a valid token
+that endpoint is skipped as a coverage gap (the run is **inconclusive**, exit 3, not a hard
+failure), so pass `--token` to audit control-plane settings.
+
 The tool is **stdlib-only** (no external dependencies).
