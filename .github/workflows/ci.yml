@@ -25,7 +25,8 @@ jobs:
 
       - name: gofmt
         run: |
-          unformatted=$(gofmt -l cmd/)
+          # gofmt recurses into a directory; check the whole repo, not just cmd/.
+          unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "::error::gofmt found unformatted files:"
             echo "$unformatted"
