@@ -1,0 +1,35 @@
+# GoReleaser builds and publishes the kuma3-preflight binary to GitHub Releases on
+# every `v*` tag. Consumers (kuma / kong-mesh nightly CI) download the linux asset
+# from the release instead of building from source — see docs/e2e-v3-readiness-ci.md.
+#
+# Local dry run: `goreleaser release --snapshot --clean`
+version: 2
+
+project_name: kuma3-preflight
+
+builds:
+  - id: kuma3-preflight
+    main: ./cmd/kuma3-preflight
+    binary: kuma3-preflight
+    env:
+      - CGO_ENABLED=0 # stdlib-only; static binary
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+# Archive name template is the contract the CI download step relies on:
+#   kuma3-preflight_<os>_<arch>.tar.gz  (each contains the `kuma3-preflight` binary)
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  prerelease: auto
