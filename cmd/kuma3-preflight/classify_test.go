@@ -257,6 +257,26 @@ func TestRenderClassificationFormats(t *testing.T) {
 	}
 }
 
+func TestLoadModelValidatesSchema(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "good.json", `{"schema":"`+reportSchema+`","status":"clean","meshes":[],"findings":[],"coverageGaps":[],"manualChecks":[]}`)
+	if _, err := loadModel(filepath.Join(dir, "good.json")); err != nil {
+		t.Errorf("a valid report schema must be accepted, got: %v", err)
+	}
+	// A non-empty but foreign schema (unrelated JSON, or a classification report fed
+	// where a report is expected, or a missing schema) must be rejected.
+	for name, payload := range map[string]string{
+		"foreign":        `{"schema":"unrelated/v1"}`,
+		"classification": `{"schema":"` + classificationSchema + `"}`,
+		"no-schema":      `{"foo":1}`,
+	} {
+		writeFixture(t, dir, name+".json", payload)
+		if _, err := loadModel(filepath.Join(dir, name+".json")); err == nil {
+			t.Errorf("loadModel accepted a %s payload; want rejection", name)
+		}
+	}
+}
+
 func TestRunClassifyRequiresInput(t *testing.T) {
 	if code := runClassify("", "", "markdown", "", ""); code != 2 {
 		t.Errorf("runClassify with no inputs: want exit 2, got %d", code)

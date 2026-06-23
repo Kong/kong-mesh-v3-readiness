@@ -181,8 +181,11 @@ func loadModel(path string) (reportModel, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return reportModel{}, fmt.Errorf("parsing JSON report: %w", err)
 	}
-	if m.Schema == "" {
-		return reportModel{}, fmt.Errorf("does not look like a %s JSON report (missing schema)", toolName)
+	// Validate the schema value, not merely its presence: a non-empty but foreign
+	// `schema` (e.g. an unrelated JSON document, or a classification report fed where a
+	// report is expected) must be rejected, not silently mis-decoded.
+	if !strings.HasPrefix(m.Schema, toolName+"/") {
+		return reportModel{}, fmt.Errorf("does not look like a %s JSON report (schema %q)", toolName, m.Schema)
 	}
 	return m, nil
 }
