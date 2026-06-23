@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
@@ -50,7 +51,8 @@ func (m deprecatedMarker) match(data []byte) []int {
 	var lines []int
 	for _, p := range m.patterns {
 		for _, loc := range p.FindAllIndex(data, -1) {
-			lines = append(lines, 1+strings.Count(string(data[:loc[0]]), "\n"))
+			// bytes.Count avoids allocating a string per match on large files.
+			lines = append(lines, 1+bytes.Count(data[:loc[0]], []byte{'\n'}))
 		}
 	}
 	sort.Ints(lines)
@@ -128,6 +130,9 @@ func deprecatedMarkers() []deprecatedMarker {
 type classIndex struct {
 	markers  []deprecatedMarker
 	features map[string]*classFeature
+	// scanned is every feature dir seen by scanSource, even those with zero marker
+	// hits, so dynamic findings can fold a mesh onto its feature dir regardless.
+	scanned map[string]bool
 }
 
 type classFeature struct {
@@ -144,7 +149,7 @@ type classUsage struct {
 }
 
 func newClassIndex() *classIndex {
-	return &classIndex{markers: deprecatedMarkers(), features: map[string]*classFeature{}}
+	return &classIndex{markers: deprecatedMarkers(), features: map[string]*classFeature{}, scanned: map[string]bool{}}
 }
 
 func (ci *classIndex) addUsage(feature, kind, category, replacement string, removable bool, source, example string) {
@@ -168,6 +173,17 @@ func (ci *classIndex) addUsage(feature, kind, category, replacement string, remo
 func (ci *classIndex) featureNames() []string {
 	names := make([]string, 0, len(ci.features))
 	for n := range ci.features {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// scannedFeatures returns every feature dir scanSource walked, including dirs with
+// no deprecated usage — the set a dynamic mesh name is mapped onto.
+func (ci *classIndex) scannedFeatures() []string {
+	names := make([]string, 0, len(ci.scanned))
+	for n := range ci.scanned {
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -199,6 +215,7 @@ func (ci *classIndex) scanSource(root string) error {
 			rel = path
 		}
 		feature := featureName(rel)
+		ci.scanned[feature] = true
 		for _, mk := range ci.markers {
 			lines := mk.match(data)
 			for _, ln := range lines {
@@ -241,12 +258,15 @@ func (ci *classIndex) ingestReports(dir string) error {
 	}
 	sort.Strings(files)
 
-	known := ci.featureNames() // static features, to map a mesh name onto its feature
+	known := ci.scannedFeatures() // every scanned feature dir, to map a mesh name onto its feature
 	seen := map[string]bool{}
 	for _, name := range files {
 		m, err := loadModel(filepath.Join(dir, name))
 		if err != nil {
-			return fmt.Errorf("reading %s: %w", name, err)
+			// A non-report .json in the snapshots dir (e.g. a previously written
+			// classification report) is skipped, not fatal.
+			fmt.Fprintf(os.Stderr, "skipping %s: %v\n", name, err)
+			continue
 		}
 		for _, f := range m.Findings {
 			if f.Severity != blocker.String() {
@@ -285,12 +305,45 @@ func cpLevelCategory(c string) bool {
 	return false
 }
 
+// markersByKind indexes the static catalog once so dynamic findings can adopt a
+// marker's category/replacement when they map to the same kind.
+var markersByKind = func() map[string]deprecatedMarker {
+	m := make(map[string]deprecatedMarker)
+	for _, mk := range deprecatedMarkers() {
+		m[mk.kind] = mk
+	}
+	return m
+}()
+
+// fieldFindingToKind maps a live-audit finding TITLE for an inline Mesh/Dataplane
+// field to the static marker kind, so the same deprecation merges into one row
+// instead of splitting (e.g. audit "Inline mTLS on Mesh" == static "Mesh.mtls", which
+// otherwise renders as two kinds and loses the replacement string). Removed resources
+// are handled separately (their title carries the kind); the targetRef/`from` policy
+// findings have no static marker and stay keyed by title.
+var fieldFindingToKind = map[string]string{
+	"Inline mTLS on Mesh":              "Mesh.mtls",
+	"Inline metrics on Mesh":           "Mesh.metrics",
+	"Inline tracing on Mesh":           "Mesh.tracing",
+	"Inline logging on Mesh":           "Mesh.logging",
+	"routing.zoneEgress on Mesh":       "Mesh.routing.zoneEgress",
+	"Passthrough on Mesh":              "Mesh.passthrough",
+	"Mesh membership constraints":      "Mesh.constraints",
+	"Dataplane uses reachableServices": "Dataplane.reachableServices",
+	"Dataplane has a gateway section":  "Dataplane.gateway",
+	"Dataplane has a probes section":   "Dataplane.probes",
+}
+
 // dynamicUsage projects a live-audit finding onto the classifier's (kind, removable)
 // taxonomy so dynamic findings merge with static markers of the same kind.
 func dynamicUsage(f findingModel) (kind string, removable bool, category, replacement string) {
 	if f.Category == "Removed resources" {
 		kind = strings.TrimSuffix(f.Title, " (removed in 3.0)")
 		return kind, true, "Removed resource", replacementFor(kind)
+	}
+	if k, ok := fieldFindingToKind[f.Title]; ok {
+		mk := markersByKind[k]
+		return k, mk.removable, mk.category, mk.replacement
 	}
 	return f.Title, false, f.Category, ""
 }

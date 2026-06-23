@@ -277,6 +277,80 @@ func TestLoadModelValidatesSchema(t *testing.T) {
 	}
 }
 
+func TestDynamicFieldFindingsMergeWithStatic(t *testing.T) {
+	// Drift guard: every alias must point at a real static marker kind.
+	for title, kind := range fieldFindingToKind {
+		if _, ok := markersByKind[kind]; !ok {
+			t.Errorf("fieldFindingToKind[%q] = %q, which is not a known marker kind", title, kind)
+		}
+	}
+	// A dynamic field finding adopts the static kind/category/replacement so it merges.
+	kind, removable, category, replacement := dynamicUsage(findingModel{
+		Severity: "blocker", Category: "Mesh object settings", Title: "Inline mTLS on Mesh",
+	})
+	if kind != "Mesh.mtls" || removable || category != "Mesh field" || replacement == "" {
+		t.Errorf("dynamicUsage(Inline mTLS) = %q/%v/%q/%q; want Mesh.mtls/false/Mesh field/<non-empty>",
+			kind, removable, category, replacement)
+	}
+}
+
+func TestDynamicFieldMergesIntoStaticFeatureBucket(t *testing.T) {
+	ci := newClassIndex()
+	if err := ci.scanSource(buildSourceFixture(t)); err != nil {
+		t.Fatal(err)
+	}
+	// Comment-2: a dir with zero deprecated usage ("clean") is still a scanned feature.
+	if contains(ci.featureNames(), "clean") {
+		t.Error("featureNames must only contain features with usage")
+	}
+	if !contains(ci.scannedFeatures(), "clean") {
+		t.Error("scannedFeatures must include a scanned dir even with no deprecated usage")
+	}
+
+	reports := t.TempDir()
+	writeSnapshot(t, reports, "0001-mtls.json", []findingModel{{
+		Severity: "blocker", Category: "Mesh object settings", Title: "Inline mTLS on Mesh",
+		Count: 1, Examples: []string{"mtls (mtls)"},
+	}})
+	if err := ci.ingestReports(reports); err != nil {
+		t.Fatal(err)
+	}
+	m := ci.toModel("src", reports, "")
+	f, ok := featureByName(m, "mtls")
+	if !ok {
+		t.Fatal("mtls feature missing")
+	}
+	u, ok := usageByKind(f, "Mesh.mtls")
+	if !ok {
+		t.Fatalf("dynamic Inline-mTLS did not merge into static Mesh.mtls: %+v", f.Usages)
+	}
+	if !contains(u.Sources, "static") || !contains(u.Sources, "dynamic") {
+		t.Errorf("want merged sources {static,dynamic}, got %v", u.Sources)
+	}
+	if _, split := usageByKind(f, "Inline mTLS on Mesh"); split {
+		t.Error("dynamic finding split into its own kind instead of merging")
+	}
+}
+
+func TestIngestReportsSkipsForeignJSON(t *testing.T) {
+	ci := newClassIndex()
+	reports := t.TempDir()
+	writeSnapshot(t, reports, "0001-spec.json", []findingModel{{
+		Severity: "blocker", Category: "Removed resources",
+		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []string{"tr/route"},
+	}})
+	// A classification report and plain garbage in the same dir must be skipped, not fatal.
+	writeFixture(t, reports, "classification.json", `{"schema":"`+classificationSchema+`","features":[]}`)
+	writeFixture(t, reports, "garbage.json", `not json`)
+	if err := ci.ingestReports(reports); err != nil {
+		t.Fatalf("ingestReports must skip non-snapshot files, got: %v", err)
+	}
+	m := ci.toModel("", reports, "")
+	if _, ok := featureByName(m, "tr"); !ok {
+		t.Error("the valid snapshot's finding should still be ingested")
+	}
+}
+
 func TestRunClassifyRequiresInput(t *testing.T) {
 	if code := runClassify("", "", "markdown", "", ""); code != 2 {
 		t.Errorf("runClassify with no inputs: want exit 2, got %d", code)
