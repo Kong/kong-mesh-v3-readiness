@@ -18,6 +18,8 @@ Tooling and manual-test material for auditing a running **Kuma 2.x** control pla
   - [`test-setup.md`](docs/test-setup.md) — reproducible Kubernetes (k3d) **and** Universal
     CP environments + fixtures.
   - [`test-results.md`](docs/test-results.md) — executed results, including real-CP runs.
+  - [`e2e-classification.md`](docs/e2e-classification.md) — classify a Kuma **e2e suite**
+    by its 3.0-deprecated-feature usage (which tests to remove/replace vs rewrite).
 
 ## Quick start
 
@@ -41,5 +43,18 @@ over KDS), so per-zone config findings read `zone <name>: …`.
 `--token` is optional, but Kong Mesh gates `GET /config` behind RBAC — without a valid token
 that endpoint is skipped as a coverage gap (the run is **inconclusive**, exit 3, not a hard
 failure), so pass `--token` to audit control-plane settings.
+
+### Classify e2e tests by deprecated-feature usage
+
+The same binary can audit a **Kuma e2e test suite** instead of a CP, to find which tests
+exercise 3.0-removed features (candidates to remove/replace or rewrite for 3.0):
+
+```bash
+# Static scan of the e2e sources (no CP needed):
+./bin/kuma3-preflight --classify --source-dir ~/kuma/test/e2e_env/universal --format markdown
+```
+
+Optionally fold in per-spec snapshots captured during a live e2e run — see
+[`docs/e2e-classification.md`](docs/e2e-classification.md) for the full capture loop.
 
 The tool is **stdlib-only** (no external dependencies).
