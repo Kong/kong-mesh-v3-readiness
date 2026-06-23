@@ -30,8 +30,34 @@ go run ./cmd/kuma3-preflight --output report.md
 | `--from-json` | _(none)_ | Render a previously captured JSON report (path, or `-` for stdin) instead of auditing |
 | `--timeout` | `60s` | Overall audit timeout |
 | `--inspect-dataplanes` | `0` | Fetch up to N dataplanes' Envoy config dumps to detect removed features (`0` = skip; expensive per-proxy fetch) |
+| `--classify` | `false` | Classification mode: instead of auditing a CP, classify e2e tests by their 3.0-deprecated-feature usage (see below). Uses `--source-dir` and/or `--reports-dir` |
+| `--source-dir` | _(none)_ | With `--classify`: root of an e2e test tree to scan statically (e.g. a Kuma `test/e2e_env/<env>` dir) |
+| `--reports-dir` | _(none)_ | With `--classify`: directory of per-spec preflight JSON snapshots captured during an e2e run, folded into the classification |
 
-Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse — the result is not a proven clean bill of health).
+Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse — the result is not a proven clean bill of health). In `--classify` mode the exit code is `0` on success or `2` on error.
+
+## Classify e2e tests (`--classify`)
+
+A second mode reuses the same deprecation catalog (`legacyMeshScoped` in `audit.go`) to
+classify a Kuma **e2e test suite** by which 3.0-removed features each test exercises — so
+you can decide which e2e tests to **remove/replace** (the test's subject is a removed
+resource) vs **rewrite** (it uses a removed thing only as scaffolding).
+
+```bash
+# Static: scan the e2e sources (fast, no CP, per-feature attribution)
+./bin/kuma3-preflight --classify --source-dir ~/kuma/test/e2e_env/universal --format markdown
+
+# + Dynamic: fold in per-spec snapshots captured during an e2e run (see docs/e2e-classification.md)
+./bin/kuma3-preflight --classify \
+  --source-dir ~/kuma/test/e2e_env/universal --reports-dir ./preflight-out \
+  --format html --output classification.html
+```
+
+Output (markdown/json/html, same one-model contract, JSON schema
+`kuma3-preflight-classification/v1`) groups features into **REMOVE/REPLACE** and **REWRITE**,
+listing each deprecated kind, its count, source (`static`/`dynamic`), and 3.0 replacement.
+The end-to-end capture workflow is documented in
+[`docs/e2e-classification.md`](../../docs/e2e-classification.md).
 
 ## Output formats
 

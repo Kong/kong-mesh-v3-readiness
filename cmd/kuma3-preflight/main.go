@@ -29,6 +29,9 @@ func run() int {
 	fromJSON := flag.String("from-json", "", "Render a previously captured JSON report (path, or - for stdin) instead of auditing")
 	timeout := flag.Duration("timeout", 60*time.Second, "Overall timeout for the audit")
 	inspect := flag.Int("inspect-dataplanes", 0, "Fetch up to N dataplanes' Envoy config dumps to detect removed features (0 = skip; expensive)")
+	classify := flag.Bool("classify", false, "Classify e2e tests by Kuma-3.0 deprecated-feature usage (uses --source-dir / --reports-dir) instead of auditing a CP")
+	sourceDir := flag.String("source-dir", "", "With --classify: root of the e2e test sources to scan statically")
+	reportsDir := flag.String("reports-dir", "", "With --classify: directory of per-spec preflight JSON snapshots to fold in")
 	flag.Parse()
 
 	fmtName, err := normalizeFormat(*format)
@@ -38,6 +41,12 @@ func run() int {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
+
+	// --classify is a separate mode: it inspects e2e test sources / captured
+	// snapshots rather than auditing a live control plane.
+	if *classify {
+		return runClassify(*sourceDir, *reportsDir, fmtName, *out, now)
+	}
 
 	// --from-json renders an existing JSON report in any format without touching
 	// the control plane (capture once in CI, regenerate the HTML site offline).
@@ -172,8 +181,11 @@ func loadModel(path string) (reportModel, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return reportModel{}, fmt.Errorf("parsing JSON report: %w", err)
 	}
-	if m.Schema == "" {
-		return reportModel{}, fmt.Errorf("does not look like a %s JSON report (missing schema)", toolName)
+	// Validate the schema value, not merely its presence: a non-empty but foreign
+	// `schema` (e.g. an unrelated JSON document, or a classification report fed where a
+	// report is expected) must be rejected, not silently mis-decoded.
+	if !strings.HasPrefix(m.Schema, toolName+"/") {
+		return reportModel{}, fmt.Errorf("does not look like a %s JSON report (schema %q)", toolName, m.Schema)
 	}
 	return m, nil
 }
