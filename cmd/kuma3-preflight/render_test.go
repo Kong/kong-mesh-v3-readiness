@@ -41,9 +41,36 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Summary.CoverageGaps != 1 || m.Summary.ParseErrors != 1 {
 		t.Errorf("coverageGaps/parseErrors = %d/%d, want 1/1", m.Summary.CoverageGaps, m.Summary.ParseErrors)
 	}
-	// Findings must be globally sorted by (severity, category, title).
+	// Findings must be globally sorted by (severity, group, category, title).
 	if len(m.Findings) < 2 || m.Findings[0].Severity != "blocker" {
 		t.Fatalf("first finding should be a blocker, got %+v", m.Findings)
+	}
+}
+
+func TestToModelGroups(t *testing.T) {
+	m := sampleReport().toModel("")
+	want := map[string]string{
+		"Inline mTLS on Mesh":                groupMeshObject,
+		"meshServices.mode is not Exclusive": groupMeshObject,
+		"MeshTimeout uses `from`":            groupPolicies,
+		"zoneingresses present":              groupOther,
+	}
+	for _, f := range m.Findings {
+		if g, ok := want[f.Title]; ok && f.Group != g {
+			t.Errorf("finding %q group = %q, want %q", f.Title, f.Group, g)
+		}
+	}
+	// Blockers must be ordered group-by-group following groupOrder.
+	lastIdx := -1
+	for _, f := range m.Findings {
+		if f.Severity != "blocker" {
+			continue
+		}
+		if idx := groupIndex(f.Group); idx < lastIdx {
+			t.Errorf("findings not ordered by group at %q (idx %d after %d)", f.Title, idx, lastIdx)
+		} else {
+			lastIdx = idx
+		}
 	}
 }
 
@@ -57,6 +84,11 @@ func TestRenderMarkdownGolden(t *testing.T) {
 		"- Unparseable resources: 1",
 		"- Includes 2 CP-managed (policy-role: system) resource(s) — update these before upgrading",
 		"## Blockers — must resolve before upgrading",
+		"### Mesh object",
+		"#### Mesh object settings",
+		"### Policies",
+		"#### Policy `from` field",
+		"### Other", // info section groups the Zone proxies finding
 		"- **MeshTimeout uses `from`** — 12 found. Rewrite from.",
 		"… (+2 more)", // 12 occurrences, capped at 10 examples
 		"## Coverage gaps — collections NOT audited",
@@ -67,6 +99,9 @@ func TestRenderMarkdownGolden(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("markdown missing %q\n---\n%s", want, got)
 		}
+	}
+	if strings.Index(got, "### Mesh object") > strings.Index(got, "### Policies") {
+		t.Error("groups out of order: Mesh object should precede Policies")
 	}
 }
 

@@ -20,6 +20,7 @@
   "findings": [
     {
       "severity": "blocker",
+      "group": "Other",
       "category": "Unparseable resources",
       "title": "MeshAccessLog spec could not be parsed",
       "detail": "Could not parse this resource; audit it manually before upgrading.",

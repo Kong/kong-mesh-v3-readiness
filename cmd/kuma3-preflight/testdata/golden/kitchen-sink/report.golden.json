@@ -20,6 +20,7 @@
   "findings": [
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Delta xDS not enabled",
       "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
@@ -30,6 +31,7 @@
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Global control plane on Kubernetes",
       "detail": "Global CP on Kubernetes is dropped as a deployment mode in 3.0; migrate the global CP to Universal.",
@@ -40,6 +42,7 @@
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Inbound tags still enabled",
       "detail": "3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
@@ -50,6 +53,7 @@
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "KDS event-based watchdog not enabled",
       "detail": "The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
@@ -60,6 +64,7 @@
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Native sidecar containers not enabled",
       "detail": "Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
@@ -70,6 +75,7 @@
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Unified resource naming not enabled",
       "detail": "3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
@@ -80,6 +86,7 @@
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "autoReachableServices enabled",
       "detail": "`autoReachableServices` is removed entirely in 3.0; stop relying on it before upgrading.",
@@ -90,6 +97,7 @@
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "eBPF transparent proxy enabled",
       "detail": "The eBPF transparent proxy is removed in 3.0; switch to the iptables transparent proxy.",
@@ -100,36 +108,7 @@
     },
     {
       "severity": "blocker",
-      "category": "Dataplane metrics",
-      "title": "Dataplane has a per-proxy metrics override",
-      "detail": "`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.",
-      "count": 1,
-      "examples": [
-        "default/dp-1"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Dataplane probes",
-      "title": "Dataplane has a probes section",
-      "detail": "Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).",
-      "count": 1,
-      "examples": [
-        "default/dp-1"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Dataplane version",
-      "title": "Dataplane is version-incompatible with the control plane",
-      "detail": "The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
-      "count": 1,
-      "examples": [
-        "default/legacy-dp.kuma-demo (kuma-dp 2.5.0)"
-      ]
-    },
-    {
-      "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Inline mTLS on Mesh",
       "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust.",
@@ -140,6 +119,7 @@
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "MeshService mode",
       "title": "meshServices.mode is not Exclusive",
       "detail": "3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: Disabled).",
@@ -150,16 +130,7 @@
     },
     {
       "severity": "blocker",
-      "category": "Non-RFC-1035 names",
-      "title": "MeshService name is not a valid RFC-1035 DNS label",
-      "detail": "Rename to a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter); non-conforming names are deprecated in 3.0.",
-      "count": 1,
-      "examples": [
-        "default/My_Service"
-      ]
-    },
-    {
-      "severity": "blocker",
+      "group": "Policies",
       "category": "Policy `from` field",
       "title": "MeshTrafficPermission uses `from`",
       "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
@@ -171,6 +142,7 @@
     },
     {
       "severity": "blocker",
+      "group": "Removed resources",
       "category": "Removed resources",
       "title": "TrafficPermission (removed in 3.0)",
       "detail": "Replace with MeshTrafficPermission (rules + spiffeID).",
@@ -181,6 +153,40 @@
     },
     {
       "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
+      "category": "Dataplane metrics",
+      "title": "Dataplane has a per-proxy metrics override",
+      "detail": "`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.",
+      "count": 1,
+      "examples": [
+        "default/dp-1"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
+      "category": "Dataplane probes",
+      "title": "Dataplane has a probes section",
+      "detail": "Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).",
+      "count": 1,
+      "examples": [
+        "default/dp-1"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
+      "category": "Dataplane version",
+      "title": "Dataplane is version-incompatible with the control plane",
+      "detail": "The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
+      "count": 1,
+      "examples": [
+        "default/legacy-dp.kuma-demo (kuma-dp 2.5.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
       "category": "reachableServices",
       "title": "Dataplane uses reachableServices",
       "detail": "Replace `reachableServices` with `reachableBackends` (MeshService-based).",
@@ -190,7 +196,19 @@
       ]
     },
     {
+      "severity": "blocker",
+      "group": "Other",
+      "category": "Non-RFC-1035 names",
+      "title": "MeshService name is not a valid RFC-1035 DNS label",
+      "detail": "Rename to a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter); non-conforming names are deprecated in 3.0.",
+      "count": 1,
+      "examples": [
+        "default/My_Service"
+      ]
+    },
+    {
       "severity": "info",
+      "group": "Other",
       "category": "Zone proxies",
       "title": "zoneingresses present",
       "detail": "ZoneIngress/ZoneEgress are superseded by the unified Zone Proxy in Exclusive mode.",
