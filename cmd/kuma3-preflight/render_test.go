@@ -41,9 +41,36 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Summary.CoverageGaps != 1 || m.Summary.ParseErrors != 1 {
 		t.Errorf("coverageGaps/parseErrors = %d/%d, want 1/1", m.Summary.CoverageGaps, m.Summary.ParseErrors)
 	}
-	// Findings must be globally sorted by (severity, category, title).
+	// Findings must be globally sorted by (severity, group, category, title).
 	if len(m.Findings) < 2 || m.Findings[0].Severity != "blocker" {
 		t.Fatalf("first finding should be a blocker, got %+v", m.Findings)
+	}
+}
+
+func TestToModelGroups(t *testing.T) {
+	m := sampleReport().toModel("")
+	want := map[string]string{
+		"Inline mTLS on Mesh":                groupMeshObject,
+		"meshServices.mode is not Exclusive": groupMeshObject,
+		"MeshTimeout uses `from`":            groupPolicies,
+		"zoneingresses present":              groupOther,
+	}
+	for _, f := range m.Findings {
+		if g, ok := want[f.Title]; ok && f.Group != g {
+			t.Errorf("finding %q group = %q, want %q", f.Title, f.Group, g)
+		}
+	}
+	// Blockers must be ordered group-by-group following groupOrder.
+	lastIdx := -1
+	for _, f := range m.Findings {
+		if f.Severity != "blocker" {
+			continue
+		}
+		if idx := groupIndex(f.Group); idx < lastIdx {
+			t.Errorf("findings not ordered by group at %q (idx %d after %d)", f.Title, idx, lastIdx)
+		} else {
+			lastIdx = idx
+		}
 	}
 }
 
@@ -57,6 +84,10 @@ func TestRenderMarkdownGolden(t *testing.T) {
 		"- Unparseable resources: 1",
 		"- Includes 2 CP-managed (policy-role: system) resource(s) — update these before upgrading",
 		"## Blockers — must resolve before upgrading",
+		"### Mesh object",
+		"#### Mesh object settings", // Mesh object has 2 categories → subheaders shown
+		"### Policies",              // single-category group → no redundant subheader
+		"### Other",                 // info section groups the Zone proxies finding
 		"- **MeshTimeout uses `from`** — 12 found. Rewrite from.",
 		"… (+2 more)", // 12 occurrences, capped at 10 examples
 		"## Coverage gaps — collections NOT audited",
@@ -67,6 +98,54 @@ func TestRenderMarkdownGolden(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("markdown missing %q\n---\n%s", want, got)
 		}
+	}
+	if strings.Index(got, "### Mesh object") > strings.Index(got, "### Policies") {
+		t.Error("groups out of order: Mesh object should precede Policies")
+	}
+	// A single-category group must not repeat the category as a subheading.
+	if strings.Contains(got, "#### Policy `from` field") {
+		t.Error("single-category group should not render a redundant category subheader")
+	}
+}
+
+// TestNormalizeModelOldPayload guards the --from-json path for reports written
+// before the group field existed: such a model has no Group and is sorted only by
+// category, so groups interleave. normalizeModel must make them group-contiguous so
+// markdown (which streams group headers) and HTML (which buckets by group) agree.
+func TestNormalizeModelOldPayload(t *testing.T) {
+	m := reportModel{
+		Schema: reportSchema, Tool: toolName, Status: statusBlockers,
+		Meshes: []string{}, Coverage: []coverageModel{}, Manual: []string{},
+		Findings: []findingModel{ // category-sorted, no Group → Data plane interleaves Mesh object
+			{Severity: "blocker", Category: "Dataplane probes", Title: "p", Detail: "d", Count: 1, Examples: []string{"x/p"}},
+			{Severity: "blocker", Category: "Mesh object settings", Title: "m", Detail: "d", Count: 1, Examples: []string{"y (mtls)"}},
+			{Severity: "blocker", Category: "reachableServices", Title: "r", Detail: "d", Count: 1, Examples: []string{"z/r"}},
+		},
+	}
+	normalizeModel(&m)
+
+	lastIdx, prevGroup := -1, ""
+	seen := map[string]bool{}
+	for _, f := range m.Findings {
+		if f.Group == "" {
+			t.Fatalf("group not populated for %q", f.Title)
+		}
+		if f.Group != prevGroup {
+			if seen[f.Group] {
+				t.Errorf("group %q is not contiguous after normalize", f.Group)
+			}
+			seen[f.Group] = true
+			prevGroup = f.Group
+		}
+		if idx := groupIndex(f.Group); idx < lastIdx {
+			t.Errorf("groups out of canonical order at %q", f.Title)
+		} else {
+			lastIdx = idx
+		}
+	}
+	if md := renderMarkdown(m); strings.Count(md, "### "+groupDataPlane) != 1 {
+		t.Errorf("group heading %q must appear exactly once, got %d\n---\n%s",
+			groupDataPlane, strings.Count(md, "### "+groupDataPlane), md)
 	}
 }
 

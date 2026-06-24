@@ -56,6 +56,7 @@ type summary struct {
 
 type findingModel struct {
 	Severity string   `json:"severity"`
+	Group    string   `json:"group"`
 	Category string   `json:"category"`
 	Title    string   `json:"title"`
 	Detail   string   `json:"detail"`
@@ -66,6 +67,116 @@ type findingModel struct {
 type coverageModel struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
+}
+
+// Finding groups organize the rendered report into top-level sections. Every
+// category maps to exactly one group; an unmapped category falls into groupOther
+// so a newly added check is never silently dropped from the report.
+const (
+	groupControlPlane     = "Control plane"
+	groupMeshObject       = "Mesh object"
+	groupPolicies         = "Policies"
+	groupRemovedResources = "Removed resources"
+	groupDataPlane        = "Data plane & workloads"
+	groupOther            = "Other"
+)
+
+// groupOrder is the display order of the groups, top to bottom.
+var groupOrder = []string{
+	groupControlPlane,
+	groupMeshObject,
+	groupPolicies,
+	groupRemovedResources,
+	groupDataPlane,
+	groupOther,
+}
+
+var categoryToGroup = map[string]string{
+	cpConfigCategory:           groupControlPlane,
+	"Mesh object settings":     groupMeshObject,
+	"MeshService mode":         groupMeshObject,
+	"Policy `from` field":      groupPolicies,
+	"Top-level targetRef kind": groupPolicies,
+	"`to` targetRef kind":      groupPolicies,
+	"targetRef proxyTypes":     groupPolicies,
+	"Relocated policy fields":  groupPolicies,
+	"OpenTelemetry endpoint":   groupPolicies,
+	"Removed resources":        groupRemovedResources,
+	"reachableServices":        groupDataPlane,
+	"Gateway in Dataplane":     groupDataPlane,
+	"Dataplane probes":         groupDataPlane,
+	"Dataplane metrics":        groupDataPlane,
+	"Dataplane version":        groupDataPlane,
+	"Dataplane DNS":            groupDataPlane,
+	"Non-RFC-1035 names":       groupOther,
+	"Unparseable resources":    groupOther,
+	"Zone proxies":             groupOther,
+}
+
+// categoryGroup returns the display group for a finding category.
+func categoryGroup(category string) string {
+	if g, ok := categoryToGroup[category]; ok {
+		return g
+	}
+	return groupOther
+}
+
+// groupIndex gives a group its position in groupOrder (unknown groups sort last)
+// so findings can be ordered group-by-group deterministically.
+func groupIndex(group string) int {
+	for i, g := range groupOrder {
+		if g == group {
+			return i
+		}
+	}
+	return len(groupOrder)
+}
+
+// groupOf resolves a finding's group, recomputing from category when the model
+// predates the group field (e.g. an older --from-json payload).
+func groupOf(f findingModel) string {
+	if f.Group != "" {
+		return f.Group
+	}
+	return categoryGroup(f.Category)
+}
+
+// severityRank orders severities for rendering: blocker before info, unknown last.
+func severityRank(sev string) int {
+	switch sev {
+	case blocker.String():
+		return 0
+	case info.String():
+		return 1
+	default:
+		return 2
+	}
+}
+
+// normalizeModel makes a model canonical for rendering: every finding gets its
+// group, and findings are sorted (severity, group order, category, title) so each
+// group is contiguous. Renderers rely on that contiguity, so both fresh audits and
+// --from-json (including older payloads written before the group field existed)
+// render identically — preserving the one-model/three-renderers contract.
+func normalizeModel(m *reportModel) {
+	for i := range m.Findings {
+		if m.Findings[i].Group == "" {
+			m.Findings[i].Group = categoryGroup(m.Findings[i].Category)
+		}
+	}
+	sort.SliceStable(m.Findings, func(i, j int) bool {
+		a, b := m.Findings[i], m.Findings[j]
+		if a.Severity != b.Severity {
+			return severityRank(a.Severity) < severityRank(b.Severity)
+		}
+		if gi, gj := groupIndex(a.Group), groupIndex(b.Group); gi != gj {
+			return gi < gj
+		}
+		if a.Category != b.Category {
+			return a.Category < b.Category
+		}
+		return a.Title < b.Title
+	})
 }
 
 func (s severity) String() string {
@@ -119,19 +230,10 @@ func (r *report) toModel(generatedAt string) reportModel {
 		Manual:   append([]string{}, r.manual...),
 	}
 
-	fs := append([]finding(nil), r.findings...)
-	sort.SliceStable(fs, func(i, j int) bool {
-		if fs[i].severity != fs[j].severity {
-			return fs[i].severity < fs[j].severity
-		}
-		if fs[i].category != fs[j].category {
-			return fs[i].category < fs[j].category
-		}
-		return fs[i].title < fs[j].title
-	})
-	for _, f := range fs {
+	for _, f := range r.findings {
 		m.Findings = append(m.Findings, findingModel{
 			Severity: f.severity.String(),
+			Group:    categoryGroup(f.category),
 			Category: f.category,
 			Title:    f.title,
 			Detail:   f.detail,
@@ -139,6 +241,7 @@ func (r *report) toModel(generatedAt string) reportModel {
 			Examples: append([]string{}, f.examples...),
 		})
 	}
+	normalizeModel(&m)
 
 	cg := append([]coverageGap(nil), r.coverage...)
 	sort.SliceStable(cg, func(i, j int) bool { return cg[i].path < cg[j].path })
@@ -247,11 +350,26 @@ func renderMarkdownSection(b *strings.Builder, m reportModel, heading, sev strin
 	if len(section) == 0 {
 		return
 	}
-	fmt.Fprintf(b, "## %s\n\n", heading)
-	lastCategory := ""
+	// Count distinct categories per group so a single-category group can skip the
+	// redundant category subheading (the group heading already names it).
+	catsPerGroup := map[string]map[string]struct{}{}
 	for _, f := range section {
-		if f.Category != lastCategory {
-			fmt.Fprintf(b, "### %s\n\n", f.Category)
+		g := groupOf(f)
+		if catsPerGroup[g] == nil {
+			catsPerGroup[g] = map[string]struct{}{}
+		}
+		catsPerGroup[g][f.Category] = struct{}{}
+	}
+	fmt.Fprintf(b, "## %s\n\n", heading)
+	lastGroup, lastCategory := "", ""
+	for _, f := range section {
+		g := groupOf(f)
+		if g != lastGroup {
+			fmt.Fprintf(b, "### %s\n\n", g)
+			lastGroup, lastCategory = g, ""
+		}
+		if len(catsPerGroup[g]) > 1 && f.Category != lastCategory {
+			fmt.Fprintf(b, "#### %s\n\n", f.Category)
 			lastCategory = f.Category
 		}
 		fmt.Fprintf(b, "- **%s** — %d found. %s\n", f.Title, f.Count, f.Detail)

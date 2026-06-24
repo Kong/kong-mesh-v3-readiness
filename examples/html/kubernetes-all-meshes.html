@@ -68,6 +68,16 @@ section.grp>h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
 .sevdot.info{background:var(--info)}
 .cat{margin:16px 0 8px;font-size:12px;font-weight:600;color:var(--muted);
   text-transform:uppercase;letter-spacing:.04em}
+.grp-title{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+  color:var(--text);font:inherit;font-weight:700;font-size:16px;
+  padding:12px 16px;margin:26px 0 10px;cursor:pointer;transition:border-color .15s,background .15s}
+.grp-title:hover{border-color:var(--accent)}
+.grp-title .caret{color:var(--muted);font-size:12px;transition:transform .15s}
+.grp-title:not(.collapsed) .caret{transform:rotate(90deg)}
+.grp-title .grp-count{margin-left:auto;background:var(--bg);border:1px solid var(--border);
+  border-radius:999px;padding:2px 11px;font-size:13px;font-weight:700;color:var(--text)}
+.grp-body{margin:0 0 8px;padding-left:12px;border-left:2px solid var(--border)}
 .finding{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border);
   border-radius:var(--radius);padding:14px 16px;margin:8px 0}
 .finding.blocker{border-left-color:var(--blocker)}
@@ -103,7 +113,7 @@ ul.manual input{margin-top:4px}
 {
   "schema": "kuma3-preflight/v2",
   "tool": "kuma3-preflight",
-  "generatedAt": "2026-06-24T12:28:48Z",
+  "generatedAt": "2026-06-24T13:29:27Z",
   "status": "blockers",
   "controlPlane": {
     "product": "Kong Mesh",
@@ -125,6 +135,7 @@ ul.manual input{margin-top:4px}
   "findings": [
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Delta xDS not enabled",
       "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
@@ -135,6 +146,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Inbound tags still enabled",
       "detail": "3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
@@ -145,6 +157,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "KDS event-based watchdog not enabled",
       "detail": "The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
@@ -155,6 +168,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Unified resource naming not enabled",
       "detail": "3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
@@ -165,6 +179,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Inline logging on Mesh",
       "detail": "Replace `mesh.logging` with the MeshAccessLog policy.",
@@ -175,6 +190,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Inline mTLS on Mesh",
       "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust.",
@@ -185,6 +201,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Inline metrics on Mesh",
       "detail": "Replace `mesh.metrics` with the MeshMetric policy.",
@@ -195,6 +212,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Inline tracing on Mesh",
       "detail": "Replace `mesh.tracing` with the MeshTrace policy.",
@@ -205,6 +223,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Mesh membership constraints",
       "detail": "`mesh.constraints` (membership) is removed.",
@@ -215,6 +234,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Passthrough on Mesh",
       "detail": "`mesh.networking.outbound.passthrough` is removed; use MeshPassthrough.",
@@ -225,6 +245,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "defaultForbidMeshExternalServiceAccess on Mesh",
       "detail": "`mesh.routing.defaultForbidMeshExternalServiceAccess` is removed.",
@@ -235,6 +256,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "localityAwareLoadBalancing on Mesh",
       "detail": "Replace with MeshLoadBalancingStrategy.",
@@ -245,6 +267,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "routing.zoneEgress on Mesh",
       "detail": "`mesh.routing.zoneEgress` is removed.",
@@ -255,6 +278,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Mesh object",
       "category": "MeshService mode",
       "title": "meshServices.mode is not Exclusive",
       "detail": "3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: Disabled).",
@@ -266,6 +290,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Policies",
       "category": "Policy `from` field",
       "title": "MeshTimeout uses `from`",
       "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
@@ -281,6 +306,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Policies",
       "category": "Policy `from` field",
       "title": "MeshTrafficPermission uses `from`",
       "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
@@ -291,96 +317,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
-      "category": "Removed resources",
-      "title": "CircuitBreaker (removed in 3.0)",
-      "detail": "Replace with MeshCircuitBreaker.",
-      "count": 1,
-      "examples": [
-        "default/cb-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Removed resources",
-      "title": "ExternalService (removed in 3.0)",
-      "detail": "Replace with MeshExternalService.",
-      "count": 1,
-      "examples": [
-        "default/es-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Removed resources",
-      "title": "HealthCheck (removed in 3.0)",
-      "detail": "Replace with MeshHealthCheck.",
-      "count": 1,
-      "examples": [
-        "default/hc-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Removed resources",
-      "title": "ProxyTemplate (removed in 3.0)",
-      "detail": "Replace with MeshProxyPatch.",
-      "count": 1,
-      "examples": [
-        "default/pt-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Removed resources",
-      "title": "Timeout (removed in 3.0)",
-      "detail": "Replace with MeshTimeout.",
-      "count": 1,
-      "examples": [
-        "default/to-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Removed resources",
-      "title": "TrafficLog (removed in 3.0)",
-      "detail": "Replace with MeshAccessLog.",
-      "count": 1,
-      "examples": [
-        "default/tl-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Removed resources",
-      "title": "TrafficPermission (removed in 3.0)",
-      "detail": "Replace with MeshTrafficPermission (rules + spiffeID).",
-      "count": 1,
-      "examples": [
-        "default/tp-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Removed resources",
-      "title": "TrafficRoute (removed in 3.0)",
-      "detail": "Replace with MeshHTTPRoute / MeshTCPRoute.",
-      "count": 1,
-      "examples": [
-        "default/tr-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "category": "Removed resources",
-      "title": "VirtualOutbound (removed in 3.0)",
-      "detail": "Replace with unified naming + MeshService hostnames.",
-      "count": 1,
-      "examples": [
-        "default/vo-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
+      "group": "Policies",
       "category": "Top-level targetRef kind",
       "title": "MeshHTTPRoute top-level targetRef.kind=MeshService",
       "detail": "Top-level targetRef must be Mesh or Dataplane; use labels.",
@@ -391,6 +328,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Policies",
       "category": "`to` targetRef kind",
       "title": "MeshCircuitBreaker to[].targetRef.kind=Mesh",
       "detail": "`to` may only target MeshService/MeshExternalService/MeshMultiZoneService.",
@@ -403,6 +341,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Policies",
       "category": "`to` targetRef kind",
       "title": "MeshRetry to[].targetRef.kind=Mesh",
       "detail": "`to` may only target MeshService/MeshExternalService/MeshMultiZoneService.",
@@ -415,6 +354,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
+      "group": "Policies",
       "category": "`to` targetRef kind",
       "title": "MeshTimeout to[].targetRef.kind=Mesh",
       "detail": "`to` may only target MeshService/MeshExternalService/MeshMultiZoneService.",
@@ -430,16 +370,7 @@ ul.manual input{margin-top:4px}
     },
     {
       "severity": "blocker",
-      "category": "reachableServices",
-      "title": "Dataplane uses reachableServices",
-      "detail": "Replace `reachableServices` with `reachableBackends` (MeshService-based).",
-      "count": 1,
-      "examples": [
-        "default/reachable-app-55446f777c-gng5w.k3pf-test"
-      ]
-    },
-    {
-      "severity": "blocker",
+      "group": "Policies",
       "category": "targetRef proxyTypes",
       "title": "MeshTimeout uses targetRef.proxyTypes",
       "detail": "`proxyTypes` is removed (gateway support dropped).",
@@ -451,6 +382,116 @@ ul.manual input{margin-top:4px}
         "default/mesh-timeout-all-default.kong-mesh-system (system — CP-managed, update before 3.0)",
         "legacy/mesh-gateways-timeout-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)",
         "legacy/mesh-timeout-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "CircuitBreaker (removed in 3.0)",
+      "detail": "Replace with MeshCircuitBreaker.",
+      "count": 1,
+      "examples": [
+        "default/cb-legacy"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "ExternalService (removed in 3.0)",
+      "detail": "Replace with MeshExternalService.",
+      "count": 1,
+      "examples": [
+        "default/es-legacy"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "HealthCheck (removed in 3.0)",
+      "detail": "Replace with MeshHealthCheck.",
+      "count": 1,
+      "examples": [
+        "default/hc-legacy"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "ProxyTemplate (removed in 3.0)",
+      "detail": "Replace with MeshProxyPatch.",
+      "count": 1,
+      "examples": [
+        "default/pt-legacy"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "Timeout (removed in 3.0)",
+      "detail": "Replace with MeshTimeout.",
+      "count": 1,
+      "examples": [
+        "default/to-legacy"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "TrafficLog (removed in 3.0)",
+      "detail": "Replace with MeshAccessLog.",
+      "count": 1,
+      "examples": [
+        "default/tl-legacy"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "TrafficPermission (removed in 3.0)",
+      "detail": "Replace with MeshTrafficPermission (rules + spiffeID).",
+      "count": 1,
+      "examples": [
+        "default/tp-legacy"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "TrafficRoute (removed in 3.0)",
+      "detail": "Replace with MeshHTTPRoute / MeshTCPRoute.",
+      "count": 1,
+      "examples": [
+        "default/tr-legacy"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "VirtualOutbound (removed in 3.0)",
+      "detail": "Replace with unified naming + MeshService hostnames.",
+      "count": 1,
+      "examples": [
+        "default/vo-legacy"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
+      "category": "reachableServices",
+      "title": "Dataplane uses reachableServices",
+      "detail": "Replace `reachableServices` with `reachableBackends` (MeshService-based).",
+      "count": 1,
+      "examples": [
+        "default/reachable-app-55446f777c-gng5w.k3pf-test"
       ]
     }
   ],
@@ -482,6 +523,9 @@ ul.manual input{margin-top:4px}
   };
   var query = '';
   var meshFilter = null;
+  var collapsedGroups = {}; // keyed by "<severity>|<group>"; persists across re-renders
+
+  function groupOf(f){ return f.group || f.category; }
 
   // The authoritative mesh set; an example "belongs" to a mesh only if its
   // leading segment matches a real mesh name. This disambiguates resource refs
@@ -695,6 +739,47 @@ ul.manual input{margin-top:4px}
     return card;
   }
 
+  // renderGroup builds one collapsible group block: a clickable heading (with the
+  // group's finding count) over a body of category subheaders + findings. Collapse
+  // state is keyed by severity+group so it survives filter/search re-renders.
+  function renderGroup(sev, group, items){
+    var gid = sev + '|' + group;
+    var collapsed = !!collapsedGroups[gid];
+    var gTotal = items.reduce(function(a,f){ return a + shownCount(f); }, 0);
+    var head = el('button', {class:'grp-title' + (collapsed ? ' collapsed' : ''), type:'button',
+      'aria-expanded': String(!collapsed), title:(collapsed ? 'Expand ' : 'Collapse ') + group});
+    head.appendChild(el('span', {class:'caret', text:'▸'}));
+    head.appendChild(el('span', {text:group}));
+    head.appendChild(el('span', {class:'grp-count', text:String(gTotal)}));
+    var body = el('div', {class:'grp-body'});
+    if(collapsed) body.style.display = 'none';
+    head.addEventListener('click', function(){
+      var now = !collapsedGroups[gid];
+      collapsedGroups[gid] = now;
+      body.style.display = now ? 'none' : '';
+      head.classList.toggle('collapsed', now);
+      head.setAttribute('aria-expanded', String(!now));
+      head.setAttribute('title', (now ? 'Expand ' : 'Collapse ') + group);
+    });
+    // Show category subheaders only when the group spans more than one category;
+    // for a single-category group the heading already names it (avoids a
+    // redundant "Control plane" + "Control plane configuration" pair).
+    var cats = {}, nCats = 0;
+    items.forEach(function(f){ if(!cats[f.category]){ cats[f.category] = true; nCats++; } });
+    var lastCat = '';
+    items.forEach(function(f){
+      if(nCats > 1 && f.category !== lastCat){
+        body.appendChild(el('div', {class:'cat', text:f.category}));
+      }
+      lastCat = f.category;
+      body.appendChild(renderFinding(f));
+    });
+    var frag = document.createDocumentFragment();
+    frag.appendChild(head);
+    frag.appendChild(body);
+    return frag;
+  }
+
   function renderFindings(){
     var c = document.getElementById('findings');
     if(!c) return;
@@ -723,11 +808,16 @@ ul.manual input{margin-top:4px}
       var sec = el('section', {class:'grp'});
       sec.appendChild(el('h2', null, [el('span', {class:'sevdot ' + sev}),
         HEADINGS[sev] + ' (' + total + (spanAny ? ', incl. all-mesh items' : '') + ')']));
-      var lastCat = '';
+      // Bucket the severity's findings by group, preserving the model's order
+      // (already sorted group-by-group), then render each group as a collapsible
+      // block.
+      var order = [], byGroup = {};
       fs.forEach(function(f){
-        if(f.category !== lastCat){ sec.appendChild(el('div', {class:'cat', text:f.category})); lastCat = f.category; }
-        sec.appendChild(renderFinding(f));
+        var g = groupOf(f);
+        if(!byGroup[g]){ byGroup[g] = []; order.push(g); }
+        byGroup[g].push(f);
       });
+      order.forEach(function(g){ sec.appendChild(renderGroup(sev, g, byGroup[g])); });
       c.appendChild(sec);
     });
   }

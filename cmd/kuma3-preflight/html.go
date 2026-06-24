@@ -75,6 +75,16 @@ section.grp>h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
 .sevdot.info{background:var(--info)}
 .cat{margin:16px 0 8px;font-size:12px;font-weight:600;color:var(--muted);
   text-transform:uppercase;letter-spacing:.04em}
+.grp-title{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+  color:var(--text);font:inherit;font-weight:700;font-size:16px;
+  padding:12px 16px;margin:26px 0 10px;cursor:pointer;transition:border-color .15s,background .15s}
+.grp-title:hover{border-color:var(--accent)}
+.grp-title .caret{color:var(--muted);font-size:12px;transition:transform .15s}
+.grp-title:not(.collapsed) .caret{transform:rotate(90deg)}
+.grp-title .grp-count{margin-left:auto;background:var(--bg);border:1px solid var(--border);
+  border-radius:999px;padding:2px 11px;font-size:13px;font-weight:700;color:var(--text)}
+.grp-body{margin:0 0 8px;padding-left:12px;border-left:2px solid var(--border)}
 .finding{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border);
   border-radius:var(--radius);padding:14px 16px;margin:8px 0}
 .finding.blocker{border-left-color:var(--blocker)}
@@ -125,6 +135,9 @@ const htmlTail = `
   };
   var query = '';
   var meshFilter = null;
+  var collapsedGroups = {}; // keyed by "<severity>|<group>"; persists across re-renders
+
+  function groupOf(f){ return f.group || f.category; }
 
   // The authoritative mesh set; an example "belongs" to a mesh only if its
   // leading segment matches a real mesh name. This disambiguates resource refs
@@ -338,6 +351,47 @@ const htmlTail = `
     return card;
   }
 
+  // renderGroup builds one collapsible group block: a clickable heading (with the
+  // group's finding count) over a body of category subheaders + findings. Collapse
+  // state is keyed by severity+group so it survives filter/search re-renders.
+  function renderGroup(sev, group, items){
+    var gid = sev + '|' + group;
+    var collapsed = !!collapsedGroups[gid];
+    var gTotal = items.reduce(function(a,f){ return a + shownCount(f); }, 0);
+    var head = el('button', {class:'grp-title' + (collapsed ? ' collapsed' : ''), type:'button',
+      'aria-expanded': String(!collapsed), title:(collapsed ? 'Expand ' : 'Collapse ') + group});
+    head.appendChild(el('span', {class:'caret', text:'▸'}));
+    head.appendChild(el('span', {text:group}));
+    head.appendChild(el('span', {class:'grp-count', text:String(gTotal)}));
+    var body = el('div', {class:'grp-body'});
+    if(collapsed) body.style.display = 'none';
+    head.addEventListener('click', function(){
+      var now = !collapsedGroups[gid];
+      collapsedGroups[gid] = now;
+      body.style.display = now ? 'none' : '';
+      head.classList.toggle('collapsed', now);
+      head.setAttribute('aria-expanded', String(!now));
+      head.setAttribute('title', (now ? 'Expand ' : 'Collapse ') + group);
+    });
+    // Show category subheaders only when the group spans more than one category;
+    // for a single-category group the heading already names it (avoids a
+    // redundant "Control plane" + "Control plane configuration" pair).
+    var cats = {}, nCats = 0;
+    items.forEach(function(f){ if(!cats[f.category]){ cats[f.category] = true; nCats++; } });
+    var lastCat = '';
+    items.forEach(function(f){
+      if(nCats > 1 && f.category !== lastCat){
+        body.appendChild(el('div', {class:'cat', text:f.category}));
+      }
+      lastCat = f.category;
+      body.appendChild(renderFinding(f));
+    });
+    var frag = document.createDocumentFragment();
+    frag.appendChild(head);
+    frag.appendChild(body);
+    return frag;
+  }
+
   function renderFindings(){
     var c = document.getElementById('findings');
     if(!c) return;
@@ -366,11 +420,16 @@ const htmlTail = `
       var sec = el('section', {class:'grp'});
       sec.appendChild(el('h2', null, [el('span', {class:'sevdot ' + sev}),
         HEADINGS[sev] + ' (' + total + (spanAny ? ', incl. all-mesh items' : '') + ')']));
-      var lastCat = '';
+      // Bucket the severity's findings by group, preserving the model's order
+      // (already sorted group-by-group), then render each group as a collapsible
+      // block.
+      var order = [], byGroup = {};
       fs.forEach(function(f){
-        if(f.category !== lastCat){ sec.appendChild(el('div', {class:'cat', text:f.category})); lastCat = f.category; }
-        sec.appendChild(renderFinding(f));
+        var g = groupOf(f);
+        if(!byGroup[g]){ byGroup[g] = []; order.push(g); }
+        byGroup[g].push(f);
       });
+      order.forEach(function(g){ sec.appendChild(renderGroup(sev, g, byGroup[g])); });
       c.appendChild(sec);
     });
   }

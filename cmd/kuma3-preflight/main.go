@@ -187,6 +187,10 @@ func loadModel(path string) (reportModel, error) {
 	if !strings.HasPrefix(m.Schema, toolName+"/") {
 		return reportModel{}, fmt.Errorf("does not look like a %s JSON report (schema %q)", toolName, m.Schema)
 	}
+	// Make the loaded model canonical so every renderer sees group-contiguous
+	// findings — older payloads predate the group field and are sorted only by
+	// category, which would otherwise split a group across the markdown output.
+	normalizeModel(&m)
 	return m, nil
 }
 
