@@ -1,5 +1,5 @@
-# Basic CI: format, vet, lint, test, build — on every PR and on main.
-# Tooling (Go, golangci-lint) is pinned via mise.toml.
+# Basic CI: format, vet, lint, nilaway, test, build — on every PR and on main.
+# Tooling (Go, golangci-lint, nilaway) is pinned via mise.toml.
 name: CI
 
 on:
@@ -38,6 +38,9 @@ jobs:
 
       - name: golangci-lint
         run: golangci-lint run
+
+      - name: nilaway
+        run: nilaway ./...
 
       - name: go test
         run: go test ./...

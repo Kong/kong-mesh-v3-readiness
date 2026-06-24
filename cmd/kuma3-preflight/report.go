@@ -36,7 +36,7 @@ type report struct {
 	manual []manualCheck
 	// k8sObserved is set once the audit positively observes Kubernetes anywhere in
 	// the estate (a standalone/zone CP on k8s, a k8s zone behind a global, or a
-	// dataplane labelled kuma.io/env=kubernetes). It gates the k8s-only manual
+	// dataplane labeled kuma.io/env=kubernetes). It gates the k8s-only manual
 	// checks so a Universal-only run is not handed Kubernetes reminders.
 	k8sObserved bool
 }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 )
@@ -27,10 +28,10 @@ func TestParseSemver(t *testing.T) {
 		{"", 0, 0, 0, false},
 	}
 	for _, c := range cases {
-		maj, min, patch, ok := parseSemver(c.in)
-		if ok != c.ok || (ok && (maj != c.maj || min != c.min || patch != c.patch)) {
+		maj, minor, patch, ok := parseSemver(c.in)
+		if ok != c.ok || (ok && (maj != c.maj || minor != c.min || patch != c.patch)) {
 			t.Errorf("parseSemver(%q) = (%d,%d,%d,%v), want (%d,%d,%d,%v)",
-				c.in, maj, min, patch, ok, c.maj, c.min, c.patch, c.ok)
+				c.in, maj, minor, patch, ok, c.maj, c.min, c.patch, c.ok)
 		}
 	}
 }
@@ -102,7 +103,7 @@ func TestFetchLatestPatch(t *testing.T) {
 		t.Cleanup(srv.Close)
 		githubReleasesURL = srv.URL
 
-		got, err := fetchLatestPatch(context.Background(), srv.Client(), 14)
+		got, err := fetchLatestPatch(context.Background(), srv.Client())
 		if err != nil {
 			t.Fatalf("fetchLatestPatch: %v", err)
 		}
@@ -117,7 +118,7 @@ func TestFetchLatestPatch(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 		githubReleasesURL = srv.URL
-		if _, err := fetchLatestPatch(context.Background(), srv.Client(), 14); err == nil {
+		if _, err := fetchLatestPatch(context.Background(), srv.Client()); err == nil {
 			t.Errorf("want error when no 2.14.x release exists")
 		}
 	})
@@ -128,7 +129,7 @@ func TestFetchLatestPatch(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 		githubReleasesURL = srv.URL
-		if _, err := fetchLatestPatch(context.Background(), srv.Client(), 14); err == nil {
+		if _, err := fetchLatestPatch(context.Background(), srv.Client()); err == nil {
 			t.Errorf("want error on non-200 response")
 		}
 	})
@@ -144,7 +145,7 @@ func TestFetchLatestPatch(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 		githubReleasesURL = srv.URL
-		if _, err := fetchLatestPatch(context.Background(), srv.Client(), 14); err == nil {
+		if _, err := fetchLatestPatch(context.Background(), srv.Client()); err == nil {
 			t.Errorf("hitting the page cap mid-traversal must be an error, not a (stale) best")
 		}
 	})
@@ -163,7 +164,7 @@ func TestFetchLatestPatch(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 		githubReleasesURL = srv.URL
-		got, err := fetchLatestPatch(context.Background(), srv.Client(), 14)
+		got, err := fetchLatestPatch(context.Background(), srv.Client())
 		if err != nil {
 			t.Fatalf("fetchLatestPatch: %v", err)
 		}
@@ -179,7 +180,7 @@ func TestNextReleaseLink(t *testing.T) {
 		`<https://api.github.com/x?page=9>; rel="last"`:                                                "",
 		``:        "",
 		`garbage`: "",
-		// Reject a non-http scheme even if labelled rel="next".
+		// Reject a non-http scheme even if labeled rel="next".
 		`<ftp://evil/x>; rel="next"`: "",
 	}
 	for in, want := range cases {
@@ -214,12 +215,7 @@ func versionFinding(r *report) (finding, bool) {
 }
 
 func hasExample(f finding, want string) bool {
-	for _, ex := range f.examples {
-		if ex == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(f.examples, want)
 }
 
 func TestCheckControlPlaneVersionsConnected(t *testing.T) {

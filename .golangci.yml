@@ -1,0 +1,129 @@
+# golangci-lint config, modeled on kumahq/kuma's .golangci.yml (same pinned
+# 2.12.2 toolchain) and trimmed for this stdlib-only, single-package CLI:
+# Kuma-specific linters/rules (protobuf depguard, importas aliases, ginkgolinter,
+# loggercheck, the tracing forbidigo rule) are dropped; gci/gofumpt re-point at
+# this module path. nilaway runs separately (see mise.toml) — it is not a
+# golangci-lint linter.
+version: "2"
+run:
+  modules-download-mode: mod
+linters:
+  enable:
+    - bodyclose
+    - errcheck
+    - gocritic
+    - gomodguard_v2
+    - govet
+    - gosec
+    - makezero
+    - misspell
+    - modernize
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - whitespace
+  settings:
+    gocritic:
+      disabled-checks:
+        - appendAssign
+        - commentedOutCode
+        - deferInLoop
+        - docStub
+        - exposedSyncMutex
+        - filepathJoin
+        - hugeParam
+        - importShadow
+        - paramTypeCombine
+        - rangeValCopy
+        - unnamedResult
+        - whyNoLint
+      enable-all: true
+    gomodguard_v2:
+      # Guardrails for the day a dependency earns its place (README is stdlib-only):
+      # steer to the stdlib / canonical choice instead of common footguns.
+      blocked:
+        - module: github.com/ghodss/yaml
+          recommendations:
+            - sigs.k8s.io/yaml
+        - module: golang.org/x/exp/maps
+          recommendations:
+            - maps
+        - module: golang.org/x/exp/slices
+          recommendations:
+            - slices
+        - module: gopkg.in/yaml.v2
+          recommendations:
+            - sigs.k8s.io/yaml
+        - module: gopkg.in/yaml.v3
+          recommendations:
+            - sigs.k8s.io/yaml
+        - module: io/ioutil
+          recommendations:
+            - io
+            - os
+    gosec:
+      excludes:
+        - G104 # Errors unhandled (covered by errcheck)
+        - G115 # Integer overflow conversion (noisy on size casts)
+        - G122 # Symlink TOCTOU in a WalkDir callback — not in scope for scanning a local, trusted e2e source tree
+        - G301 # Expect directory permissions to be 0750 or less
+    misspell:
+      locale: US
+      ignore-rules:
+        - cancelled
+    modernize:
+      disable:
+        # Simplify code by using go1.26's new(expr).
+        - newexpr
+        # Suggest replacing omitempty with omitzero for struct fields.
+        - omitzero
+    nolintlint:
+      allow-unused: false
+      require-specific: true
+    nonamedreturns:
+      report-error-in-defer: false
+    revive:
+      max-open-files: 2048
+      rules:
+        - name: var-declaration
+    staticcheck:
+      checks:
+        - all
+        - -ST1003 # Poorly chosen identifier
+        - -ST1016 # Use consistent method receiver names
+        - -SA4011 # Break statement with no effect. Did you mean to break out of an outer loop?
+    usestdlibvars:
+      http-status-code: false
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - std-error-handling
+    rules:
+      - linters:
+          - gosec
+        path: '(_test\.go$|^test/)'
+issues:
+  # Maximum issues count per one linter. Set to 0 to disable.
+  max-issues-per-linter: 0
+  # Maximum count of issues with the same text. Set to 0 to disable.
+  max-same-issues: 0
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/Kong/kong-mesh-v3-readiness)
+      custom-order: true

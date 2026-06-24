@@ -135,6 +135,9 @@ func (ci *classIndex) toModel(sourceDir, reportsDir, generatedAt string) classif
 	}
 	for _, name := range ci.featureNames() {
 		f := ci.features[name]
+		if f == nil { // featureNames() returns existing keys, so this never fires; guards the deref for static analysis
+			continue
+		}
 		fm := featureModel{Name: name, Recommendation: f.recommendation(), Usages: []usageModel{}}
 
 		kinds := make([]string, 0, len(f.usages))
@@ -150,6 +153,9 @@ func (ci *classIndex) toModel(sourceDir, reportsDir, generatedAt string) classif
 		})
 		for _, k := range kinds {
 			u := f.usages[k]
+			if u == nil { // kinds are existing usage keys, so this never fires; guards the deref for static analysis
+				continue
+			}
 			srcs := make([]string, 0, len(u.sources))
 			for s := range u.sources {
 				srcs = append(srcs, s)
@@ -287,14 +293,14 @@ func renderMarkdownPerSuite(b *strings.Builder, m classificationModel) {
 	fmt.Fprintln(b, "#### 📁 Per-suite findings — unique to each suite")
 	fmt.Fprintln(b)
 	var globalOnly []string
-	any := false
+	wrote := false
 	for _, f := range m.Features {
 		uniq := uniqueUsages(f)
 		if len(uniq) == 0 {
 			globalOnly = append(globalOnly, f.Name)
 			continue
 		}
-		any = true
+		wrote = true
 		fmt.Fprintf(b, "<details><summary><code>%s</code> — %s · %d unique finding(s)</summary>\n\n",
 			html.EscapeString(f.Name), recLabel(f.Recommendation), len(uniq))
 		fmt.Fprintln(b, "| Kind | Category | Count | Sources | Replacement | Examples |")
@@ -308,7 +314,7 @@ func renderMarkdownPerSuite(b *strings.Builder, m classificationModel) {
 		fmt.Fprintln(b, "</details>")
 		fmt.Fprintln(b)
 	}
-	if !any {
+	if !wrote {
 		fmt.Fprintln(b, "_No suite-specific findings — everything is covered by the global migrations above._")
 		fmt.Fprintln(b)
 	}

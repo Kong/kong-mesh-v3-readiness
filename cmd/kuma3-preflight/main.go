@@ -93,12 +93,9 @@ func run() int {
 	// budget and turn a healthy CP audit into an operational error.
 	latest := *latestVersion
 	if latest == "" {
-		fetchTimeout := *timeout
-		if fetchTimeout > 15*time.Second {
-			fetchTimeout = 15 * time.Second
-		}
+		fetchTimeout := min(*timeout, 15*time.Second)
 		fctx, fcancel := context.WithTimeout(context.Background(), fetchTimeout)
-		v, ferr := fetchLatestPatch(fctx, &http.Client{Timeout: fetchTimeout}, upgradeTargetMinor)
+		v, ferr := fetchLatestPatch(fctx, &http.Client{Timeout: fetchTimeout})
 		fcancel()
 		if ferr != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not determine the latest 2.%d patch from GitHub (%v); version currency will be inconclusive — pass --latest-version to set it\n", upgradeTargetMinor, ferr)

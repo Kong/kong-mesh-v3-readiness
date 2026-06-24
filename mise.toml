@@ -1,6 +1,8 @@
 [tools]
 go = "1.26.4"
 golangci-lint = "2.12.2"
+# NilAway (Uber) — nil-panic static analysis; pinned by commit (no tagged releases).
+"go:go.uber.org/nilaway/cmd/nilaway" = "0.0.0-20260617211854-01ab7e30fbe0"
 
 [env]
 GOFLAGS = "-mod=mod"
@@ -18,6 +20,10 @@ run = "go test ./..."
 [tasks.lint]
 description = "Run golangci-lint (must report 0 issues)"
 run = "golangci-lint run"
+
+[tasks.nilaway]
+description = "Run NilAway nil-panic analysis (must report 0 issues)"
+run = "nilaway ./..."
 
 [tasks.vet]
 description = "Run go vet"
@@ -40,4 +46,4 @@ fi
 
 [tasks.check]
 description = "Run all pre-commit quality gates"
-depends = ["test", "lint", "vet", "fmt-check"]
+depends = ["test", "lint", "nilaway", "vet", "fmt-check"]
