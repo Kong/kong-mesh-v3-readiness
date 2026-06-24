@@ -40,6 +40,15 @@ header.rep h1{font-size:24px;margin:0 0 6px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .chip{background:var(--surface-2);border:1px solid var(--border);border-radius:999px;
   padding:2px 10px;font-size:12px}
+.chip.mesh{font-family:inherit;color:var(--text);cursor:pointer;
+  transition:border-color .15s,background .15s,color .15s}
+.chip.mesh:hover{border-color:var(--accent)}
+.chip.mesh.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.meshhint{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--muted);
+  font-size:13px;margin:0 0 10px}
+.meshhint b{color:var(--text)}
+.meshhint button{background:none;border:0;color:var(--accent);cursor:pointer;
+  font:inherit;padding:0;text-decoration:underline}
 .banner{margin:20px 0;padding:14px 18px;border-radius:var(--radius);font-weight:600;
   border:1px solid transparent;display:flex;align-items:center;gap:10px}
 .banner.blockers,.banner.failed{background:var(--blocker-bg);border-color:var(--blocker);color:var(--blocker)}
@@ -48,9 +57,6 @@ header.rep h1{font-size:24px;margin:0 0 6px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:18px 0}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
   padding:14px 16px;text-align:left;font:inherit;color:inherit}
-button.card{cursor:pointer;transition:border-color .15s,opacity .15s}
-button.card:hover{border-color:var(--accent)}
-button.card[aria-pressed="false"]{opacity:.4}
 .card .n{font-size:28px;font-weight:700;line-height:1}
 .card .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:6px}
 .card.blocker .n{color:var(--blocker)}
@@ -79,6 +85,7 @@ section.grp>h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
 .pill{background:var(--surface-2);border:1px solid var(--border);border-radius:999px;
   padding:1px 9px;font-size:12px;color:var(--muted);white-space:nowrap}
 .finding .detail{color:var(--muted);font-size:14px;margin:6px 0 0}
+.finding .detail.note{color:var(--warning)}
 .ex{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .ex .e{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
   padding:2px 8px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -116,8 +123,61 @@ const htmlTail = `
     blocker:'Blockers — must resolve before upgrading',
     info:'Informational'
   };
-  var active = {blocker:true, info:true};
   var query = '';
+  var meshFilter = null;
+
+  // The authoritative mesh set; an example "belongs" to a mesh only if its
+  // leading segment matches a real mesh name. This disambiguates resource refs
+  // ("mesh/name", "mesh (field)", bare "mesh") from control-plane-wide examples
+  // ("experimental.x=false", inspect coverage "0/1") which carry no mesh.
+  var meshSet = {};
+  (data.meshes || []).forEach(function(m){ meshSet[m] = true; });
+
+  function meshOf(example){
+    var s = example.replace(/ \(system[^)]*\)\s*$/, '');
+    var cand, slash = s.indexOf('/');
+    if(slash > 0){ cand = s.slice(0, slash); }
+    else { var p = s.indexOf(' ('); cand = p > 0 ? s.slice(0, p) : s; }
+    return meshSet[cand] ? cand : null;
+  }
+  function findingMeshes(f){
+    if(!f._meshes){
+      var seen = {};
+      (f.examples || []).forEach(function(e){ var m = meshOf(e); if(m) seen[m] = true; });
+      f._meshes = Object.keys(seen);
+    }
+    return f._meshes;
+  }
+  function isMeshScoped(f){ return findingMeshes(f).length > 0; }
+  // The examples are a server-capped sample (exampleCap). When count exceeds the
+  // held examples, the sample is partial: a mesh can have occurrences that fall
+  // outside it, so the per-mesh attribution below cannot be trusted to be
+  // complete. attributable() means "examples are exhaustive, so membership and
+  // per-mesh counts are exact".
+  function isCapped(f){ return f.count > (f.examples || []).length; }
+  function attributable(f){ return isMeshScoped(f) && !isCapped(f); }
+  function shownExamples(f){
+    var ex = f.examples || [];
+    if(meshFilter && attributable(f)) return ex.filter(function(e){ return meshOf(e) === meshFilter; });
+    return ex;
+  }
+  // Effective count under the active filter. Exact per-mesh count only when the
+  // finding is attributable; for a capped finding we show its true total across
+  // all meshes (renderFinding flags that it is not split per mesh) rather than a
+  // misleading per-mesh floor.
+  function shownCount(f){
+    if(meshFilter && attributable(f)) return shownExamples(f).length;
+    return f.count;
+  }
+  function setMeshFilter(m){
+    meshFilter = m;
+    document.querySelectorAll('.chip.mesh').forEach(function(c){
+      var on = c.getAttribute('data-mesh') === meshFilter;
+      c.classList.toggle('active', on);
+      c.setAttribute('aria-pressed', String(on));
+    });
+    renderFindings();
+  }
 
   function el(tag, attrs, kids){
     var n = document.createElement(tag);
@@ -172,7 +232,13 @@ const htmlTail = `
     if(meshes.length){
       var chips = el('div', {class:'chips'});
       chips.appendChild(el('span', {class:'chip', text:'Meshes:'}));
-      meshes.forEach(function(m){ chips.appendChild(el('span', {class:'chip', text:m})); });
+      meshes.forEach(function(m){
+        chips.appendChild(el('button', {
+          'class':'chip mesh', 'data-mesh':m, type:'button', 'aria-pressed':'false',
+          title:'Show only ' + m + ' findings',
+          onclick:function(){ setMeshFilter(meshFilter === m ? null : m); }
+        }, m));
+      });
       h.appendChild(chips);
     }
     return h;
@@ -197,11 +263,7 @@ const htmlTail = `
     var wrap = el('div', {class:'cards'});
     SEV.forEach(function(sev){
       var n = s[sev === 'blocker' ? 'blockers' : 'info'] || 0;
-      var card = el('button', {
-        class:'card ' + sev, 'aria-pressed':String(active[sev]),
-        title:'Toggle ' + sev + ' findings',
-        onclick:function(){ active[sev] = !active[sev]; this.setAttribute('aria-pressed', String(active[sev])); renderFindings(); }
-      });
+      var card = el('div', {class:'card ' + sev});
       card.appendChild(el('div', {class:'n', text:String(n)}));
       card.appendChild(el('div', {class:'l', text:sev + 's'}));
       wrap.appendChild(card);
@@ -227,17 +289,21 @@ const htmlTail = `
     bar.appendChild(el('input', {class:'search', type:'search', placeholder:'Filter findings…',
       oninput:function(){ query = this.value.toLowerCase(); renderFindings(); }}));
     bar.appendChild(el('button', {class:'btn', onclick:function(){
-      active = {blocker:true, info:true}; query = '';
+      query = '';
       document.querySelector('.search').value = '';
-      document.querySelectorAll('button.card').forEach(function(c){ c.setAttribute('aria-pressed','true'); });
-      renderFindings();
+      setMeshFilter(null);
     }}, 'Reset'));
     bar.appendChild(themeBtn());
     return bar;
   }
 
   function matches(f){
-    if(!active[f.severity]) return false;
+    // A mesh filter hides a finding scoped to OTHER meshes — but only when its
+    // mesh membership is exhaustive (attributable). A capped finding might have
+    // occurrences in the selected mesh beyond its example sample, so it is never
+    // hidden (shown as spanning all meshes). Control-plane-wide findings (no
+    // mesh) also stay visible since they apply to every mesh's upgrade.
+    if(meshFilter && attributable(f) && findingMeshes(f).indexOf(meshFilter) < 0) return false;
     if(!query) return true;
     var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.examples||[]).join(' ')).toLowerCase();
     return hay.indexOf(query) >= 0;
@@ -245,19 +311,28 @@ const htmlTail = `
 
   function renderFinding(f){
     var card = el('div', {class:'finding ' + f.severity});
+    var cnt = shownCount(f);
+    // A mesh-scoped but capped finding can't be split per mesh from its sample,
+    // so under a filter it is shown across ALL meshes (its true total) with a
+    // caveat — never hidden and never understated.
+    var spanAll = meshFilter && isMeshScoped(f) && isCapped(f);
     card.appendChild(el('div', {class:'ttl'}, [
       el('b', {text:f.title}),
-      el('span', {class:'pill', text:f.count + ' found'})
+      el('span', {class:'pill', text:cnt + ' found'})
     ]));
     card.appendChild(el('div', {class:'detail', text:f.detail}));
-    var ex = f.examples || [];
+    if(spanAll){
+      card.appendChild(el('div', {class:'detail note',
+        text:'Counted across all meshes — the example sample is capped, so this finding can’t be split per mesh.'}));
+    }
+    var ex = shownExamples(f);
     if(ex.length){
       var box = el('div', {class:'ex'});
       ex.forEach(function(e){
         var sys = e.indexOf('(system') >= 0;
         box.appendChild(el('span', {class:'e' + (sys ? ' sys' : ''), text:e}));
       });
-      if(f.count > ex.length) box.appendChild(el('span', {class:'more', text:'+' + (f.count - ex.length) + ' more'}));
+      if(cnt > ex.length) box.appendChild(el('span', {class:'more', text:'+' + (cnt - ex.length) + ' more'}));
       card.appendChild(box);
     }
     return card;
@@ -267,6 +342,14 @@ const htmlTail = `
     var c = document.getElementById('findings');
     if(!c) return;
     c.innerHTML = '';
+    if(meshFilter){
+      c.appendChild(el('div', {class:'meshhint'}, [
+        document.createTextNode('Filtered to mesh '),
+        el('b', {text:meshFilter}),
+        document.createTextNode(' (plus control-plane-wide findings).'),
+        el('button', {type:'button', onclick:function(){ setMeshFilter(null); }}, 'Show all meshes')
+      ]));
+    }
     var shown = (data.findings || []).filter(matches);
     if(!shown.length){
       c.appendChild(el('div', {class:'empty', text:'No findings match the current filter.'}));
@@ -275,9 +358,14 @@ const htmlTail = `
     SEV.forEach(function(sev){
       var fs = shown.filter(function(f){ return f.severity === sev; });
       if(!fs.length) return;
-      var total = fs.reduce(function(a,f){ return a + f.count; }, 0);
+      var total = fs.reduce(function(a,f){ return a + shownCount(f); }, 0);
+      // Under a mesh filter, a capped finding contributes its all-mesh total
+      // (it can't be split per mesh), so the section total isn't a clean
+      // per-mesh figure — flag that it includes all-mesh items.
+      var spanAny = meshFilter && fs.some(function(f){ return isMeshScoped(f) && isCapped(f); });
       var sec = el('section', {class:'grp'});
-      sec.appendChild(el('h2', null, [el('span', {class:'sevdot ' + sev}), HEADINGS[sev] + ' (' + total + ')']));
+      sec.appendChild(el('h2', null, [el('span', {class:'sevdot ' + sev}),
+        HEADINGS[sev] + ' (' + total + (spanAny ? ', incl. all-mesh items' : '') + ')']));
       var lastCat = '';
       fs.forEach(function(f){
         if(f.category !== lastCat){ sec.appendChild(el('div', {class:'cat', text:f.category})); lastCat = f.category; }
