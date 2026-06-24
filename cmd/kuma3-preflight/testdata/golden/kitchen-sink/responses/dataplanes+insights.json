@@ -11,7 +11,8 @@
             "id": "sub-1",
             "version": {
               "kumaDp": { "version": "2.5.0", "kumaCpCompatible": false },
-              "envoy": { "version": "1.30.0" }
+              "envoy": { "version": "1.30.0" },
+              "dependencies": { "coredns": "1.11.1" }
             }
           }
         ]

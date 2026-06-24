@@ -50,9 +50,6 @@
       "title": "Gateway API / GAMMA usage migrated off built-in support"
     },
     {
-      "title": "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)"
-    },
-    {
       "title": "Old inspect APIs removed (switch to the new inspect API)"
     },
     {

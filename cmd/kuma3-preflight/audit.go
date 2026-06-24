@@ -917,7 +917,8 @@ func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch 
 
 // dpInsight captures just the per-subscription version data exposed by
 // /dataplanes+insights — enough to read the control plane's own compatibility
-// verdict for each connected proxy.
+// verdict for each connected proxy, plus the dependency versions kuma-dp reports
+// (e.g. a bundled `coredns`, which signals the legacy embedded-DNS path).
 type dpInsight struct {
 	DataplaneInsight struct {
 		Subscriptions []struct {
@@ -929,6 +930,7 @@ type dpInsight struct {
 				Envoy struct {
 					Version string `json:"version"`
 				} `json:"envoy"`
+				Dependencies map[string]string `json:"dependencies"`
 			} `json:"version"`
 		} `json:"subscriptions"`
 	} `json:"dataplaneInsight"`
@@ -955,11 +957,21 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 		if len(subs) == 0 {
 			continue
 		}
-		kd := subs[len(subs)-1].Version.KumaDp
+		last := subs[len(subs)-1].Version
+		kd := last.KumaDp
 		if kd.KumaCpCompatible != nil && !*kd.KumaCpCompatible {
 			a.rep.add(blocker, "Dataplane version", "Dataplane is version-incompatible with the control plane",
 				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
 				qualified(it)+" (kuma-dp "+kd.Version+")")
+		}
+		// A reported `coredns` dependency means kuma-dp launched the bundled
+		// CoreDNS, i.e. the proxy is on the legacy CoreDNS + Envoy DNS-filter
+		// path that 3.0 removes. This is a free, every-proxy signal from a
+		// payload already fetched here; --inspect-dataplanes deep-confirms it.
+		if v := last.Dependencies["coredns"]; v != "" {
+			a.rep.add(blocker, "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS",
+				"This proxy reports a bundled CoreDNS dependency; 3.0 removes the CoreDNS + Envoy DNS-filter path — upgrade kuma-dp.",
+				qualified(it)+" (coredns "+v+")")
 		}
 	}
 	return nil
@@ -1125,12 +1137,12 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // manualChecks are 3.0 drops that cannot be detected from CP resources alone.
 // Settings exposed by GET /config (unified naming, inbound tags, experimental
 // flags, autoReachableServices, global-on-k8s, eBPF transparent proxy, k8s
-// workloadLabels) are audited automatically by checkControlPlaneConfig, and
-// Universal proxies missing the kuma.io/workload label by checkDataplanes, so
-// neither is repeated here.
+// workloadLabels) are audited automatically by checkControlPlaneConfig,
+// Universal proxies missing the kuma.io/workload label by checkDataplanes, and
+// the legacy CoreDNS path by checkDataplaneVersions (a reported `coredns`
+// dependency) plus the --inspect-dataplanes deep check, so none is repeated here.
 var manualChecks = []manualCheck{
 	{Title: "Gateway API / GAMMA usage migrated off built-in support"},
-	{Title: "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)"},
 	{Title: "Old inspect APIs removed (switch to the new inspect API)"},
 	{Title: "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA"},
 }
