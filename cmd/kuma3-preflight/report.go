@@ -28,7 +28,11 @@ type report struct {
 	coverage       []coverageGap
 	parseErrors    int
 	systemFindings int
-	manual         []string
+	// total counts every finding occurrence recorded (sum of finding counts). It
+	// lets a caller detect whether a resource it just processed produced any
+	// finding, without scanning the merged findings slice.
+	total  int
+	manual []string
 }
 
 // incomplete reports whether the audit could not fully observe the CP — either a
@@ -47,6 +51,7 @@ func (r *report) addGap(path, reason string) {
 // add records one occurrence of a finding, merging by (severity, category, title)
 // and accumulating an example reference (capped).
 func (r *report) add(sev severity, category, title, detail, example string) {
+	r.total++
 	for i := range r.findings {
 		f := &r.findings[i]
 		if f.severity == sev && f.category == category && f.title == title {

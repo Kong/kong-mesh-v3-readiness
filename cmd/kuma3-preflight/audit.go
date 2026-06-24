@@ -47,8 +47,17 @@ var newPolicyPaths = []string{
 
 var allowedTopLevelTargetRefKinds = map[string]bool{"Mesh": true, "Dataplane": true}
 
+// allowedToTargetRefKinds is the permissive union of `to[].targetRef` kinds 3.0
+// keeps for at least some policy types: `Mesh` (all outbound — the canonical
+// default-policy form and the only kind permitted for MeshGateway-targeted
+// policies), the Mesh*Service kinds and MeshHTTPRoute. 3.0 drops the subset/selector
+// kinds (MeshSubset, MeshServiceSubset) and MeshGateway, which are what this flags.
+// A single union (rather than a per-policy-type set) is safe: the CP rejects any
+// per-policy-invalid kind at admission, so a kept-here-but-invalid-there combination
+// cannot exist on an audited CP and this never yields a false negative.
 var allowedToTargetRefKinds = map[string]bool{
-	"MeshService": true, "MeshExternalService": true, "MeshMultiZoneService": true,
+	"Mesh": true, "MeshService": true, "MeshExternalService": true,
+	"MeshMultiZoneService": true, "MeshHTTPRoute": true,
 }
 
 const exampleCap = 10
@@ -201,13 +210,26 @@ func (a *auditor) unmarshalSpec(it resourceItem, v any, ref string) bool {
 }
 
 // ref formats the example reference for a flagged resource, marking CP-managed
-// (policy-role: system) ones so the operator knows which defaults to update.
+// (policy-role: system) ones so the operator knows which defaults to update. It is
+// side-effect free: the system tally is kept by countSystem, which counts a
+// resource only when it actually yields a finding (ref is computed eagerly, before
+// the checks run, so counting here would over-report resources that turn out clean).
 func (a *auditor) ref(it resourceItem) string {
 	if isSystem(it) {
-		a.rep.systemFindings++
 		return qualified(it) + " (system — CP-managed, update before 3.0)"
 	}
 	return qualified(it)
+}
+
+// countSystem records a CP-managed (policy-role: system) resource in the system
+// tally exactly once, and only when it produced at least one finding while being
+// processed (total grew past totalBefore). This keeps the "N CP-managed resources"
+// summary aligned with the findings the operator must act on, not every system
+// resource scanned.
+func (a *auditor) countSystem(it resourceItem, totalBefore int) {
+	if isSystem(it) && a.rep.total > totalBefore {
+		a.rep.systemFindings++
+	}
 }
 
 func (a *auditor) checkMeshSettings(m resourceItem) {
@@ -271,8 +293,10 @@ func (a *auditor) checkLegacyResources(ctx context.Context) error {
 			return fmt.Errorf("listing %s: %w", lt.wsPath, err)
 		}
 		for _, it := range items {
+			before := a.rep.total
 			a.rep.add(blocker, "Removed resources", lt.kind+" (removed in 3.0)",
 				"Replace with "+lt.replacement+".", a.ref(it))
+			a.countSystem(it, before)
 		}
 	}
 	return nil
@@ -285,9 +309,11 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 			return fmt.Errorf("listing %s: %w", wsPath, err)
 		}
 		for _, it := range items {
+			before := a.rep.total
 			ref := a.ref(it)
 			var spec policySpec
 			if !a.unmarshalSpec(it, &spec, ref) {
+				a.countSystem(it, before)
 				continue
 			}
 			if len(spec.From) > 0 {
@@ -307,10 +333,11 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 			for _, to := range spec.To {
 				if k := to.TargetRef.Kind; k != "" && !allowedToTargetRefKinds[k] {
 					a.rep.add(blocker, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
-						"`to` may only target MeshService/MeshExternalService/MeshMultiZoneService.", ref)
+						"`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.", ref)
 				}
 			}
 			a.checkPolicyFields(it, ref)
+			a.countSystem(it, before)
 		}
 	}
 	return nil

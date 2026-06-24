@@ -79,8 +79,10 @@ Write the new test dir, confirm parity, delete the legacy one:
 ### WS4 — Fix deprecated fields inside the new `Mesh*` policy specs
 The 3.0 policies themselves are written with removed syntax:
 - `from:` → `rules:` (MeshTrafficPermission, MeshFaultInjection, MeshTimeout, MeshTLS, MeshAccessLog)
-- `to[].targetRef.kind: Mesh` → MeshService (MeshCircuitBreaker, MeshRetry, MeshTimeout,
-  MeshHTTPRoute, MeshAccessLog, MeshRateLimit, MeshFaultInjection, MeshLoadBalancingStrategy)
+- `to[].targetRef.kind`: subset/selector kinds (`MeshSubset`, `MeshServiceSubset`) and
+  `MeshGateway` removed — `Mesh` (all outbound) stays valid and is NOT a migration
+  (MeshCircuitBreaker, MeshRetry, MeshTimeout, MeshHTTPRoute, MeshAccessLog,
+  MeshRateLimit, MeshFaultInjection, MeshLoadBalancingStrategy)
 - `targetRef.proxyTypes` removed (`envoyconfig`, `gateway`)
 - top-level `targetRef.kind: MeshSubset` removed (MeshTLS, MeshTrafficPermission)
 - MeshHealthCheck `healthyPanicThreshold` → MeshCircuitBreaker (`meshhealthcheck/`)

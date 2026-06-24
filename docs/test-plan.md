@@ -4,7 +4,7 @@ Produced via the three-persona method (Bach / Kaner / Hendrickson), drafted in p
 
 ## Scope
 
-`cmd/kuma3-preflight` (`main.go`, `client.go`, `audit.go`, `report.go`) — a stdlib-only Go CLI that audits a running Kuma control plane over its REST API (default `http://localhost:5681`) and prints a Markdown pre-upgrade report for Kuma 3.0. Exit codes: `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse). Flags: `--address`, `--token`, `--mesh`, `--output`, `--timeout`.
+`cmd/kuma3-preflight` (`main.go`, `client.go`, `audit.go`, `report.go`) — a stdlib-only Go CLI that audits a running Kuma control plane over its REST API (default `http://localhost:5681`) and emits a JSON or self-contained HTML pre-upgrade report for Kuma 3.0 (default HTML; Markdown is `--classify`-only). Exit codes: `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse). Flags: `--address`, `--token`, `--mesh`, `--output`, `--timeout`.
 
 Most cases use a **local stub HTTP server** that mimics the CP REST API (the cheapest way to drive edge responses); a few want a real Kuma 2.x CP.
 
@@ -233,7 +233,7 @@ Run these first — they confirm the tool works at all before the edge-case TCs.
 | B-6 | Create one `MeshTrafficPermission` with `from`, re-run | One `… uses from` blocker; exit 1. |
 | B-7 | Apply inline `mtls` on a mesh, re-run | `Inline mTLS on Mesh` blocker fires (validates inlined-spec parsing). |
 | B-8 | A mesh with `meshServices.mode` unset/Disabled | `meshServices.mode is not Exclusive` warning, current value shown. |
-| B-9 | `--output /tmp/report.md` | stderr `report written to /tmp/report.md`; file contains the same markdown as stdout. |
+| B-9 | `--output /tmp/report.html` | stderr `report written to /tmp/report.html`; file contains the same HTML as stdout. |
 | B-10 | `--mesh default` on the fixture cluster | Only `default`-mesh findings; header `Meshes scanned: default`. |
 | B-11 | `--token bogus` against the CP | If CP requires auth → exit 2 with auth message; else normal report (token simply unused). |
 | B-12 | Run twice, `diff` the two reports | Byte-identical (determinism). |

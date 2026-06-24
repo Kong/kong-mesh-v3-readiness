@@ -2,9 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"sort"
-	"strings"
 )
 
 // Schema/tool identifiers stamped into every JSON report so a consumer (or the
@@ -22,9 +20,10 @@ const (
 	statusFailed       = "failed"
 )
 
-// reportModel is the canonical, serializable form of a report. Every output
-// format (markdown, json, html) is rendered from this single structure, and
-// --from-json loads it back, so the three formats can never drift apart.
+// reportModel is the canonical, serializable form of a CP-audit report. Both
+// output formats (json, html) are rendered from this single structure, and
+// --from-json loads it back, so they can never drift apart. (Markdown is produced
+// only by --classify, from classificationModel.)
 type reportModel struct {
 	Schema       string          `json:"schema"`
 	Tool         string          `json:"tool"`
@@ -131,15 +130,6 @@ func groupIndex(group string) int {
 		}
 	}
 	return len(groupOrder)
-}
-
-// groupOf resolves a finding's group, recomputing from category when the model
-// predates the group field (e.g. an older --from-json payload).
-func groupOf(f findingModel) string {
-	if f.Group != "" {
-		return f.Group
-	}
-	return categoryGroup(f.Category)
 }
 
 // severityRank orders severities for rendering: blocker before info, unknown last.
@@ -286,115 +276,4 @@ func renderHTML(m reportModel) (string, error) {
 		return "", err
 	}
 	return htmlHead + string(b) + htmlTail, nil
-}
-
-func renderMarkdown(m reportModel) string {
-	var b strings.Builder
-	fmt.Fprintln(&b, "# Kuma 3.0 Upgrade Pre-flight Report")
-	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "- Control plane: %s %s", m.ControlPlane.Product, m.ControlPlane.Version)
-	if m.ControlPlane.Mode != "" {
-		fmt.Fprintf(&b, " (mode: %s)", m.ControlPlane.Mode)
-	}
-	fmt.Fprintln(&b)
-	meshes := "none"
-	if len(m.Meshes) > 0 {
-		meshes = strings.Join(m.Meshes, ", ")
-	}
-	fmt.Fprintf(&b, "- Meshes scanned: %s\n", meshes)
-	fmt.Fprintf(&b, "- Findings: %d blockers, %d info\n", m.Summary.Blockers, m.Summary.Info)
-	if m.Summary.CoverageGaps > 0 {
-		fmt.Fprintf(&b, "- Coverage gaps: %d collection(s) could not be audited\n", m.Summary.CoverageGaps)
-	}
-	if m.Summary.ParseErrors > 0 {
-		fmt.Fprintf(&b, "- Unparseable resources: %d\n", m.Summary.ParseErrors)
-	}
-	if m.Summary.SystemFindings > 0 {
-		fmt.Fprintf(&b, "- Includes %d CP-managed (policy-role: system) resource(s) — update these before upgrading\n", m.Summary.SystemFindings)
-	}
-	fmt.Fprintln(&b)
-
-	switch m.Status {
-	case statusBlockers:
-		// Blocker count is already in the header; the section below lists them.
-	case statusInconclusive:
-		fmt.Fprintln(&b, "⚠️ No blockers found, but the audit was inconclusive (coverage gaps and/or unparseable resources) — this is NOT a clean bill of health.")
-	default:
-		fmt.Fprintln(&b, "✅ No blocking resources or Mesh settings found. Review the informational notes and manual checks below before upgrading.")
-	}
-	fmt.Fprintln(&b)
-
-	renderMarkdownSection(&b, m, "Blockers — must resolve before upgrading", "blocker")
-	renderMarkdownCoverage(&b, m)
-	renderMarkdownSection(&b, m, "Informational", "info")
-
-	fmt.Fprintln(&b, "## Manual checks (not detectable via the CP API)")
-	fmt.Fprintln(&b)
-	for _, mc := range m.Manual {
-		fmt.Fprintf(&b, "- [ ] %s\n", mc)
-	}
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "_Source of truth: `docs/deprecated-features.md`._")
-	return b.String()
-}
-
-// renderMarkdownSection prints one severity bucket. Findings arrive globally
-// sorted by (severity, category, title), so filtering by severity preserves the
-// category grouping without re-sorting.
-func renderMarkdownSection(b *strings.Builder, m reportModel, heading, sev string) {
-	section := make([]findingModel, 0)
-	for _, f := range m.Findings {
-		if f.Severity == sev {
-			section = append(section, f)
-		}
-	}
-	if len(section) == 0 {
-		return
-	}
-	// Count distinct categories per group so a single-category group can skip the
-	// redundant category subheading (the group heading already names it).
-	catsPerGroup := map[string]map[string]struct{}{}
-	for _, f := range section {
-		g := groupOf(f)
-		if catsPerGroup[g] == nil {
-			catsPerGroup[g] = map[string]struct{}{}
-		}
-		catsPerGroup[g][f.Category] = struct{}{}
-	}
-	fmt.Fprintf(b, "## %s\n\n", heading)
-	lastGroup, lastCategory := "", ""
-	for _, f := range section {
-		g := groupOf(f)
-		if g != lastGroup {
-			fmt.Fprintf(b, "### %s\n\n", g)
-			lastGroup, lastCategory = g, ""
-		}
-		if len(catsPerGroup[g]) > 1 && f.Category != lastCategory {
-			fmt.Fprintf(b, "#### %s\n\n", f.Category)
-			lastCategory = f.Category
-		}
-		fmt.Fprintf(b, "- **%s** — %d found. %s\n", f.Title, f.Count, f.Detail)
-		if len(f.Examples) > 0 {
-			more := ""
-			if f.Count > len(f.Examples) {
-				more = fmt.Sprintf(", … (+%d more)", f.Count-len(f.Examples))
-			}
-			fmt.Fprintf(b, "  - e.g. %s%s\n", strings.Join(f.Examples, ", "), more)
-		}
-	}
-	fmt.Fprintln(b)
-}
-
-func renderMarkdownCoverage(b *strings.Builder, m reportModel) {
-	if len(m.Coverage) == 0 {
-		return
-	}
-	fmt.Fprintln(b, "## Coverage gaps — collections NOT audited")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "These were not read, so their absence from the blockers above is unproven. Investigate before trusting a clean result.")
-	fmt.Fprintln(b)
-	for _, g := range m.Coverage {
-		fmt.Fprintf(b, "- `%s` — %s\n", g.Path, g.Reason)
-	}
-	fmt.Fprintln(b)
 }

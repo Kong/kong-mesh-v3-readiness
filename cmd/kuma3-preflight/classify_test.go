@@ -230,7 +230,12 @@ func TestRenderClassificationFormats(t *testing.T) {
 	m := ci.toModel("src", "", "")
 
 	md := renderClassificationMarkdown(m)
-	for _, want := range []string{recRemove, recRewrite, "trafficroute", "TrafficRoute", "MeshHTTPRoute", "Mesh.mtls"} {
+	for _, want := range []string{
+		"<details open>", "<summary>", // collapsible env + per-suite grouping
+		"| Recommendation | Suites | Usages |", // summary table
+		"Remove / replace", "Rewrite",          // both recommendation sections present
+		"trafficroute", "TrafficRoute", "MeshHTTPRoute", "Mesh.mtls",
+	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown missing %q", want)
 		}

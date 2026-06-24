@@ -26,7 +26,7 @@ func run() int {
 	token := flag.String("token", "", "Bearer token for the CP API (needed to read /config on access-controlled Kong Mesh CPs; otherwise /config is a coverage gap)")
 	mesh := flag.String("mesh", "", "Limit the audit to a single mesh (default: all meshes)")
 	out := flag.String("output", "", "Write the report to this file (default: stdout)")
-	format := flag.String("format", "markdown", "Output format: markdown, json, or html")
+	format := flag.String("format", "", "Output format. CP audit: json or html (default html). With --classify: markdown, json, or html (default markdown).")
 	fromJSON := flag.String("from-json", "", "Render a previously captured JSON report (path, or - for stdin) instead of auditing")
 	timeout := flag.Duration("timeout", 60*time.Second, "Overall timeout for the audit")
 	inspect := flag.Int("inspect-dataplanes", 0, "Fetch up to N dataplanes' Envoy config dumps to detect removed features (0 = skip; expensive)")
@@ -36,18 +36,24 @@ func run() int {
 	reportsDir := flag.String("reports-dir", "", "With --classify: directory of per-spec preflight JSON snapshots to fold in")
 	flag.Parse()
 
-	fmtName, err := normalizeFormat(*format)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return 2
-	}
-
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	// --classify is a separate mode: it inspects e2e test sources / captured
-	// snapshots rather than auditing a live control plane.
+	// snapshots rather than auditing a live control plane. It is the only mode that
+	// renders Markdown (its default); a CP audit renders JSON or a self-contained HTML page.
 	if *classify {
+		fmtName, err := classifyFormat(*format)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return 2
+		}
 		return runClassify(*sourceDir, *reportsDir, fmtName, *out, now)
+	}
+
+	fmtName, err := auditFormat(*format)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 2
 	}
 
 	// --from-json renders an existing JSON report in any format without touching
@@ -141,8 +147,9 @@ func run() int {
 	}
 }
 
-// normalizeFormat canonicalizes the --format value, accepting common aliases.
-func normalizeFormat(f string) (string, error) {
+// classifyFormat canonicalizes --format for --classify, which renders Markdown
+// (its default), JSON, or HTML.
+func classifyFormat(f string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(f)) {
 	case "", "markdown", "md":
 		return "markdown", nil
@@ -155,24 +162,33 @@ func normalizeFormat(f string) (string, error) {
 	}
 }
 
-func renderFormat(format string, m reportModel) (string, error) {
-	switch format {
+// auditFormat canonicalizes --format for a live CP audit / --from-json render.
+// Markdown is produced only by --classify; a CP audit emits JSON or a
+// self-contained HTML page (the default).
+func auditFormat(f string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(f)) {
+	case "", "html", "htm":
+		return "html", nil
 	case "json":
-		return renderJSON(m)
-	case "html":
-		return renderHTML(m)
+		return "json", nil
+	case "markdown", "md":
+		return "", fmt.Errorf("--format markdown is only available with --classify; use --format json or html for a CP audit")
 	default:
-		return renderMarkdown(m), nil
+		return "", fmt.Errorf("invalid --format %q: want json or html", f)
 	}
 }
 
-// failureContent renders the "audit did not complete" payload in the requested
-// format. Markdown keeps the original plain stamp; json/html carry a structured
-// failed-status model so they round-trip and render a red banner.
-func failureContent(format, addr string, auditErr error, generatedAt string) (string, error) {
-	if format == "markdown" {
-		return failureStamp(addr, auditErr), nil
+func renderFormat(format string, m reportModel) (string, error) {
+	if format == "json" {
+		return renderJSON(m)
 	}
+	return renderHTML(m)
+}
+
+// failureContent renders the "audit did not complete" payload in the requested
+// format (json/html): a structured failed-status model that round-trips and
+// renders a red banner.
+func failureContent(format, addr string, auditErr error, generatedAt string) (string, error) {
 	return renderFormat(format, failureModel(addr, auditErr, generatedAt))
 }
 
@@ -232,12 +248,6 @@ func emit(out, content string) error {
 	}
 	fmt.Fprintf(os.Stderr, "report written to %s\n", out)
 	return nil
-}
-
-func failureStamp(addr string, err error) string {
-	return fmt.Sprintf("# Kuma 3.0 Upgrade Pre-flight Report — FAILED\n\n"+
-		"The audit of %s did not complete:\n\n    %v\n\n"+
-		"Do NOT treat this as upgrade-safe; re-run after fixing the cause.\n", addr, err)
 }
 
 // writeReport writes content atomically (temp file + rename) and refuses to
