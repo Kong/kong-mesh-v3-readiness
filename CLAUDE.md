@@ -2,8 +2,9 @@
 
 Tooling + manual-test material auditing a running **Kuma 2.x** control plane (CP) for
 **Kuma 3.0** upgrade readiness. Shipped artifact: `kuma3-preflight` — a Go CLI that audits a
-CP over its REST API and emits a blockers/warnings/manual report as Markdown, JSON, or
-self-contained HTML. Single-purpose repo — keep it focused on the preflight CLI + its docs.
+CP over its REST API and emits a blockers/manual report as JSON or self-contained HTML
+(default HTML; Markdown is produced only by its `--classify` mode). Single-purpose repo —
+keep it focused on the preflight CLI + its docs.
 
 ## Layout
 
@@ -21,9 +22,9 @@ self-contained HTML. Single-purpose repo — keep it focused on the preflight CL
 
 ```bash
 go build -o bin/kuma3-preflight ./cmd/kuma3-preflight       # build
-go run ./cmd/kuma3-preflight --address http://localhost:5681 --output report.md  # audit a CP
+go run ./cmd/kuma3-preflight --address http://localhost:5681 --output report.html  # audit a CP
 go test ./...                                               # all tests
-go test ./... -run TestRenderMarkdownGolden -v              # one test
+go test ./... -run TestRenderClassificationFormats -v      # one test
 go test ./... -run TestGoldenReports -update                # refresh golden JSON refs
 ```
 

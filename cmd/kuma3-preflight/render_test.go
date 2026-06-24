@@ -92,44 +92,11 @@ func TestAllowedToTargetRefKinds(t *testing.T) {
 	}
 }
 
-func TestRenderMarkdownGolden(t *testing.T) {
-	got := renderMarkdown(sampleReport().toModel(""))
-	for _, want := range []string{
-		"# Kuma 3.0 Upgrade Pre-flight Report",
-		"- Control plane: Kuma 2.9.0 (mode: zone)",
-		"- Meshes scanned: default, legacy",
-		"- Findings: 14 blockers, 1 info",
-		"- Unparseable resources: 1",
-		"- Includes 2 CP-managed (policy-role: system) resource(s) — update these before upgrading",
-		"## Blockers — must resolve before upgrading",
-		"### Mesh object",
-		"#### Mesh object settings", // Mesh object has 2 categories → subheaders shown
-		"### Policies",              // single-category group → no redundant subheader
-		"### Other",                 // info section groups the Zone proxies finding
-		"- **MeshTimeout uses `from`** — 12 found. Rewrite from.",
-		"… (+2 more)", // 12 occurrences, capped at 10 examples
-		"## Coverage gaps — collections NOT audited",
-		"- `/meshes/default/meshpassthroughs` — endpoint returned 404 — NOT audited",
-		"- [ ] Enable unified naming",
-		"_Source of truth: `docs/deprecated-features.md`._",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("markdown missing %q\n---\n%s", want, got)
-		}
-	}
-	if strings.Index(got, "### Mesh object") > strings.Index(got, "### Policies") {
-		t.Error("groups out of order: Mesh object should precede Policies")
-	}
-	// A single-category group must not repeat the category as a subheading.
-	if strings.Contains(got, "#### Policy `from` field") {
-		t.Error("single-category group should not render a redundant category subheader")
-	}
-}
-
 // TestNormalizeModelOldPayload guards the --from-json path for reports written
 // before the group field existed: such a model has no Group and is sorted only by
-// category, so groups interleave. normalizeModel must make them group-contiguous so
-// markdown (which streams group headers) and HTML (which buckets by group) agree.
+// category, so groups interleave. normalizeModel must populate Group and make the
+// findings group-contiguous in canonical order so the HTML renderer (which buckets
+// by group) shows each group exactly once.
 func TestNormalizeModelOldPayload(t *testing.T) {
 	m := reportModel{
 		Schema: reportSchema, Tool: toolName, Status: statusBlockers,
@@ -161,9 +128,11 @@ func TestNormalizeModelOldPayload(t *testing.T) {
 			lastIdx = idx
 		}
 	}
-	if md := renderMarkdown(m); strings.Count(md, "### "+groupDataPlane) != 1 {
-		t.Errorf("group heading %q must appear exactly once, got %d\n---\n%s",
-			groupDataPlane, strings.Count(md, "### "+groupDataPlane), md)
+	// Both Data plane findings (probes + reachableServices) must land contiguously
+	// under one group — the contiguity guard above already enforces this; assert the
+	// group is present so the canonical mapping can't silently drop it.
+	if !seen[groupDataPlane] {
+		t.Errorf("Data plane findings must be grouped under %q", groupDataPlane)
 	}
 }
 
@@ -210,16 +179,33 @@ func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	}
 }
 
-func TestNormalizeFormat(t *testing.T) {
+func TestClassifyFormat(t *testing.T) {
+	// --classify keeps Markdown as its default and supported format.
 	cases := map[string]string{"": "markdown", "md": "markdown", "MARKDOWN": "markdown", "json": "json", "HTML": "html", "htm": "html"}
 	for in, want := range cases {
-		got, err := normalizeFormat(in)
+		got, err := classifyFormat(in)
 		if err != nil || got != want {
-			t.Errorf("normalizeFormat(%q) = %q,%v; want %q", in, got, err, want)
+			t.Errorf("classifyFormat(%q) = %q,%v; want %q", in, got, err, want)
 		}
 	}
-	if _, err := normalizeFormat("pdf"); err == nil {
-		t.Error("normalizeFormat(pdf) should error")
+	if _, err := classifyFormat("pdf"); err == nil {
+		t.Error("classifyFormat(pdf) should error")
+	}
+}
+
+func TestAuditFormat(t *testing.T) {
+	// A CP audit defaults to HTML and does not produce Markdown.
+	cases := map[string]string{"": "html", "HTML": "html", "htm": "html", "json": "json"}
+	for in, want := range cases {
+		got, err := auditFormat(in)
+		if err != nil || got != want {
+			t.Errorf("auditFormat(%q) = %q,%v; want %q", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"markdown", "md", "pdf"} {
+		if _, err := auditFormat(bad); err == nil {
+			t.Errorf("auditFormat(%q) should error (markdown is classify-only)", bad)
+		}
 	}
 }
 

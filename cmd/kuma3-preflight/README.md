@@ -1,21 +1,22 @@
 # kuma3-preflight
 
 Audits a running Kuma control plane (zone or global) over its REST API and
-produces a Markdown report of what must change before upgrading to **Kuma 3.0**.
+produces a self-contained HTML (default) or JSON report of what must change before
+upgrading to **Kuma 3.0**. (Markdown is produced by `--classify`, not a CP audit.)
 
 The checks track `docs/deprecated-features.md`.
 
 ## Usage
 
 ```bash
-go run ./cmd/kuma3-preflight --address http://localhost:5681 > report.md
+go run ./cmd/kuma3-preflight --address http://localhost:5681 --output report.html
 ```
 
 Against a Kubernetes zone CP, port-forward first:
 
 ```bash
 kubectl -n kuma-system port-forward svc/kuma-control-plane 5681:5681
-go run ./cmd/kuma3-preflight --output report.md
+go run ./cmd/kuma3-preflight --output report.html
 ```
 
 ### Flags
@@ -26,7 +27,7 @@ go run ./cmd/kuma3-preflight --output report.md
 | `--token` | _(none)_ | Bearer token. Optional, but Kong Mesh gates `GET /config` behind RBAC — without it that endpoint becomes a coverage gap (run is inconclusive, not failed) |
 | `--mesh` | _(all)_ | Limit the audit to one mesh |
 | `--output` | _(stdout)_ | Write the report to a file |
-| `--format` | `markdown` | Output format: `markdown`, `json`, or `html` |
+| `--format` | `html` | CP-audit output: `json` or `html` (Markdown is `--classify`-only). With `--classify`: `markdown` (default), `json`, or `html` |
 | `--from-json` | _(none)_ | Render a previously captured JSON report (path, or `-` for stdin) instead of auditing |
 | `--timeout` | `60s` | Overall audit timeout |
 | `--inspect-dataplanes` | `0` | Fetch up to N dataplanes' Envoy config dumps to detect removed features (`0` = skip; expensive per-proxy fetch) |
@@ -61,14 +62,15 @@ The end-to-end capture workflow is documented in
 
 ## Output formats
 
-All three formats render from the same underlying data, so they never disagree.
+A CP audit renders **`html`** (default) or **`json`** — both from the same underlying
+data, so they never disagree. (Markdown is produced only by `--classify`.)
 
-- **`markdown`** (default) — the plain report shown above.
+- **`html`** (default) — a single, self-contained page (inline CSS + JS, no network requests,
+  works offline from `file://`): status banner, clickable severity filters, full-text search,
+  and a manual-checks checklist whose progress is saved per report in the browser.
 - **`json`** — a stable, machine-readable document (`schema`, `status`, `summary`,
   `findings[]`, `coverageGaps[]`, `manualChecks[]`). Status maps to the same exit codes.
-- **`html`** — a single, self-contained page (inline CSS + JS, no network requests, works
-  offline from `file://`): status banner, clickable severity filters, full-text search, and
-  a manual-checks checklist whose progress is saved per report in the browser.
+  This is the format the e2e capture hook saves per spec and `--classify` folds back in.
 
 ```bash
 # Capture machine-readable JSON in CI…
