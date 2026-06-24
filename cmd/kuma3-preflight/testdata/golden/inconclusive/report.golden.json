@@ -56,9 +56,6 @@
       "title": "Old inspect APIs removed (switch to the new inspect API)"
     },
     {
-      "title": "Pod resources instead of container resources"
-    },
-    {
       "title": "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA"
     }
   ]

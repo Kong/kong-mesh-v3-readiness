@@ -235,28 +235,36 @@ func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	}
 }
 
-// The kuma.io/mesh annotation→label card is a Kubernetes-object concern the CP API
-// cannot reveal, so it is shown only when the audit observed Kubernetes.
+// The k8s cards (kuma.io/mesh annotation→label, pod-vs-container resources) are
+// Kubernetes-object concerns the CP API cannot reveal, so they are shown only when
+// the audit observed Kubernetes.
 func TestBuildManualChecksK8sGating(t *testing.T) {
 	base := buildManualChecks(false)
 	withK8s := buildManualChecks(true)
-	if len(withK8s) != len(base)+1 {
-		t.Fatalf("k8s run should add exactly one card: base=%d k8s=%d", len(base), len(withK8s))
+	if len(withK8s) != len(base)+len(kubernetesManualChecks) {
+		t.Fatalf("k8s run should add the k8s cards: base=%d k8s=%d added=%d",
+			len(base), len(withK8s), len(kubernetesManualChecks))
 	}
+	k8sTitles := []string{"kuma.io/mesh", "Pod resources"}
 	for _, m := range base {
-		if strings.Contains(m.Title, "kuma.io/mesh") {
-			t.Errorf("Universal-only run must not show the kuma.io/mesh card: %q", m.Title)
+		for _, kt := range k8sTitles {
+			if strings.Contains(m.Title, kt) {
+				t.Errorf("Universal-only run must not show the %q card: %q", kt, m.Title)
+			}
 		}
 	}
-	card := withK8s[len(withK8s)-1]
-	if !strings.Contains(card.Title, "kuma.io/mesh") {
-		t.Fatalf("k8s card missing; last title = %q", card.Title)
-	}
-	if card.Detail == "" || card.Command == "" {
-		t.Error("k8s card must carry both a detail and a validation command")
-	}
-	if !strings.Contains(card.Command, "kubectl") {
-		t.Errorf("k8s card command should be a kubectl one-liner; got %q", card.Command)
+	added := withK8s[len(base):]
+	for i, want := range k8sTitles {
+		card := added[i]
+		if !strings.Contains(card.Title, want) {
+			t.Errorf("k8s card %d title = %q, want it to contain %q", i, card.Title, want)
+		}
+		if card.Detail == "" || card.Command == "" {
+			t.Errorf("k8s card %q must carry both a detail and a validation command", card.Title)
+		}
+		if !strings.Contains(card.Command, "kubectl") {
+			t.Errorf("k8s card %q command should be a kubectl one-liner; got %q", card.Title, card.Command)
+		}
 	}
 }
 
