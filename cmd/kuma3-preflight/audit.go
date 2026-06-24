@@ -1088,7 +1088,6 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // audited automatically by checkControlPlaneConfig and are not repeated here.
 var manualChecks = []string{
 	"Gateway API / GAMMA usage migrated off built-in support",
-	"Observability: KRI-based config only; `install observability` command removed",
 	"DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)",
 	"Old inspect APIs removed (switch to the new inspect API)",
 	"Pod resources instead of container resources",
