@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -136,33 +137,57 @@ func or(s, fallback string) string {
 	return s
 }
 
+// renderClassificationMarkdown emits one collapsible env block (GitHub-flavored
+// markdown): an `<details open>` wrapper whose summary carries the env's headline
+// counts, a per-recommendation summary table, then a nested `<details>` per test
+// suite. The e2e workflow concatenates one of these per env under a single H1, so
+// the combined job summary is three expandable env sections rather than a wall of
+// ~2,000 lines. Severity (🟥 remove / 🟧 rewrite / ✅ clean) and category emoji give
+// the report at-a-glance structure.
 func renderClassificationMarkdown(m classificationModel) string {
 	var b strings.Builder
-	fmt.Fprintln(&b, "# Kuma e2e — Kuma 3.0 deprecation classification")
-	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "- Source tree: %s\n", or(m.SourceDir, "(none)"))
-	fmt.Fprintf(&b, "- Dynamic snapshots: %s\n", or(m.ReportsDir, "(none)"))
-	fmt.Fprintf(&b, "- Features flagged: %d — %d to remove/replace, %d to rewrite (%d deprecated usages)\n",
-		m.Summary.Features, m.Summary.Remove, m.Summary.Rewrite, m.Summary.DeprecatedUsages)
-	fmt.Fprintln(&b)
+	env := classEnvLabel(m)
+
+	headSev := "🟧"
+	switch {
+	case m.Summary.Features == 0:
+		headSev = "✅"
+	case m.Summary.Remove > 0:
+		headSev = "🟥"
+	}
+
+	fmt.Fprintln(&b, "<details open>")
+	fmt.Fprintf(&b, "<summary>%s <b><code>%s</code></b> — %d suites · 🟥 %d remove/replace · 🟧 %d rewrite · %d usages</summary>\n\n",
+		headSev, html.EscapeString(env), m.Summary.Features, m.Summary.Remove, m.Summary.Rewrite, m.Summary.DeprecatedUsages)
+	fmt.Fprintf(&b, "> 📂 `%s` &nbsp;·&nbsp; 📸 `%s`\n\n", or(m.SourceDir, "(none)"), or(m.ReportsDir, "(none)"))
 
 	if m.Summary.Features == 0 {
 		fmt.Fprintln(&b, "✅ No deprecated-feature usage detected in the scanned sources/snapshots.")
 		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, "_Source of truth: `docs/deprecated-features.md` / `audit.go`._")
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "</details>")
 		return b.String()
 	}
 
-	renderMarkdownRecSection(&b, m, recRemove,
-		"REMOVE/REPLACE — the test's subject is a resource removed in 3.0")
-	renderMarkdownRecSection(&b, m, recRewrite,
-		"REWRITE — uses a deprecated feature as scaffolding for an unrelated test")
+	removeUsages, rewriteUsages := recUsageTotals(m)
+	fmt.Fprintln(&b, "| Recommendation | Suites | Usages |")
+	fmt.Fprintln(&b, "|---|--:|--:|")
+	fmt.Fprintf(&b, "| 🟥 Remove / replace | %d | %d |\n", m.Summary.Remove, removeUsages)
+	fmt.Fprintf(&b, "| 🟧 Rewrite | %d | %d |\n\n", m.Summary.Rewrite, rewriteUsages)
+
+	renderMarkdownRecSection(&b, m, recRemove, "🟥",
+		"Remove / replace — the test's subject is a resource removed in 3.0")
+	renderMarkdownRecSection(&b, m, recRewrite, "🟧",
+		"Rewrite — uses a deprecated feature as scaffolding for an unrelated test")
 
 	fmt.Fprintln(&b, "_Source of truth: `docs/deprecated-features.md` / `audit.go`._")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "</details>")
 	return b.String()
 }
 
-func renderMarkdownRecSection(b *strings.Builder, m classificationModel, rec, heading string) {
+func renderMarkdownRecSection(b *strings.Builder, m classificationModel, rec, sev, heading string) {
 	section := make([]featureModel, 0)
 	for _, f := range m.Features {
 		if f.Recommendation == rec {
@@ -172,26 +197,95 @@ func renderMarkdownRecSection(b *strings.Builder, m classificationModel, rec, he
 	if len(section) == 0 {
 		return
 	}
-	fmt.Fprintf(b, "## %s\n\n", heading)
+	fmt.Fprintf(b, "#### %s %s\n\n", sev, heading)
 	for _, f := range section {
-		fmt.Fprintf(b, "### %s\n\n", f.Name)
+		usages := 0
+		for _, u := range f.Usages {
+			usages += u.Count
+		}
+		fmt.Fprintf(b, "<details><summary>%s <b>%s</b> — %d finding(s) · %d usage(s)</summary>\n\n",
+			sev, html.EscapeString(f.Name), len(f.Usages), usages)
 		for _, u := range f.Usages {
 			repl := ""
 			if u.Replacement != "" {
-				repl = " → " + u.Replacement
+				repl = " → **" + u.Replacement + "**"
 			}
-			fmt.Fprintf(b, "- **%s** (%s) — %d×, via [%s]%s\n",
-				u.Kind, u.Category, u.Count, strings.Join(u.Sources, ", "), repl)
+			fmt.Fprintf(b, "- %s **%s** _(%s)_ — %d× · `%s`%s\n",
+				categoryEmoji(u.Category), u.Kind, u.Category, u.Count, strings.Join(u.Sources, ", "), repl)
 			if len(u.Examples) > 0 {
 				more := ""
 				if u.Count > len(u.Examples) {
 					more = fmt.Sprintf(", … (+%d more)", u.Count-len(u.Examples))
 				}
-				fmt.Fprintf(b, "  - e.g. %s%s\n", strings.Join(u.Examples, ", "), more)
+				fmt.Fprintf(b, "  - e.g. %s%s\n", joinInlineCode(u.Examples), more)
 			}
 		}
 		fmt.Fprintln(b)
+		fmt.Fprintln(b, "</details>")
+		fmt.Fprintln(b)
 	}
+}
+
+// classEnvLabel names the env this classification covers, taken from the scanned
+// source tree (test/e2e_env/<env>) or, failing that, the snapshots dir.
+func classEnvLabel(m classificationModel) string {
+	switch {
+	case m.SourceDir != "":
+		return filepath.Base(m.SourceDir)
+	case m.ReportsDir != "":
+		return filepath.Base(m.ReportsDir)
+	default:
+		return "report"
+	}
+}
+
+// recUsageTotals sums deprecated-usage counts per recommendation for the summary table.
+func recUsageTotals(m classificationModel) (remove, rewrite int) {
+	for _, f := range m.Features {
+		n := 0
+		for _, u := range f.Usages {
+			n += u.Count
+		}
+		if f.Recommendation == recRemove {
+			remove += n
+		} else {
+			rewrite += n
+		}
+	}
+	return remove, rewrite
+}
+
+// categoryEmoji picks a glyph for a usage category so bullets scan by kind.
+func categoryEmoji(category string) string {
+	switch {
+	case strings.Contains(category, "Removed"):
+		return "⛔"
+	case strings.Contains(category, "Dataplane"):
+		return "🛰️"
+	case strings.Contains(category, "Mesh"):
+		return "🕸️"
+	case strings.Contains(category, "targetRef"),
+		strings.Contains(category, "proxyTypes"),
+		strings.Contains(category, "from"):
+		return "🎯"
+	case strings.Contains(category, "Relocated"):
+		return "📦"
+	case strings.Contains(category, "OpenTelemetry"):
+		return "📡"
+	case strings.Contains(category, "RFC"):
+		return "🏷️"
+	default:
+		return "⚙️"
+	}
+}
+
+// joinInlineCode renders each example as inline code, comma-joined.
+func joinInlineCode(items []string) string {
+	q := make([]string, len(items))
+	for i, s := range items {
+		q[i] = "`" + s + "`"
+	}
+	return strings.Join(q, ", ")
 }
 
 // renderClassificationHTML emits a fully self-contained page (inline CSS, no JS, no

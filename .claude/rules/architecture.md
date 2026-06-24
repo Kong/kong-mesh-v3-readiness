@@ -1,9 +1,11 @@
 # Architecture invariants — do not break
 
-- **One model, three renderers.** Everything renders from `reportModel` (`model.go`);
-  markdown, JSON, and HTML must never disagree. `--from-json` reloads `reportModel` and
-  re-renders, so the JSON shape is a stable contract. Bump `reportSchema` (`model.go:13`)
-  on incompatible changes.
+- **One model, N renderers.** Everything renders from a single model — the CP audit from
+  `reportModel` (`model.go`) into JSON + HTML; `--classify` from `classificationModel`
+  (`classify_model.go`) into Markdown + JSON + HTML. Within each, the formats must never
+  disagree (Markdown is classify-only — a CP audit emits JSON or HTML, default HTML).
+  `--from-json` reloads `reportModel` and re-renders, so the JSON shape is a stable contract.
+  Bump `reportSchema` (`model.go`) on incompatible changes.
 - **Exit codes gate CI** (set in `main.run`): `0` clean · `1` blockers · `2` operational
   error · `3` inconclusive. Keep `exitForStatus`, `report.status()`, and these in sync.
 - **Never emit a misleading clean report.** A 404 on a collection is a *coverage gap*
