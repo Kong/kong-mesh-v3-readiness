@@ -11,9 +11,9 @@
     "default"
   ],
   "summary": {
-    "blockers": 19,
+    "blockers": 20,
     "info": 1,
-    "coverageGaps": 1,
+    "coverageGaps": 3,
     "parseErrors": 0,
     "systemFindings": 1
   },
@@ -104,6 +104,17 @@
       "count": 1,
       "examples": [
         "zone zone-1: runtime.kubernetes.injector.ebpf.enabled=true"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Control plane",
+      "category": "Control plane version",
+      "title": "Control plane behind the latest 2.14 patch",
+      "detail": "Upgrade to the latest 2.14 patch (2.14.0) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.",
+      "count": 1,
+      "examples": [
+        "control plane (2.9.0)"
       ]
     },
     {
@@ -231,8 +242,16 @@
   ],
   "coverageGaps": [
     {
+      "path": "/zones+insights (zone-1, version)",
+      "reason": "zone reported no control-plane version over KDS — version NOT audited"
+    },
+    {
       "path": "/zones+insights (zone-2)",
       "reason": "zone reported no control-plane config over KDS — config NOT audited (upgrade the zone CP or audit the zone directly)"
+    },
+    {
+      "path": "/zones+insights (zone-2, version)",
+      "reason": "zone reported no control-plane version over KDS — version NOT audited"
     }
   ],
   "manualChecks": [

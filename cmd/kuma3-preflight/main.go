@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,7 @@ func run() int {
 	fromJSON := flag.String("from-json", "", "Render a previously captured JSON report (path, or - for stdin) instead of auditing")
 	timeout := flag.Duration("timeout", 60*time.Second, "Overall timeout for the audit")
 	inspect := flag.Int("inspect-dataplanes", 0, "Fetch up to N dataplanes' Envoy config dumps to detect removed features (0 = skip; expensive)")
+	latestVersion := flag.String("latest-version", "", fmt.Sprintf("Latest 2.%d patch to check control plane(s) against (e.g. 2.%d.7); skips the GitHub lookup when set", upgradeTargetMinor, upgradeTargetMinor))
 	classify := flag.Bool("classify", false, "Classify e2e tests by Kuma-3.0 deprecated-feature usage (uses --source-dir / --reports-dir) instead of auditing a CP")
 	sourceDir := flag.String("source-dir", "", "With --classify: root of the e2e test sources to scan statically")
 	reportsDir := flag.String("reports-dir", "", "With --classify: directory of per-spec preflight JSON snapshots to fold in")
@@ -83,7 +85,32 @@ func run() int {
 		return 2
 	}
 
-	report, auditErr := audit(ctx, c, auditOptions{meshFilter: *mesh, inspectDataplanes: *inspect})
+	// Resolve the latest 2.x patch to check against: an explicit --latest-version
+	// wins (and keeps the run offline/deterministic); otherwise look it up from
+	// GitHub. A failed lookup is non-fatal — the check degrades to a coverage gap
+	// (inconclusive) rather than aborting or faking a clean pass. The lookup gets
+	// its OWN short, separate deadline so a slow/hung GitHub can never eat the audit
+	// budget and turn a healthy CP audit into an operational error.
+	latest := *latestVersion
+	if latest == "" {
+		fetchTimeout := *timeout
+		if fetchTimeout > 15*time.Second {
+			fetchTimeout = 15 * time.Second
+		}
+		fctx, fcancel := context.WithTimeout(context.Background(), fetchTimeout)
+		v, ferr := fetchLatestPatch(fctx, &http.Client{Timeout: fetchTimeout}, upgradeTargetMinor)
+		fcancel()
+		if ferr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not determine the latest 2.%d patch from GitHub (%v); version currency will be inconclusive — pass --latest-version to set it\n", upgradeTargetMinor, ferr)
+		} else {
+			latest = v
+		}
+	}
+
+	report, auditErr := audit(ctx, c, auditOptions{
+		meshFilter: *mesh, inspectDataplanes: *inspect,
+		checkVersionCurrency: true, latestPatch: latest,
+	})
 
 	// Always make the output reflect this run: on failure, stamp the destination
 	// so a stale clean report is never mistaken for an up-to-date one.

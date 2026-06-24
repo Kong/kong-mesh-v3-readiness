@@ -77,13 +77,38 @@ type auditOptions struct {
 	// inspectDataplanes is the cap on how many dataplanes' Envoy config dumps to
 	// fetch (0 = skip the expensive per-proxy inspection entirely).
 	inspectDataplanes int
+	// checkVersionCurrency enables the control-plane version-currency check.
+	checkVersionCurrency bool
+	// latestPatch is the latest 2.x patch to compare against (resolved by the
+	// caller from --latest-version or the GitHub lookup; "" = could not determine).
+	latestPatch string
 }
 
 type auditor struct {
-	c                 *client
-	meshFilter        string
-	inspectDataplanes int
-	rep               *report
+	c                    *client
+	meshFilter           string
+	inspectDataplanes    int
+	checkVersionCurrency bool
+	latestPatch          string
+	rep                  *report
+
+	// /zones+insights is read by both the config and version fan-outs on a global;
+	// memoize the (single) fetch so one global audit makes one round-trip for it.
+	zonesItems  []resourceItem
+	zonesFound  bool
+	zonesErr    error
+	zonesCached bool
+}
+
+// zoneInsights fetches /zones+insights once and caches the result (items, whether
+// the endpoint was served, and any transport error) so the config and version
+// fan-outs share a single round-trip.
+func (a *auditor) zoneInsights(ctx context.Context) ([]resourceItem, bool, error) {
+	if !a.zonesCached {
+		a.zonesItems, a.zonesFound, a.zonesErr = a.c.list(ctx, "/zones+insights")
+		a.zonesCached = true
+	}
+	return a.zonesItems, a.zonesFound, a.zonesErr
 }
 
 func audit(ctx context.Context, c *client, opts auditOptions) (*report, error) {
@@ -97,7 +122,11 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*report, error) {
 		return nil, fmt.Errorf("endpoint at %s does not look like a Kuma control plane (GET / returned no version)", c.base)
 	}
 
-	a := &auditor{c: c, meshFilter: opts.meshFilter, inspectDataplanes: opts.inspectDataplanes, rep: &report{cp: idx}}
+	a := &auditor{
+		c: c, meshFilter: opts.meshFilter, inspectDataplanes: opts.inspectDataplanes,
+		checkVersionCurrency: opts.checkVersionCurrency, latestPatch: opts.latestPatch,
+		rep: &report{cp: idx},
+	}
 
 	meshes, found, err := c.list(ctx, "/meshes")
 	if err != nil {
@@ -122,7 +151,8 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*report, error) {
 	for _, check := range []func(context.Context) error{
 		a.checkLegacyResources, a.checkNewPolicies, a.checkDataplanes,
 		a.checkZoneProxies, a.checkResourceNames, a.checkMeshTrust,
-		a.checkControlPlaneConfig, a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
+		a.checkControlPlaneConfig, a.checkControlPlaneVersions,
+		a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
 	} {
 		if err := check(ctx); err != nil {
 			return nil, err
@@ -665,9 +695,29 @@ type zoneOverview struct {
 // zoneSubscription is one zone->global KDS subscription. Config is the zone CP's
 // config as a JSON string — config.ConfigForDisplay on the zone, i.e. the same
 // sanitized payload GET /config serves (secrets already redacted), so it is safe
-// to read here and carries the exact fields addCPConfigFindings inspects.
+// to read here and carries the exact fields addCPConfigFindings inspects. Version
+// carries the zone CP's own reported version (kumaCp.version), letting a global
+// audit read every connected zone's version with no extra round-trips.
 type zoneSubscription struct {
-	Config string `json:"config"`
+	Config  string `json:"config"`
+	Version struct {
+		KumaCp struct {
+			Version string `json:"version"`
+		} `json:"kumaCp"`
+	} `json:"version"`
+}
+
+// latestZoneVersion returns the most recent subscription's reported zone CP
+// version (zones re-send it on each (re)connect, so the last non-empty one is the
+// freshest). It returns false when no subscription carried a version.
+func latestZoneVersion(zo zoneOverview) (string, bool) {
+	subs := zo.ZoneInsight.Subscriptions
+	for i := len(subs) - 1; i >= 0; i-- {
+		if v := subs[i].Version.KumaCp.Version; v != "" {
+			return v, true
+		}
+	}
+	return "", false
 }
 
 // checkZoneControlPlaneConfigs audits the data-plane-relevant CP settings of
@@ -676,7 +726,7 @@ type zoneSubscription struct {
 // config, or whose collection is unreachable, is a coverage gap — never a silent
 // pass (an unobserved zone is not a clean zone).
 func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
-	items, found, err := a.c.list(ctx, "/zones+insights")
+	items, found, err := a.zoneInsights(ctx)
 	if err != nil {
 		// Same rationale as /config: an unreadable zones overview (e.g. auth) is a
 		// coverage gap, not a reason to abort the whole global audit.
@@ -726,6 +776,103 @@ func latestZoneConfig(zo zoneOverview) (cpConfig, bool) {
 		return cfg, true
 	}
 	return cpConfig{}, false
+}
+
+const cpVersionCategory = "Control plane version"
+
+// checkControlPlaneVersions flags control planes not on the latest 2.x patch (the
+// only supported 3.0 upgrade source). It checks the CP the tool connects to and,
+// for a global, fans out to every connected zone's CP version (read from the same
+// /zones+insights payload checkControlPlaneConfig uses) so one global audit covers
+// the whole estate. The check runs only when enabled by the caller; if the latest
+// patch could not be determined it is a coverage gap (never a silent pass).
+func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
+	if !a.checkVersionCurrency {
+		return nil
+	}
+	if a.latestPatch == "" {
+		a.rep.addGap("github.com/kumahq/kuma/releases",
+			fmt.Sprintf("could not determine the latest 2.%d patch — control-plane version currency NOT audited (pass --latest-version to set it explicitly)", upgradeTargetMinor))
+		return nil
+	}
+	latestMaj, latestMin, latestPatch, ok := parseSemver(a.latestPatch)
+	if !ok {
+		a.rep.addGap("--latest-version",
+			"latest version "+a.latestPatch+" is not valid semver — version currency NOT audited")
+		return nil
+	}
+	// The check is scoped to the 2.<target> line; a baseline outside it (a stray
+	// --latest-version) would make every comparison nonsensical — a gap, not a
+	// contradictory finding.
+	if latestMaj != 2 || latestMin != upgradeTargetMinor {
+		a.rep.addGap("--latest-version",
+			fmt.Sprintf("latest version %s is not a 2.%d patch — version currency NOT audited", a.latestPatch, upgradeTargetMinor))
+		return nil
+	}
+	detail := fmt.Sprintf("Upgrade to the latest 2.%d patch (%s) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.", upgradeTargetMinor, a.latestPatch)
+
+	a.flagIfBehind(a.rep.cp.Version, "control plane", latestMin, latestPatch, detail)
+
+	// Fan out to connected zones unless we KNOW this CP is not a global. The Kuma
+	// GET / index carries no mode, so cp.Mode is only set when /config was readable
+	// — if it gapped out (e.g. RBAC without --token) mode is "". Skipping the
+	// fan-out on unknown mode would silently miss every stale zone (a fake-clean),
+	// so attempt it; a non-global CP answers /zones+insights with 404 and is skipped.
+	if strings.EqualFold(a.rep.cp.Mode, "zone") || strings.EqualFold(a.rep.cp.Mode, "standalone") {
+		return nil
+	}
+	return a.checkZoneVersions(ctx, latestMin, latestPatch, detail)
+}
+
+// flagIfBehind records a blocker when version is an older 2.x release than the
+// latest target patch. An unparseable version is a coverage gap (it cannot be
+// proven current), not a silent pass. origin labels the source in the example ref.
+func (a *auditor) flagIfBehind(version, origin string, latestMin, latestPatch int, detail string) {
+	maj, min, patch, ok := parseSemver(version)
+	if !ok {
+		a.rep.addGap("version ("+origin+")",
+			"reported version "+version+" is not valid semver — version currency NOT audited")
+		return
+	}
+	if behind(maj, min, patch, latestMin, latestPatch) {
+		a.rep.add(blocker, cpVersionCategory,
+			fmt.Sprintf("Control plane behind the latest 2.%d patch", upgradeTargetMinor),
+			detail, origin+" ("+version+")")
+	}
+}
+
+// checkZoneVersions audits every connected zone's CP version on a global, reading
+// each zone's reported version from ZoneInsight. An unreadable overview or a zone
+// that reported no version is a coverage gap, never a silent pass.
+func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch int, detail string) error {
+	items, found, err := a.zoneInsights(ctx)
+	if err != nil {
+		a.rep.addGap("/zones+insights (versions)",
+			"could not read /zones+insights — per-zone control-plane versions NOT audited (pass --token if the CP requires auth)")
+		return nil
+	}
+	if !found {
+		// 404 means this CP does not serve ZoneInsight (a zone/standalone, not a
+		// global), so there are no zones to fan out to — not a coverage gap.
+		return nil
+	}
+	// An estate with no zones is already reported by checkControlPlaneConfig.
+	for _, it := range items {
+		var zo zoneOverview
+		if err := json.Unmarshal(it.specBytes(), &zo); err != nil {
+			a.rep.addGap("/zones+insights ("+it.Name+", version)",
+				"zone insight could not be parsed — version NOT audited")
+			continue
+		}
+		v, ok := latestZoneVersion(zo)
+		if !ok {
+			a.rep.addGap("/zones+insights ("+it.Name+", version)",
+				"zone reported no control-plane version over KDS — version NOT audited")
+			continue
+		}
+		a.flagIfBehind(v, "zone "+it.Name, latestMin, latestPatch, detail)
+	}
+	return nil
 }
 
 // dpInsight captures just the per-subscription version data exposed by

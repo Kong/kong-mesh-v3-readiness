@@ -1,0 +1,19 @@
+{
+  "environment": "universal",
+  "mode": "global",
+  "experimental": {
+    "autoReachableServices": false,
+    "deltaXds": true,
+    "sidecarContainers": true,
+    "inboundTagsDisabled": true,
+    "kdsEventBasedWatchdog": { "enabled": true }
+  },
+  "runtime": {
+    "kubernetes": {
+      "injector": {
+        "unifiedResourceNamingEnabled": true,
+        "ebpf": { "enabled": false }
+      }
+    }
+  }
+}
