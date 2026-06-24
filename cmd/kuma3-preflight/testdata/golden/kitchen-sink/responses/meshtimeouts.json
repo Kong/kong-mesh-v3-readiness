@@ -1,0 +1,43 @@
+{
+  "total": 4,
+  "items": [
+    {
+      "type": "MeshTimeout",
+      "mesh": "default",
+      "name": "mt-to-mesh",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [ { "targetRef": { "kind": "Mesh" }, "default": { "idleTimeout": "1h" } } ]
+      }
+    },
+    {
+      "type": "MeshTimeout",
+      "mesh": "default",
+      "name": "mt-system-clean",
+      "labels": { "kuma.io/policy-role": "system" },
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [ { "targetRef": { "kind": "Mesh" }, "default": { "idleTimeout": "1h" } } ]
+      }
+    },
+    {
+      "type": "MeshTimeout",
+      "mesh": "default",
+      "name": "mt-to-route",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [ { "targetRef": { "kind": "MeshHTTPRoute", "name": "route-1" }, "default": { "idleTimeout": "1h" } } ]
+      }
+    },
+    {
+      "type": "MeshTimeout",
+      "mesh": "default",
+      "name": "mt-to-subset",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [ { "targetRef": { "kind": "MeshSubset", "tags": { "kuma.io/service": "backend" } }, "default": { "idleTimeout": "1h" } } ]
+      }
+    }
+  ],
+  "next": null
+}

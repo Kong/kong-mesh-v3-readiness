@@ -74,6 +74,24 @@ func TestToModelGroups(t *testing.T) {
 	}
 }
 
+// TestAllowedToTargetRefKinds guards the 3.0 `to[].targetRef` contract: `Mesh`
+// (all outbound — the canonical default-policy form, and the only kind valid for
+// MeshGateway-targeted policies), the Mesh*Service kinds and `MeshHTTPRoute` stay
+// valid; only the subset/selector kinds and `MeshGateway` are removed. Flagging a
+// still-valid kind (e.g. `Mesh`) would be a false-positive blocker.
+func TestAllowedToTargetRefKinds(t *testing.T) {
+	for _, k := range []string{"Mesh", "MeshService", "MeshExternalService", "MeshMultiZoneService", "MeshHTTPRoute"} {
+		if !allowedToTargetRefKinds[k] {
+			t.Errorf("%s must be a valid to[].targetRef kind in 3.0 (flagging it is a false positive)", k)
+		}
+	}
+	for _, k := range []string{"MeshSubset", "MeshServiceSubset", "MeshGateway"} {
+		if allowedToTargetRefKinds[k] {
+			t.Errorf("%s is removed from to[].targetRef in 3.0 and must still be flagged", k)
+		}
+	}
+}
+
 func TestRenderMarkdownGolden(t *testing.T) {
 	got := renderMarkdown(sampleReport().toModel(""))
 	for _, want := range []string{

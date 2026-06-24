@@ -63,14 +63,17 @@ All have a `deprecated.go` under `pkg/plugins/policies/<name>/api/v1alpha1/`:
 
 ## targetRef kind deprecations
 
-The selector-style kinds are being removed in favor of `Dataplane` + labels **everywhere a targetRef appears** (top-level `targetRef`, `to[].targetRef`, `from[].targetRef`):
+The selector-style kinds are being removed in favor of `Dataplane` + labels for **policy
+selection** (top-level `targetRef` and `from[].targetRef`). This does NOT blanket-remove
+every kind from `to[].targetRef` (the destination), which keeps `Mesh` / `Mesh*Service` /
+`MeshHTTPRoute` — see the `to[].targetRef` bullet below:
 
-- `MeshService`, `MeshServiceSubset`, `MeshSubset` kinds → use **`Dataplane` + labels** (`pkg/plugins/policies/core/.../validator.go`)
+- `MeshServiceSubset`, `MeshSubset` selector kinds → use **`Dataplane` + labels** (`pkg/plugins/policies/core/.../validator.go`); `MeshService` as a *selector* (top-level / `from[]`) likewise moves to labels, but `MeshService` stays valid as a `to[]` destination
 - `MeshHTTPRoute` in top-level targetRef → use it in `spec.to[].targetRef`
 - MeshTrafficPermission: `MeshService` value in `from[].targetRef.kind` → `MeshSubset` + `kuma.io/service` tag (interim); ultimate target is `rules` + spiffeID
 - Net direction: tag/service-subset selectors → label-based `Dataplane` selection backed by MeshService
 - **Top-level targetRef** restricted to only `Mesh` and `Dataplane` (all other kinds dropped)
-- **`to[].targetRef`** restricted to `Mesh*Service` kinds only (`MeshService` / `MeshExternalService` / `MeshMultiZoneService`)
+- **`to[].targetRef`** drops the subset/selector kinds (`MeshSubset`, `MeshServiceSubset`) and `MeshGateway`; `Mesh` (all outbound — also the only kind allowed for MeshGateway-targeted policies), the `Mesh*Service` kinds (`MeshService` / `MeshExternalService` / `MeshMultiZoneService`) and `MeshHTTPRoute` stay valid
 - **`proxyTypes` in targetRef** (`api/common/v1alpha1/targetref.go:101`) → dropped (Gateway/Sidecar proxy-type filtering)
 
 ## Backend / endpoint deprecations
