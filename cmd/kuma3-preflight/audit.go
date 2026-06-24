@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -752,8 +753,8 @@ type zoneSubscription struct {
 // freshest). It returns false when no subscription carried a version.
 func latestZoneVersion(zo zoneOverview) (string, bool) {
 	subs := zo.ZoneInsight.Subscriptions
-	for i := len(subs) - 1; i >= 0; i-- {
-		if v := subs[i].Version.KumaCp.Version; v != "" {
+	for _, s := range slices.Backward(subs) {
+		if v := s.Version.KumaCp.Version; v != "" {
 			return v, true
 		}
 	}
@@ -805,12 +806,12 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 // It returns false when no subscription carried a config or it cannot be parsed.
 func latestZoneConfig(zo zoneOverview) (cpConfig, bool) {
 	subs := zo.ZoneInsight.Subscriptions
-	for i := len(subs) - 1; i >= 0; i-- {
-		if subs[i].Config == "" {
+	for _, s := range slices.Backward(subs) {
+		if s.Config == "" {
 			continue
 		}
 		var cfg cpConfig
-		if err := json.Unmarshal([]byte(subs[i].Config), &cfg); err != nil {
+		if err := json.Unmarshal([]byte(s.Config), &cfg); err != nil {
 			return cpConfig{}, false
 		}
 		return cfg, true
@@ -868,13 +869,13 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 // latest target patch. An unparseable version is a coverage gap (it cannot be
 // proven current), not a silent pass. origin labels the source in the example ref.
 func (a *auditor) flagIfBehind(version, origin string, latestMin, latestPatch int, detail string) {
-	maj, min, patch, ok := parseSemver(version)
+	maj, minor, patch, ok := parseSemver(version)
 	if !ok {
 		a.rep.addGap("version ("+origin+")",
 			"reported version "+version+" is not valid semver — version currency NOT audited")
 		return
 	}
-	if behind(maj, min, patch, latestMin, latestPatch) {
+	if behind(maj, minor, patch, latestMin, latestPatch) {
 		a.rep.add(blocker, cpVersionCategory,
 			fmt.Sprintf("Control plane behind the latest 2.%d patch", upgradeTargetMinor),
 			detail, origin+" ("+version+")")
@@ -994,12 +995,11 @@ func (a *auditor) checkDataplaneEnvoyConfig(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listing dataplanes for inspection: %w", err)
 	}
-	limit := a.inspectDataplanes
-	if limit > len(items) {
-		limit = len(items)
-	}
 	inspected := 0
-	for _, it := range items[:limit] {
+	for i, it := range items {
+		if i >= a.inspectDataplanes {
+			break
+		}
 		path := "/meshes/" + url.PathEscape(it.Mesh) + "/dataplanes/" + url.PathEscape(it.Name) + "/xds"
 		var dump json.RawMessage
 		status, err := a.c.getJSON(ctx, path, &dump)

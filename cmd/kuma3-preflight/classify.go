@@ -99,8 +99,10 @@ func deprecatedMarkers() []deprecatedMarker {
 		// Inline mTLS on Mesh is detected by its specific field (`enabledBackend:`)
 		// and the framework's mTLS-mesh helpers/builders; no Mesh gate needed.
 		marker("Mesh.mtls", "Mesh field", "MeshIdentity + MeshTrust", false,
-			[]string{`(?m)^\s*enabledBackend:`, `\bMTLSMesh(Universal|Kubernetes)\b`,
-				`\bWith(Enabled|Builtin|Inline)MTLSBackend\b`, `\bWithPermissiveMTLSBackends\b`}, nil),
+			[]string{
+				`(?m)^\s*enabledBackend:`, `\bMTLSMesh(Universal|Kubernetes)\b`,
+				`\bWith(Enabled|Builtin|Inline)MTLSBackend\b`, `\bWithPermissiveMTLSBackends\b`,
+			}, nil),
 		marker("Mesh.metrics", "Mesh field", "MeshMetric policy", false,
 			[]string{`(?m)^\s*metrics:`}, meshDefines),
 		marker("Mesh.tracing", "Mesh field", "MeshTrace policy", false,
@@ -336,9 +338,9 @@ var fieldFindingToKind = map[string]string{
 
 // dynamicUsage projects a live-audit finding onto the classifier's (kind, removable)
 // taxonomy so dynamic findings merge with static markers of the same kind.
-func dynamicUsage(f findingModel) (kind string, removable bool, category, replacement string) {
+func dynamicUsage(f findingModel) (string, bool, string, string) {
 	if f.Category == "Removed resources" {
-		kind = strings.TrimSuffix(f.Title, " (removed in 3.0)")
+		kind := strings.TrimSuffix(f.Title, " (removed in 3.0)")
 		return kind, true, "Removed resource", replacementFor(kind)
 	}
 	if k, ok := fieldFindingToKind[f.Title]; ok {

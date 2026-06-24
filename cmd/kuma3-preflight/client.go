@@ -107,6 +107,9 @@ func (c *client) getJSON(ctx context.Context, path string, v any) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("GET %s: %w", full.String(), err)
 	}
+	if resp == nil { // unreachable per net/http (resp non-nil when err == nil); guards the deref for static analysis
+		return 0, fmt.Errorf("GET %s: nil response", full.String())
+	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return resp.StatusCode, nil

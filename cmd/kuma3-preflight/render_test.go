@@ -18,7 +18,7 @@ func sampleReport() *report {
 	}
 	r.add(blocker, "Mesh object settings", "Inline mTLS on Mesh", "Migrate mtls.", "legacy (mtls)")
 	// 12 occurrences > exampleCap(10): exercises the "+N more" truncation.
-	for i := 0; i < 12; i++ {
+	for range 12 {
 		r.add(blocker, "Policy `from` field", "MeshTimeout uses `from`", "Rewrite from.", "default/t")
 	}
 	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")

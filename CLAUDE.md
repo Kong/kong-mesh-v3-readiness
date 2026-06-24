@@ -39,12 +39,16 @@ Run via `mise` (pins the toolchain). All must pass before a change is done:
 
 ```bash
 go test ./...        # all tests pass
-golangci-lint run    # 0 issues (pinned 2.12.2; no .golangci.yml, runs with defaults)
+golangci-lint run    # 0 issues (pinned 2.12.2; config .golangci.yml, modeled on Kuma's)
+nilaway ./...         # 0 nil-panic findings (Uber NilAway, pinned via mise.toml)
 go vet ./...         # clean
-gofmt -l cmd/        # prints nothing (no unformatted files)
+gofmt -l cmd/        # prints nothing (no unformatted files; .golangci.yml also enforces gofumpt+gci)
 ```
 
-Fix root causes — never suppress a linter finding with an ignore/skip directive.
+`mise run check` runs them all. Fix root causes — never suppress a linter finding with an
+ignore/skip directive. NilAway false positives (its known limits: the `net/http` `err`/`resp`
+contract, map-key→value provenance, slicing a possibly-nil slice) are resolved with an
+explicit nil-guard or a small restructure, never a suppression.
 
 ## Tech stack
 

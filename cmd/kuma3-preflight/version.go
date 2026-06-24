@@ -26,17 +26,17 @@ var githubReleasesURL = "https://api.github.com/repos/kumahq/kuma/releases?per_p
 // returning a stale patch (or missing the line entirely).
 const maxReleasePages = 20
 
-// fetchLatestPatch returns the highest published 2.<targetMinor>.x patch from the
-// GitHub releases API (e.g. "2.14.7"), following pagination so the result is not
-// truncated to the newest page. Drafts and pre-releases are ignored. Response
-// bodies are never echoed into errors (consistent with the CP client) and are
-// size-capped. A best-effort call: the caller treats any error as "unknown latest"
-// (a coverage gap), never a hard failure.
-func fetchLatestPatch(ctx context.Context, hc *http.Client, targetMinor int) (string, error) {
+// fetchLatestPatch returns the highest published patch on the upgradeTargetMinor
+// line from the GitHub releases API (e.g. "2.14.7"), following pagination so the
+// result is not truncated to the newest page. Drafts and pre-releases are ignored.
+// Response bodies are never echoed into errors (consistent with the CP client) and
+// are size-capped. A best-effort call: the caller treats any error as "unknown
+// latest" (a coverage gap), never a hard failure.
+func fetchLatestPatch(ctx context.Context, hc *http.Client) (string, error) {
 	best := -1
 	next := githubReleasesURL
 	for page := 0; page < maxReleasePages && next != ""; page++ {
-		patch, link, err := fetchReleasePage(ctx, hc, next, targetMinor)
+		patch, link, err := fetchReleasePage(ctx, hc, next)
 		if err != nil {
 			return "", err
 		}
@@ -49,17 +49,17 @@ func fetchLatestPatch(ctx context.Context, hc *http.Client, targetMinor int) (st
 	// latest patch — return an error (the caller degrades to a coverage gap) rather
 	// than a possibly-stale best that would read as authoritative.
 	if next != "" {
-		return "", fmt.Errorf("release list exceeded %d pages; latest 2.%d.x not determined", maxReleasePages, targetMinor)
+		return "", fmt.Errorf("release list exceeded %d pages; latest 2.%d.x not determined", maxReleasePages, upgradeTargetMinor)
 	}
 	if best < 0 {
-		return "", fmt.Errorf("no 2.%d.x release found", targetMinor)
+		return "", fmt.Errorf("no 2.%d.x release found", upgradeTargetMinor)
 	}
-	return fmt.Sprintf("2.%d.%d", targetMinor, best), nil
+	return fmt.Sprintf("2.%d.%d", upgradeTargetMinor, best), nil
 }
 
 // fetchReleasePage fetches one releases page and returns the highest matching
-// 2.<targetMinor>.x patch on it (-1 if none) and the rel="next" URL ("" if last).
-func fetchReleasePage(ctx context.Context, hc *http.Client, url string, targetMinor int) (int, string, error) {
+// patch on the upgradeTargetMinor line (-1 if none) and the rel="next" URL ("" if last).
+func fetchReleasePage(ctx context.Context, hc *http.Client, url string) (int, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return 0, "", err
@@ -70,6 +70,9 @@ func fetchReleasePage(ctx context.Context, hc *http.Client, url string, targetMi
 	resp, err := hc.Do(req)
 	if err != nil {
 		return 0, "", fmt.Errorf("fetching GitHub releases: %w", err)
+	}
+	if resp == nil { // unreachable per net/http (resp non-nil when err == nil); guards the deref for static analysis
+		return 0, "", fmt.Errorf("fetching GitHub releases: nil response")
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -88,8 +91,8 @@ func fetchReleasePage(ctx context.Context, hc *http.Client, url string, targetMi
 		if r.Draft || r.Prerelease {
 			continue
 		}
-		maj, min, patch, ok := parseSemver(r.TagName)
-		if !ok || maj != 2 || min != targetMinor {
+		maj, minor, patch, ok := parseSemver(r.TagName)
+		if !ok || maj != 2 || minor != upgradeTargetMinor {
 			continue
 		}
 		if patch > best {
@@ -131,7 +134,7 @@ func nextReleaseLink(link string) string {
 // parseSemver extracts major.minor.patch from a version/tag string, tolerating a
 // leading "v" and any pre-release/build suffix (e.g. "v2.14.1-rc1" -> 2,14,1). It
 // returns ok=false when the first three dot-separated components are not numeric.
-func parseSemver(s string) (maj, min, patch int, ok bool) {
+func parseSemver(s string) (int, int, int, bool) {
 	s = strings.TrimPrefix(strings.TrimSpace(s), "v")
 	if i := strings.IndexAny(s, "-+"); i >= 0 {
 		s = s[:i]
@@ -144,30 +147,30 @@ func parseSemver(s string) (maj, min, patch int, ok bool) {
 	if err != nil {
 		return 0, 0, 0, false
 	}
-	min, err = strconv.Atoi(parts[1])
+	minor, err := strconv.Atoi(parts[1])
 	if err != nil {
 		return 0, 0, 0, false
 	}
-	patch, err = strconv.Atoi(parts[2])
+	patch, err := strconv.Atoi(parts[2])
 	if err != nil {
 		return 0, 0, 0, false
 	}
-	return maj, min, patch, true
+	return maj, minor, patch, true
 }
 
 // behind reports whether a running version is older than the latest target patch
 // and therefore not a supported 3.0 upgrade source. Anything below 2.x (a 1.x or
 // 0.x build) must reach 2.x first, so it is "behind"; 3.0+ is beyond the 2.x
 // upgrade source and is not flagged.
-func behind(maj, min, patch, latestMin, latestPatch int) bool {
+func behind(maj, minor, patch, latestMin, latestPatch int) bool {
 	if maj < 2 {
 		return true
 	}
 	if maj > 2 {
 		return false
 	}
-	if min != latestMin {
-		return min < latestMin
+	if minor != latestMin {
+		return minor < latestMin
 	}
 	return patch < latestPatch
 }
