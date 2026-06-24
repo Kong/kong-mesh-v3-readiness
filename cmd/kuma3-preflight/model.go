@@ -8,7 +8,7 @@ import (
 // Schema/tool identifiers stamped into every JSON report so a consumer (or the
 // --from-json renderer) can recognize and version the payload.
 const (
-	reportSchema = "kuma3-preflight/v2"
+	reportSchema = "kuma3-preflight/v3"
 	toolName     = "kuma3-preflight"
 )
 
@@ -36,7 +36,7 @@ type reportModel struct {
 	Summary      summary         `json:"summary"`
 	Findings     []findingModel  `json:"findings"`
 	Coverage     []coverageModel `json:"coverageGaps"`
-	Manual       []string        `json:"manualChecks"`
+	Manual       []manualCheck   `json:"manualChecks"`
 }
 
 type controlPlane struct {
@@ -67,6 +67,15 @@ type findingModel struct {
 type coverageModel struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
+}
+
+// manualCheck is one upgrade item the CP API cannot surface, rendered as a card in
+// the manual checklist. Title is always set; Detail and Command enrich a card with
+// an explanation and a copy-paste validation command when one exists.
+type manualCheck struct {
+	Title   string `json:"title"`
+	Detail  string `json:"detail,omitempty"`
+	Command string `json:"command,omitempty"`
 }
 
 // Finding groups organize the rendered report into top-level sections. Every
@@ -227,7 +236,7 @@ func (r *report) toModel(generatedAt string) reportModel {
 		},
 		Findings: []findingModel{},
 		Coverage: []coverageModel{},
-		Manual:   append([]string{}, r.manual...),
+		Manual:   append([]manualCheck{}, r.manual...),
 	}
 
 	for _, f := range r.findings {
@@ -264,7 +273,7 @@ func failureModel(addr string, auditErr error, generatedAt string) reportModel {
 		Meshes:      []string{},
 		Findings:    []findingModel{},
 		Coverage:    []coverageModel{},
-		Manual:      []string{},
+		Manual:      []manualCheck{},
 	}
 }
 

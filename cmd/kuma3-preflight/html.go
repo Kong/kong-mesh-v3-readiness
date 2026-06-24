@@ -103,11 +103,25 @@ section.grp>h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
   padding:2px 8px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
 .ex .e.sys{border-color:var(--warning);color:var(--warning)}
 .ex .more{color:var(--muted);font-size:12px;align-self:center}
-ul.manual{padding-left:0;margin:8px 0}
-ul.manual li{margin:6px 0;list-style:none}
+ul.manual{padding-left:0;margin:8px 0;list-style:none}
+ul.manual li{background:var(--surface);border:1px solid var(--border);
+  border-left:3px solid var(--warning);border-radius:var(--radius);
+  padding:14px 16px;margin:8px 0}
 ul.manual label{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
-ul.manual input{margin-top:4px}
+ul.manual label span{font-size:15px;font-weight:600}
+ul.manual input{margin-top:3px}
+ul.manual .detail{color:var(--muted);font-size:14px;margin:8px 0 0 26px}
+.cmdbox{position:relative;margin:10px 0 0 26px}
+.cmdbox .cmd{margin:0;padding:10px 64px 10px 12px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:8px;overflow-x:auto;
+  font-size:13px;white-space:pre;color:var(--text)}
+.cmdbox .copy{position:absolute;top:7px;right:7px;background:var(--surface);
+  border:1px solid var(--border);border-radius:6px;color:var(--muted);
+  font-size:12px;padding:3px 9px;cursor:pointer}
+.cmdbox .copy:hover{color:var(--text);border-color:var(--accent)}
+ul.manual li.done{border-left-color:var(--border)}
 .done span{text-decoration:line-through;color:var(--muted)}
+.done .detail,.done .cmdbox{opacity:.55}
 .prog{color:var(--muted);font-size:13px;margin:0 0 8px}
 .empty{color:var(--muted);padding:30px;text-align:center;border:1px dashed var(--border);border-radius:var(--radius)}
 .src{color:var(--muted);font-size:12px;margin-top:44px;border-top:1px solid var(--border);padding-top:14px}
@@ -453,6 +467,41 @@ const htmlTail = `
     return sec;
   }
 
+  // copyText copies to the clipboard, falling back to a hidden textarea +
+  // execCommand for file:// (a non-secure context where navigator.clipboard is
+  // unavailable). Returns a promise resolving to whether the copy succeeded.
+  function copyText(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(text).then(function(){ return true; }, function(){ return false; });
+    }
+    return new Promise(function(resolve){
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e){ ok = false; }
+      document.body.removeChild(ta);
+      resolve(ok);
+    });
+  }
+
+  // renderCmd builds a copy-able command block: a code box with a Copy button that
+  // gives transient feedback.
+  function renderCmd(command){
+    var box = el('div', {class:'cmdbox'});
+    var btn = el('button', {'class':'copy', type:'button', 'aria-label':'Copy command', text:'Copy'});
+    btn.addEventListener('click', function(){
+      copyText(command).then(function(ok){
+        btn.textContent = ok ? 'Copied' : 'Copy failed';
+        setTimeout(function(){ btn.textContent = 'Copy'; }, 1500);
+      });
+    });
+    box.appendChild(el('pre', {class:'cmd'}, el('code', {text:command})));
+    box.appendChild(btn);
+    return box;
+  }
+
   // ---- manual checklist (progress persisted per report) ----
   function renderManual(){
     var items = data.manualChecks || [];
@@ -478,7 +527,9 @@ const htmlTail = `
         li.classList.toggle('done', this.checked); update();
       }});
       if(saved.indexOf(i) >= 0){ cb.checked = true; li.classList.add('done'); }
-      li.appendChild(el('label', null, [cb, el('span', {text:m})]));
+      li.appendChild(el('label', null, [cb, el('span', {text:m.title})]));
+      if(m.detail) li.appendChild(el('div', {class:'detail', text:m.detail}));
+      if(m.command) li.appendChild(renderCmd(m.command));
       ul.appendChild(li);
     });
     prog.textContent = saved.length + ' / ' + items.length + ' done';

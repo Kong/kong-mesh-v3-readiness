@@ -158,7 +158,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*report, error) {
 			return nil, err
 		}
 	}
-	a.rep.manual = manualChecks
+	a.rep.manual = buildManualChecks(a.rep.k8sObserved)
 	return a.rep, nil
 }
 
@@ -455,6 +455,11 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 		if !a.unmarshalSpec(it, &spec, qualified(it)) {
 			continue
 		}
+		// A k8s-injected proxy proves Kubernetes is in the estate even when /config
+		// is gated (Kong Mesh RBAC) and could not report the environment.
+		if it.Labels["kuma.io/env"] == "kubernetes" {
+			a.rep.k8sObserved = true
+		}
 		// Universal-only: the kuma.io/workload label drives Workload generation (the
 		// 3.0 metrics/traces grouping dimension); without it the CP generates no
 		// Workload for this proxy. On Kubernetes the injector sets it from the pod,
@@ -614,6 +619,14 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 
 	a.addGlobalOnK8sFinding(cfg) // a no-op unless this CP is itself global
 
+	if strings.EqualFold(cfg.Environment, "kubernetes") {
+		// The connected CP itself runs on Kubernetes (standalone, zone, or a k8s
+		// global). A global returns early below without reaching addCPConfigFindings,
+		// so a k8s global with no k8s zones would otherwise hide the Kubernetes-only
+		// manual checks despite the audit positively observing Kubernetes here.
+		a.rep.k8sObserved = true
+	}
+
 	if strings.EqualFold(cfg.Mode, "global") {
 		// The global's own injector/experimental flags govern no proxies; audit
 		// each zone's config instead, which the global aggregates in ZoneInsight.
@@ -645,6 +658,11 @@ func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
 // reference so per-zone findings merge under one title while still naming origin.
 func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	onK8s := strings.EqualFold(cfg.Environment, "kubernetes")
+	if onK8s {
+		// A standalone/zone CP on k8s, or a k8s zone reached via a global's
+		// ZoneInsight fan-out — either way Kubernetes is in the estate.
+		a.rep.k8sObserved = true
+	}
 	ref := func(s string) string {
 		if zone != "" {
 			return "zone " + zone + ": " + s
@@ -1110,11 +1128,39 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // workloadLabels) are audited automatically by checkControlPlaneConfig, and
 // Universal proxies missing the kuma.io/workload label by checkDataplanes, so
 // neither is repeated here.
-var manualChecks = []string{
-	"Gateway API / GAMMA usage migrated off built-in support",
-	"DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)",
-	"Old inspect APIs removed (switch to the new inspect API)",
-	"Pod resources instead of container resources",
-	"Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
-	"Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
+var manualChecks = []manualCheck{
+	{Title: "Gateway API / GAMMA usage migrated off built-in support"},
+	{Title: "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)"},
+	{Title: "Old inspect APIs removed (switch to the new inspect API)"},
+	{Title: "Pod resources instead of container resources"},
+	{Title: "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA"},
+}
+
+// kubernetesManualChecks are appended only when the audit observed Kubernetes in
+// the estate (see report.k8sObserved). They are Kubernetes-object concerns the CP
+// API cannot reveal, so showing them on a Universal-only run would be noise.
+var kubernetesManualChecks = []manualCheck{
+	{
+		Title: "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
+		Detail: "On Kubernetes a Pod or Namespace is bound to a non-default mesh through " +
+			"`kuma.io/mesh`, which can be set as either an annotation or a label. Kuma 2.x " +
+			"still reads the annotation but logs a deprecation warning; 3.0 honors only the " +
+			"label. The control-plane API exposes only the resolved mesh name, not which " +
+			"metadata field set it, so the tool cannot detect this for you. You have to " +
+			"inspect the cluster objects directly. Move every `kuma.io/mesh` annotation to a " +
+			"label with the same value on Pods, Namespaces, and any other namespaced Kuma " +
+			"resource. The command below lists offenders; empty output means there is " +
+			"nothing left to fix.",
+		Command: `kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | "\(.kind)/\(.metadata.namespace)/\(.metadata.name)"'`,
+	},
+}
+
+// buildManualChecks returns the manual checklist for a run, appending the
+// Kubernetes-only items when the audit positively observed Kubernetes.
+func buildManualChecks(k8sObserved bool) []manualCheck {
+	checks := append([]manualCheck{}, manualChecks...)
+	if k8sObserved {
+		checks = append(checks, kubernetesManualChecks...)
+	}
+	return checks
 }
