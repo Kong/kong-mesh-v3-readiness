@@ -141,6 +141,44 @@ func groupOf(f findingModel) string {
 	return categoryGroup(f.Category)
 }
 
+// severityRank orders severities for rendering: blocker before info, unknown last.
+func severityRank(sev string) int {
+	switch sev {
+	case blocker.String():
+		return 0
+	case info.String():
+		return 1
+	default:
+		return 2
+	}
+}
+
+// normalizeModel makes a model canonical for rendering: every finding gets its
+// group, and findings are sorted (severity, group order, category, title) so each
+// group is contiguous. Renderers rely on that contiguity, so both fresh audits and
+// --from-json (including older payloads written before the group field existed)
+// render identically — preserving the one-model/three-renderers contract.
+func normalizeModel(m *reportModel) {
+	for i := range m.Findings {
+		if m.Findings[i].Group == "" {
+			m.Findings[i].Group = categoryGroup(m.Findings[i].Category)
+		}
+	}
+	sort.SliceStable(m.Findings, func(i, j int) bool {
+		a, b := m.Findings[i], m.Findings[j]
+		if a.Severity != b.Severity {
+			return severityRank(a.Severity) < severityRank(b.Severity)
+		}
+		if gi, gj := groupIndex(a.Group), groupIndex(b.Group); gi != gj {
+			return gi < gj
+		}
+		if a.Category != b.Category {
+			return a.Category < b.Category
+		}
+		return a.Title < b.Title
+	})
+}
+
 func (s severity) String() string {
 	switch s {
 	case blocker:
@@ -192,21 +230,7 @@ func (r *report) toModel(generatedAt string) reportModel {
 		Manual:   append([]string{}, r.manual...),
 	}
 
-	fs := append([]finding(nil), r.findings...)
-	sort.SliceStable(fs, func(i, j int) bool {
-		if fs[i].severity != fs[j].severity {
-			return fs[i].severity < fs[j].severity
-		}
-		gi, gj := groupIndex(categoryGroup(fs[i].category)), groupIndex(categoryGroup(fs[j].category))
-		if gi != gj {
-			return gi < gj
-		}
-		if fs[i].category != fs[j].category {
-			return fs[i].category < fs[j].category
-		}
-		return fs[i].title < fs[j].title
-	})
-	for _, f := range fs {
+	for _, f := range r.findings {
 		m.Findings = append(m.Findings, findingModel{
 			Severity: f.severity.String(),
 			Group:    categoryGroup(f.category),
@@ -217,6 +241,7 @@ func (r *report) toModel(generatedAt string) reportModel {
 			Examples: append([]string{}, f.examples...),
 		})
 	}
+	normalizeModel(&m)
 
 	cg := append([]coverageGap(nil), r.coverage...)
 	sort.SliceStable(cg, func(i, j int) bool { return cg[i].path < cg[j].path })

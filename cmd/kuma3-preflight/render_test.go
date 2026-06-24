@@ -108,6 +108,47 @@ func TestRenderMarkdownGolden(t *testing.T) {
 	}
 }
 
+// TestNormalizeModelOldPayload guards the --from-json path for reports written
+// before the group field existed: such a model has no Group and is sorted only by
+// category, so groups interleave. normalizeModel must make them group-contiguous so
+// markdown (which streams group headers) and HTML (which buckets by group) agree.
+func TestNormalizeModelOldPayload(t *testing.T) {
+	m := reportModel{
+		Schema: reportSchema, Tool: toolName, Status: statusBlockers,
+		Meshes: []string{}, Coverage: []coverageModel{}, Manual: []string{},
+		Findings: []findingModel{ // category-sorted, no Group → Data plane interleaves Mesh object
+			{Severity: "blocker", Category: "Dataplane probes", Title: "p", Detail: "d", Count: 1, Examples: []string{"x/p"}},
+			{Severity: "blocker", Category: "Mesh object settings", Title: "m", Detail: "d", Count: 1, Examples: []string{"y (mtls)"}},
+			{Severity: "blocker", Category: "reachableServices", Title: "r", Detail: "d", Count: 1, Examples: []string{"z/r"}},
+		},
+	}
+	normalizeModel(&m)
+
+	lastIdx, prevGroup := -1, ""
+	seen := map[string]bool{}
+	for _, f := range m.Findings {
+		if f.Group == "" {
+			t.Fatalf("group not populated for %q", f.Title)
+		}
+		if f.Group != prevGroup {
+			if seen[f.Group] {
+				t.Errorf("group %q is not contiguous after normalize", f.Group)
+			}
+			seen[f.Group] = true
+			prevGroup = f.Group
+		}
+		if idx := groupIndex(f.Group); idx < lastIdx {
+			t.Errorf("groups out of canonical order at %q", f.Title)
+		} else {
+			lastIdx = idx
+		}
+	}
+	if md := renderMarkdown(m); strings.Count(md, "### "+groupDataPlane) != 1 {
+		t.Errorf("group heading %q must appear exactly once, got %d\n---\n%s",
+			groupDataPlane, strings.Count(md, "### "+groupDataPlane), md)
+	}
+}
+
 func TestRenderJSONRoundTrips(t *testing.T) {
 	m := sampleReport().toModel("2026-06-17T10:00:00Z")
 	out, err := renderJSON(m)
