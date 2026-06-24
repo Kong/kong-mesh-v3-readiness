@@ -45,6 +45,12 @@ func fetchLatestPatch(ctx context.Context, hc *http.Client, targetMinor int) (st
 		}
 		next = link
 	}
+	// Hitting the cap with pages still unread means we may not have seen the true
+	// latest patch — return an error (the caller degrades to a coverage gap) rather
+	// than a possibly-stale best that would read as authoritative.
+	if next != "" {
+		return "", fmt.Errorf("release list exceeded %d pages; latest 2.%d.x not determined", maxReleasePages, targetMinor)
+	}
 	if best < 0 {
 		return "", fmt.Errorf("no 2.%d.x release found", targetMinor)
 	}

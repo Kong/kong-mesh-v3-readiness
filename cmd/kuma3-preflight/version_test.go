@@ -133,6 +133,22 @@ func TestFetchLatestPatch(t *testing.T) {
 		}
 	})
 
+	t.Run("cap reached with more pages is an error, not a stale best", func(t *testing.T) {
+		var srv *httptest.Server
+		srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			// Always advertise a next page → traversal never naturally ends, so the
+			// page cap is hit. A 2.14.x is present, but we must not return it as
+			// authoritative since unread pages might hold a higher patch.
+			w.Header().Set("Link", `<`+srv.URL+`?page=next>; rel="next"`)
+			_, _ = io.WriteString(w, `[{"tag_name":"2.14.1","draft":false,"prerelease":false}]`)
+		}))
+		t.Cleanup(srv.Close)
+		githubReleasesURL = srv.URL
+		if _, err := fetchLatestPatch(context.Background(), srv.Client(), 14); err == nil {
+			t.Errorf("hitting the page cap mid-traversal must be an error, not a (stale) best")
+		}
+	})
+
 	t.Run("follows pagination to find a patch on a later page", func(t *testing.T) {
 		var srv *httptest.Server
 		srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
