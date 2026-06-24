@@ -1143,7 +1143,29 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // dependency) plus the --inspect-dataplanes deep check, so none is repeated here.
 var manualChecks = []manualCheck{
 	{Title: "Gateway API / GAMMA usage migrated off built-in support"},
-	{Title: "Old inspect APIs removed (switch to the new inspect API)"},
+	{
+		Title: "Old inspect APIs removed (switch to the new inspect API)",
+		Detail: "Kuma 3.0 removes the old dataplane rules-inspection endpoint (`_rules`) and " +
+			"keeps only the redesigned, KRI-based inspect API. The dropped endpoint returned " +
+			"every policy's rules for a proxy in one nested blob (fromRules/toRules/inboundRules/" +
+			"toResourceRules), and it goes away together with `kuma.io/service` routing support. " +
+			"The new API splits that into per-scope endpoints that reference resources by KRI, " +
+			"listed below. The control-plane API cannot tell you which clients still call the old " +
+			"endpoint, whether that's kumactl, the GUI, dashboards, scripts, or monitoring, so you " +
+			"have to find and migrate those consumers yourself; a 2.x kumactl or GUI pointed at a " +
+			"3.0 CP gets a 404. Upgrade kumactl and the GUI to their 3.0 builds, which already use " +
+			"the new endpoints.",
+		Command: `# Removed in 3.0
+GET /meshes/{mesh}/dataplanes/{name}/_rules
+
+# Replacement endpoints (new KRI-based inspect API)
+GET /meshes/{mesh}/dataplanes/{name}/_layout
+GET /meshes/{mesh}/dataplanes/{name}/_policies
+GET /meshes/{mesh}/dataplanes/{name}/_inbounds/{inbound_kri}/_policies
+GET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_policies
+GET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes
+GET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes/{route_kri}/_policies`,
+	},
 	{
 		Title: "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
 		Detail: "Pre-1.4.x Kuma signed dataplane, zone and user tokens with a symmetric " +
