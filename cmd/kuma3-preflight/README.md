@@ -30,6 +30,7 @@ go run ./cmd/kuma3-preflight --output report.md
 | `--from-json` | _(none)_ | Render a previously captured JSON report (path, or `-` for stdin) instead of auditing |
 | `--timeout` | `60s` | Overall audit timeout |
 | `--inspect-dataplanes` | `0` | Fetch up to N dataplanes' Envoy config dumps to detect removed features (`0` = skip; expensive per-proxy fetch) |
+| `--latest-version` | _(GitHub lookup)_ | Latest 2.14 patch to check the CP / zones against (e.g. `2.14.7`). When set, skips the `kumahq/kuma` GitHub releases lookup, keeping the run offline and deterministic |
 | `--classify` | `false` | Classification mode: instead of auditing a CP, classify e2e tests by their 3.0-deprecated-feature usage (see below). Uses `--source-dir` and/or `--reports-dir` |
 | `--source-dir` | _(none)_ | With `--classify`: root of an e2e test tree to scan statically (e.g. a Kuma `test/e2e_env/<env>` dir) |
 | `--reports-dir` | _(none)_ | With `--classify`: directory of per-spec preflight JSON snapshots captured during an e2e run, folded into the classification |
@@ -99,6 +100,14 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   `spec.probes`, and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible
   (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
+- **Control plane version** — flags a CP (or, on a **global**, any connected zone CP) not on
+  the latest 2.14 patch, the only supported 3.0 upgrade source (older patch/minor → blocker).
+  The latest patch is looked up from the `kumahq/kuma` GitHub releases at run time (Kong Mesh
+  tracks the same patch numbers); pass `--latest-version 2.14.x` to set it explicitly and skip
+  the network call (offline/deterministic runs). On a **global** the zone versions come from
+  the same `GET /zones+insights` payload — one global audit covers every zone with no extra
+  round-trips. If the latest patch can't be determined, or a zone reported no version, it is a
+  coverage gap — never a silent pass.
 - **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
   eBPF transparent proxy, unified resource naming, inbound-tags-disabled, delta
   xDS, KDS event-based watchdog, native sidecar containers not yet enabled (all blockers). The

@@ -43,7 +43,13 @@ func TestGoldenReports(t *testing.T) {
 			if err != nil {
 				t.Fatalf("newClient: %v", err)
 			}
-			rep, err := audit(context.Background(), c, auditOptions{})
+			// A scenario opts into the version-currency check by dropping a
+			// latest-version.txt (one patch string). Scenarios without it skip the
+			// check, so unrelated goldens stay untouched and offline/deterministic.
+			latest, hasLatest := readScenarioLatest(dir)
+			rep, err := audit(context.Background(), c, auditOptions{
+				checkVersionCurrency: hasLatest, latestPatch: latest,
+			})
 			if err != nil {
 				t.Fatalf("audit: %v", err)
 			}
@@ -102,6 +108,16 @@ func mockCP(t *testing.T, dir string) *httptest.Server {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// readScenarioLatest returns the optional latest-version.txt baseline for a
+// scenario and whether it was present (the file enables the version check).
+func readScenarioLatest(dir string) (string, bool) {
+	b, err := os.ReadFile(filepath.Join(dir, "latest-version.txt"))
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(b)), true
 }
 
 func writeJSON(w http.ResponseWriter, body []byte) {

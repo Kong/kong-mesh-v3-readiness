@@ -1,0 +1,42 @@
+{
+  "total": 3,
+  "items": [
+    {
+      "type": "ZoneInsight",
+      "name": "zone-a",
+      "zoneInsight": {
+        "subscriptions": [
+          {
+            "config": "{\"environment\":\"universal\",\"mode\":\"zone\",\"experimental\":{\"autoReachableServices\":false,\"deltaXds\":true,\"sidecarContainers\":true,\"inboundTagsDisabled\":true,\"kdsEventBasedWatchdog\":{\"enabled\":true}},\"runtime\":{\"kubernetes\":{\"injector\":{\"unifiedResourceNamingEnabled\":true,\"ebpf\":{\"enabled\":false}}}}}",
+            "version": { "kumaCp": { "version": "2.14.0" } }
+          }
+        ]
+      }
+    },
+    {
+      "type": "ZoneInsight",
+      "name": "zone-b",
+      "zoneInsight": {
+        "subscriptions": [
+          {
+            "config": "{\"environment\":\"universal\",\"mode\":\"zone\",\"experimental\":{\"autoReachableServices\":false,\"deltaXds\":true,\"sidecarContainers\":true,\"inboundTagsDisabled\":true,\"kdsEventBasedWatchdog\":{\"enabled\":true}},\"runtime\":{\"kubernetes\":{\"injector\":{\"unifiedResourceNamingEnabled\":true,\"ebpf\":{\"enabled\":false}}}}}",
+            "version": { "kumaCp": { "version": "2.13.5" } }
+          }
+        ]
+      }
+    },
+    {
+      "type": "ZoneInsight",
+      "name": "zone-c",
+      "zoneInsight": {
+        "subscriptions": [
+          {
+            "config": "{\"environment\":\"universal\",\"mode\":\"zone\",\"experimental\":{\"autoReachableServices\":false,\"deltaXds\":true,\"sidecarContainers\":true,\"inboundTagsDisabled\":true,\"kdsEventBasedWatchdog\":{\"enabled\":true}},\"runtime\":{\"kubernetes\":{\"injector\":{\"unifiedResourceNamingEnabled\":true,\"ebpf\":{\"enabled\":false}}}}}",
+            "version": { "kumaCp": { "version": "2.11.2" } }
+          }
+        ]
+      }
+    }
+  ],
+  "next": null
+}

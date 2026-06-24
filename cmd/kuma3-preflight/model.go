@@ -93,6 +93,7 @@ var groupOrder = []string{
 
 var categoryToGroup = map[string]string{
 	cpConfigCategory:           groupControlPlane,
+	cpVersionCategory:          groupControlPlane,
 	"Mesh object settings":     groupMeshObject,
 	"MeshService mode":         groupMeshObject,
 	"Policy `from` field":      groupPolicies,
