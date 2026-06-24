@@ -14,7 +14,7 @@ func sampleReport() *report {
 		meshes:         []string{"default", "legacy"},
 		parseErrors:    1,
 		systemFindings: 2,
-		manual:         []string{"Enable unified naming", "Disable inbound tags"},
+		manual:         []manualCheck{{Title: "Enable unified naming"}, {Title: "Disable inbound tags"}},
 	}
 	r.add(blocker, "Mesh object settings", "Inline mTLS on Mesh", "Migrate mtls.", "legacy (mtls)")
 	// 12 occurrences > exampleCap(10): exercises the "+N more" truncation.
@@ -133,7 +133,7 @@ func TestAllowedToTargetRefKinds(t *testing.T) {
 func TestNormalizeModelOldPayload(t *testing.T) {
 	m := reportModel{
 		Schema: reportSchema, Tool: toolName, Status: statusBlockers,
-		Meshes: []string{}, Coverage: []coverageModel{}, Manual: []string{},
+		Meshes: []string{}, Coverage: []coverageModel{}, Manual: []manualCheck{},
 		Findings: []findingModel{ // category-sorted, no Group → Data plane interleaves Mesh object
 			{Severity: "blocker", Category: "Dataplane probes", Title: "p", Detail: "d", Count: 1, Examples: []string{"x/p"}},
 			{Severity: "blocker", Category: "Mesh object settings", Title: "m", Detail: "d", Count: 1, Examples: []string{"y (mtls)"}},
@@ -188,6 +188,29 @@ func TestRenderJSONRoundTrips(t *testing.T) {
 	}
 }
 
+// A v2 report carried manualChecks as plain strings. The tolerant manualCheck
+// unmarshaler must still load it (mapping each string to Title) so --from-json
+// renders reports captured before the v3 schema bump.
+func TestLoadV2ManualChecksStrings(t *testing.T) {
+	v2 := `{"schema":"kuma3-preflight/v2","tool":"kuma3-preflight","status":"clean",` +
+		`"controlPlane":{"product":"Kuma","version":"2.9.0"},"meshes":[],` +
+		`"summary":{},"findings":[],"coverageGaps":[],` +
+		`"manualChecks":["Rotate legacy keys","Migrate gateways"]}`
+	m, err := loadModelBytes([]byte(v2))
+	if err != nil {
+		t.Fatalf("v2 report failed to load: %v", err)
+	}
+	if len(m.Manual) != 2 {
+		t.Fatalf("manual checks = %d, want 2", len(m.Manual))
+	}
+	if m.Manual[0].Title != "Rotate legacy keys" || m.Manual[0].Detail != "" || m.Manual[0].Command != "" {
+		t.Errorf("v2 string did not map to a Title-only card: %+v", m.Manual[0])
+	}
+	if _, err := renderJSON(m); err != nil {
+		t.Fatalf("rendering loaded v2 model: %v", err)
+	}
+}
+
 func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	m := sampleReport().toModel("2026-06-17T10:00:00Z")
 	html, err := renderHTML(m)
@@ -209,6 +232,50 @@ func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	}
 	if strings.Contains(html, "http://") || strings.Contains(html, "https://") {
 		t.Error("HTML references an external URL; it must be fully self-contained")
+	}
+}
+
+// The kuma.io/mesh annotation→label card is a Kubernetes-object concern the CP API
+// cannot reveal, so it is shown only when the audit observed Kubernetes.
+func TestBuildManualChecksK8sGating(t *testing.T) {
+	base := buildManualChecks(false)
+	withK8s := buildManualChecks(true)
+	if len(withK8s) != len(base)+1 {
+		t.Fatalf("k8s run should add exactly one card: base=%d k8s=%d", len(base), len(withK8s))
+	}
+	for _, m := range base {
+		if strings.Contains(m.Title, "kuma.io/mesh") {
+			t.Errorf("Universal-only run must not show the kuma.io/mesh card: %q", m.Title)
+		}
+	}
+	card := withK8s[len(withK8s)-1]
+	if !strings.Contains(card.Title, "kuma.io/mesh") {
+		t.Fatalf("k8s card missing; last title = %q", card.Title)
+	}
+	if card.Detail == "" || card.Command == "" {
+		t.Error("k8s card must carry both a detail and a validation command")
+	}
+	if !strings.Contains(card.Command, "kubectl") {
+		t.Errorf("k8s card command should be a kubectl one-liner; got %q", card.Command)
+	}
+}
+
+// A manual card with a command renders a copy-able code block, including the
+// file:// clipboard fallback, and embeds the command in the report payload.
+func TestManualCommandCardRendersCopyableBlock(t *testing.T) {
+	r := &report{cp: cpIndex{Product: "Kuma", Version: "2.9.0"}, k8sObserved: true}
+	r.manual = buildManualChecks(r.k8sObserved)
+	html, err := renderHTML(r.toModel(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"function renderCmd", "function copyText", "execCommand", "Copy command", "cmdbox"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("rendered HTML missing copy affordance %q", want)
+		}
+	}
+	if !strings.Contains(html, "kubectl get ns,pods") {
+		t.Error("k8s validation command not embedded in the report payload")
 	}
 }
 

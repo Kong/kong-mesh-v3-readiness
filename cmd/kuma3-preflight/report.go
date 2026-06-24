@@ -33,7 +33,12 @@ type report struct {
 	// lets a caller detect whether a resource it just processed produced any
 	// finding, without scanning the merged findings slice.
 	total  int
-	manual []string
+	manual []manualCheck
+	// k8sObserved is set once the audit positively observes Kubernetes anywhere in
+	// the estate (a standalone/zone CP on k8s, a k8s zone behind a global, or a
+	// dataplane labelled kuma.io/env=kubernetes). It gates the k8s-only manual
+	// checks so a Universal-only run is not handed Kubernetes reminders.
+	k8sObserved bool
 }
 
 // incomplete reports whether the audit could not fully observe the CP — either a

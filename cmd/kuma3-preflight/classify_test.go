@@ -154,7 +154,7 @@ func writeSnapshot(t *testing.T, dir, name string, findings []findingModel) {
 	t.Helper()
 	m := reportModel{
 		Schema: reportSchema, Tool: toolName, Status: statusBlockers,
-		Meshes: []string{}, Findings: findings, Coverage: []coverageModel{}, Manual: []string{},
+		Meshes: []string{}, Findings: findings, Coverage: []coverageModel{}, Manual: []manualCheck{},
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
