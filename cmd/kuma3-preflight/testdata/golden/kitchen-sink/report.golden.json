@@ -288,15 +288,17 @@
       "title": "Old inspect APIs removed (switch to the new inspect API)"
     },
     {
-      "title": "Pod resources instead of container resources"
-    },
-    {
       "title": "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA"
     },
     {
       "title": "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
       "detail": "On Kubernetes a Pod or Namespace is bound to a non-default mesh through `kuma.io/mesh`, which can be set as either an annotation or a label. Kuma 2.x still reads the annotation but logs a deprecation warning; 3.0 honors only the label. The control-plane API exposes only the resolved mesh name, not which metadata field set it, so the tool cannot detect this for you. You have to inspect the cluster objects directly. Move every `kuma.io/mesh` annotation to a label with the same value on Pods, Namespaces, and any other namespaced Kuma resource. The command below lists offenders; empty output means there is nothing left to fix.",
       "command": "kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations[\"kuma.io/mesh\"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != \"\")) | join(\"/\")'"
+    },
+    {
+      "title": "Pod resources instead of container resources",
+      "detail": "On Kubernetes the 3.0 injector sets the sidecar's CPU and memory at the pod level (`spec.resources`) instead of on each injected container. This is a behavior change in the injector, not a setting you flip, and the control-plane API exposes neither pod resource specs nor the cluster's Kubernetes version, so the tool cannot check it for you. Pod-level resources are on by default from Kubernetes 1.34; on 1.32-1.33 (or with the `PodLevelResources` feature gate turned off) the injected proxy ends up with no requests or limits unless you enable the gate or fall back to `ContainerPatch`. The command below reports your API server version and whether action is needed.",
+      "command": "kubectl version -o json | jq -r '(.serverVersion.minor | gsub(\"[^0-9]\";\"\") | tonumber) as $m | \"K8s \" + .serverVersion.major + \".\" + .serverVersion.minor + (if $m \u003e= 34 then \": pod-level resources on by default — no action\" else \": enable the PodLevelResources feature gate or use ContainerPatch\" end)'"
     }
   ]
 }

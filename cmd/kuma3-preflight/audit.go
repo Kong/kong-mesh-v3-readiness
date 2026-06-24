@@ -1132,7 +1132,6 @@ var manualChecks = []manualCheck{
 	{Title: "Gateway API / GAMMA usage migrated off built-in support"},
 	{Title: "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)"},
 	{Title: "Old inspect APIs removed (switch to the new inspect API)"},
-	{Title: "Pod resources instead of container resources"},
 	{Title: "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA"},
 }
 
@@ -1152,6 +1151,19 @@ var kubernetesManualChecks = []manualCheck{
 			"resource. The command below lists offenders; empty output means there is " +
 			"nothing left to fix.",
 		Command: `kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != "")) | join("/")'`,
+	},
+	{
+		Title: "Pod resources instead of container resources",
+		Detail: "On Kubernetes the 3.0 injector sets the sidecar's CPU and memory at the " +
+			"pod level (`spec.resources`) instead of on each injected container. This is a " +
+			"behavior change in the injector, not a setting you flip, and the control-plane " +
+			"API exposes neither pod resource specs nor the cluster's Kubernetes version, so " +
+			"the tool cannot check it for you. Pod-level resources are on by default from " +
+			"Kubernetes 1.34; on 1.32-1.33 (or with the `PodLevelResources` feature gate " +
+			"turned off) the injected proxy ends up with no requests or limits unless you " +
+			"enable the gate or fall back to `ContainerPatch`. The command below reports your " +
+			"API server version and whether action is needed.",
+		Command: `kubectl version -o json | jq -r '(.serverVersion.minor | gsub("[^0-9]";"") | tonumber) as $m | "K8s " + .serverVersion.major + "." + .serverVersion.minor + (if $m >= 34 then ": pod-level resources on by default — no action" else ": enable the PodLevelResources feature gate or use ContainerPatch" end)'`,
 	},
 }
 
