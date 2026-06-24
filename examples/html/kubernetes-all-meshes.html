@@ -78,6 +78,7 @@ section.grp>h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
 .pill{background:var(--surface-2);border:1px solid var(--border);border-radius:999px;
   padding:1px 9px;font-size:12px;color:var(--muted);white-space:nowrap}
 .finding .detail{color:var(--muted);font-size:14px;margin:6px 0 0}
+.finding .detail.note{color:var(--warning)}
 .ex{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .ex .e{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
   padding:2px 8px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -505,17 +506,24 @@ ul.manual input{margin-top:4px}
     return f._meshes;
   }
   function isMeshScoped(f){ return findingMeshes(f).length > 0; }
+  // The examples are a server-capped sample (exampleCap). When count exceeds the
+  // held examples, the sample is partial: a mesh can have occurrences that fall
+  // outside it, so the per-mesh attribution below cannot be trusted to be
+  // complete. attributable() means "examples are exhaustive, so membership and
+  // per-mesh counts are exact".
+  function isCapped(f){ return f.count > (f.examples || []).length; }
+  function attributable(f){ return isMeshScoped(f) && !isCapped(f); }
   function shownExamples(f){
     var ex = f.examples || [];
-    if(meshFilter && isMeshScoped(f)) return ex.filter(function(e){ return meshOf(e) === meshFilter; });
+    if(meshFilter && attributable(f)) return ex.filter(function(e){ return meshOf(e) === meshFilter; });
     return ex;
   }
-  // Effective count under the active filter. For a mesh-scoped finding viewed
-  // through a mesh filter we can only count the held examples (the server caps
-  // them at exampleCap), so for an example-capped finding this is a floor —
-  // renderFinding marks such counts with "≥" and a "more not shown" hint.
+  // Effective count under the active filter. Exact per-mesh count only when the
+  // finding is attributable; for a capped finding we show its true total across
+  // all meshes (renderFinding flags that it is not split per mesh) rather than a
+  // misleading per-mesh floor.
   function shownCount(f){
-    if(meshFilter && isMeshScoped(f)) return shownExamples(f).length;
+    if(meshFilter && attributable(f)) return shownExamples(f).length;
     return f.count;
   }
   function setMeshFilter(m){
@@ -647,9 +655,12 @@ ul.manual input{margin-top:4px}
   }
 
   function matches(f){
-    // A mesh filter hides findings scoped to other meshes; control-plane-wide
-    // findings (no mesh) stay visible since they apply to every mesh's upgrade.
-    if(meshFilter && isMeshScoped(f) && findingMeshes(f).indexOf(meshFilter) < 0) return false;
+    // A mesh filter hides a finding scoped to OTHER meshes — but only when its
+    // mesh membership is exhaustive (attributable). A capped finding might have
+    // occurrences in the selected mesh beyond its example sample, so it is never
+    // hidden (shown as spanning all meshes). Control-plane-wide findings (no
+    // mesh) also stay visible since they apply to every mesh's upgrade.
+    if(meshFilter && attributable(f) && findingMeshes(f).indexOf(meshFilter) < 0) return false;
     if(!query) return true;
     var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.examples||[]).join(' ')).toLowerCase();
     return hay.indexOf(query) >= 0;
@@ -658,16 +669,19 @@ ul.manual input{margin-top:4px}
   function renderFinding(f){
     var card = el('div', {class:'finding ' + f.severity});
     var cnt = shownCount(f);
-    // Under a mesh filter the per-mesh count is derived from the held examples,
-    // which the server caps at exampleCap. If the finding was example-capped,
-    // that count is only a floor — mark it "≥" and keep a "more not shown" hint
-    // so the filtered view never reads as smaller-but-exhaustive (false comfort).
-    var capped = meshFilter && isMeshScoped(f) && f.count > (f.examples || []).length;
+    // A mesh-scoped but capped finding can't be split per mesh from its sample,
+    // so under a filter it is shown across ALL meshes (its true total) with a
+    // caveat — never hidden and never understated.
+    var spanAll = meshFilter && isMeshScoped(f) && isCapped(f);
     card.appendChild(el('div', {class:'ttl'}, [
       el('b', {text:f.title}),
-      el('span', {class:'pill', text:(capped ? '≥' : '') + cnt + ' found'})
+      el('span', {class:'pill', text:cnt + ' found'})
     ]));
     card.appendChild(el('div', {class:'detail', text:f.detail}));
+    if(spanAll){
+      card.appendChild(el('div', {class:'detail note',
+        text:'Counted across all meshes — the example sample is capped, so this finding can’t be split per mesh.'}));
+    }
     var ex = shownExamples(f);
     if(ex.length){
       var box = el('div', {class:'ex'});
@@ -676,7 +690,6 @@ ul.manual input{margin-top:4px}
         box.appendChild(el('span', {class:'e' + (sys ? ' sys' : ''), text:e}));
       });
       if(cnt > ex.length) box.appendChild(el('span', {class:'more', text:'+' + (cnt - ex.length) + ' more'}));
-      else if(capped) box.appendChild(el('span', {class:'more', text:'+ more not shown (example sample capped)'}));
       card.appendChild(box);
     }
     return card;
@@ -703,11 +716,13 @@ ul.manual input{margin-top:4px}
       var fs = shown.filter(function(f){ return f.severity === sev; });
       if(!fs.length) return;
       var total = fs.reduce(function(a,f){ return a + shownCount(f); }, 0);
-      // If any shown finding is example-capped under the mesh filter, the total
-      // is a floor (some per-mesh occurrences fell outside the example sample).
-      var floored = fs.some(function(f){ return meshFilter && isMeshScoped(f) && f.count > (f.examples || []).length; });
+      // Under a mesh filter, a capped finding contributes its all-mesh total
+      // (it can't be split per mesh), so the section total isn't a clean
+      // per-mesh figure — flag that it includes all-mesh items.
+      var spanAny = meshFilter && fs.some(function(f){ return isMeshScoped(f) && isCapped(f); });
       var sec = el('section', {class:'grp'});
-      sec.appendChild(el('h2', null, [el('span', {class:'sevdot ' + sev}), HEADINGS[sev] + ' (' + (floored ? '≥' : '') + total + ')']));
+      sec.appendChild(el('h2', null, [el('span', {class:'sevdot ' + sev}),
+        HEADINGS[sev] + ' (' + total + (spanAny ? ', incl. all-mesh items' : '') + ')']));
       var lastCat = '';
       fs.forEach(function(f){
         if(f.category !== lastCat){ sec.appendChild(el('div', {class:'cat', text:f.category})); lastCat = f.category; }
