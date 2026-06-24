@@ -56,9 +56,17 @@ resource) vs **rewrite** (it uses a removed thing only as scaffolding).
 ```
 
 Output (markdown/json/html, same one-model contract, JSON schema
-`kuma3-preflight-classification/v1`) groups features into **REMOVE/REPLACE** and **REWRITE**,
-listing each deprecated kind, its count, source (`static`/`dynamic`), and 3.0 replacement.
-The end-to-end capture workflow is documented in
+`kuma3-preflight-classification/v1`) leads — when any are present — with a **🌐 Global
+migrations** table (omitted when there are none): the cross-cutting fixes (a non-removable
+field/policy/mesh setting recurring across `globalSuiteThreshold` suites, e.g. inline
+`Mesh.mtls`→MeshIdentity+MeshTrust or the shared `MeshTimeout`/`MeshTrafficPermission`
+defaults) that are fixed once centrally. Below it,
+**📁 Per-suite findings** lists, per suite, only what is *unique* to that suite (its
+removed resources and one-off targetRef usages) as a table; suites whose findings are
+entirely global collapse into a single trailing line. Each row carries the deprecated kind,
+count, source (`static`/`dynamic`), 3.0 replacement, and examples. Emojis are wayfinding
+only (one env-status glyph + one icon per section) — tables themselves are emoji-free. The
+end-to-end capture workflow is documented in
 [`docs/e2e-classification.md`](../../docs/e2e-classification.md).
 
 ## Output formats

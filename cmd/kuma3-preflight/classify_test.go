@@ -231,13 +231,20 @@ func TestRenderClassificationFormats(t *testing.T) {
 
 	md := renderClassificationMarkdown(m)
 	for _, want := range []string{
-		"<details open>", "<summary>", // collapsible env + per-suite grouping
-		"| Recommendation | Suites | Usages |", // summary table
-		"Remove / replace", "Rewrite",          // both recommendation sections present
+		"<details open>", "<summary>", // collapsible env wrapper
+		"📁 Per-suite findings", // per-suite section header
+		"| Kind | Category | Count | Sources | Replacement | Examples |", // per-suite table
+		"remove/replace", "rewrite", // plain-text recommendation labels
 		"trafficroute", "TrafficRoute", "MeshHTTPRoute", "Mesh.mtls",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown missing %q", want)
+		}
+	}
+	// Severity is wayfinding-only: no per-row severity glyphs, no category emoji.
+	for _, banned := range []string{"🟥", "🟧", "🛰️", "🕸️", "🎯", "⚙️"} {
+		if strings.Contains(md, banned) {
+			t.Errorf("markdown still uses cluttering emoji %q", banned)
 		}
 	}
 
@@ -259,6 +266,84 @@ func TestRenderClassificationFormats(t *testing.T) {
 	}
 	if !strings.Contains(htmlOut, "trafficroute") {
 		t.Error("classification HTML missing scanned feature")
+	}
+}
+
+// buildGlobalFixture lays out a tree where a non-removable field (inline Mesh.mtls)
+// recurs across globalSuiteThreshold suites (so it lifts into the Global table) plus a
+// removed resource that is off-subject (so it stays a per-suite finding).
+func buildGlobalFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, s := range []string{"alpha", "beta", "gamma"} {
+		writeFixture(t, root, s+"/"+s+".go", "package "+s+"\nconst m = `\ntype: Mesh\nname: "+s+"\nmtls:\n  enabledBackend: ca-1\n`\n")
+	}
+	// MeshGateway is a removed resource but off-subject here (dir "gw" != kind) — a
+	// per-suite rewrite finding that must NOT be globalized even if it recurred.
+	writeFixture(t, root, "gw/gw.go", "package gw\nconst g = `\ntype: MeshGateway\nname: edge\nmesh: gw\n`\n")
+	return root
+}
+
+func TestGlobalMigrationExtraction(t *testing.T) {
+	ci := newClassIndex()
+	if err := ci.scanSource(buildGlobalFixture(t)); err != nil {
+		t.Fatal(err)
+	}
+	m := ci.toModel("src", "", "")
+
+	var g globalModel
+	for _, x := range m.Global {
+		if x.Kind == "Mesh.mtls" {
+			g = x
+		}
+	}
+	if g.Kind == "" {
+		t.Fatalf("Mesh.mtls (3 suites) must be lifted into the Global table, got %+v", m.Global)
+	}
+	if g.Suites != 3 {
+		t.Errorf("Mesh.mtls global suites = %d, want 3", g.Suites)
+	}
+	if g.Removable {
+		t.Error("a removed resource must never be marked global")
+	}
+	if m.Summary.GlobalMigrations != len(m.Global) || m.Summary.GlobalMigrations < 1 {
+		t.Errorf("GlobalMigrations summary = %d, want len(Global)=%d (>=1)", m.Summary.GlobalMigrations, len(m.Global))
+	}
+
+	// Per-suite usages: Mesh.mtls flagged global (deduped out), MeshGateway not.
+	for _, f := range m.Features {
+		for _, u := range f.Usages {
+			if u.Kind == "Mesh.mtls" && !u.Global {
+				t.Errorf("Mesh.mtls in %q should be flagged global", f.Name)
+			}
+			if u.Kind == "MeshGateway" && u.Global {
+				t.Error("a removed resource (MeshGateway) must stay per-suite, not global")
+			}
+		}
+	}
+
+	md := renderClassificationMarkdown(m)
+	if !strings.Contains(md, "🌐 Global migrations") {
+		t.Error("markdown missing the global migrations table")
+	}
+	if !strings.Contains(md, "| `Mesh.mtls` |") {
+		t.Error("global table missing the Mesh.mtls row")
+	}
+	// alpha/beta/gamma are global-only → collapsed into a note, not per-suite tables.
+	if strings.Contains(md, "<code>alpha</code> —") {
+		t.Error("alpha is global-only and must not render its own per-suite table")
+	}
+	if !strings.Contains(md, "need only the global migrations above:") {
+		t.Error("markdown missing the global-only suites note")
+	}
+	// gw keeps its off-subject removed resource as a per-suite finding.
+	if !strings.Contains(md, "MeshGateway") {
+		t.Error("per-suite MeshGateway finding was dropped")
+	}
+
+	htmlOut := renderClassificationHTML(m)
+	if !strings.Contains(htmlOut, "Global migrations") || !strings.Contains(htmlOut, "Mesh.mtls") {
+		t.Error("classification HTML missing the global migrations table")
 	}
 }
 

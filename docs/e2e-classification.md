@@ -76,6 +76,19 @@ The deprecation catalog is shared with the live auditor (`legacyMeshScoped` in
 `cmd/kuma3-preflight/audit.go`); a unit test (`TestMarkerCatalogInSync`) fails if a removed
 kind ever lacks a source marker.
 
+## Report layout
+
+When any cross-cutting fixes exist, the report opens with a **🌐 Global migrations** table
+(omitted when there are none): a non-removable field/policy/mesh setting recurring across
+≥`globalSuiteThreshold` suites — inline `Mesh.mtls`, the shared
+`MeshTimeout`/`MeshTrafficPermission` defaults, `Mesh.routing.*`, etc. — that you fix once
+centrally rather than per suite. A **📁 Per-suite findings** section
+then lists only what is *unique* to each suite (its removed resources and one-off targetRef
+usages) as a table; suites whose findings are entirely covered by the global table collapse
+into one trailing line. Removed resources are never globalized — each is per-suite removal
+work. Emojis are wayfinding only (one env-status glyph + a per-section icon); the tables are
+emoji-free so they scan cleanly.
+
 ## Attribution caveats
 
 - The shared-CP snapshot is **cumulative**: a deprecation is attributed to the **first**
