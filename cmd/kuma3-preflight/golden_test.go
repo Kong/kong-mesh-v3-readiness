@@ -46,7 +46,7 @@ func TestGoldenReports(t *testing.T) {
 			// A scenario opts into the version-currency check by dropping a
 			// latest-version.txt (one patch string). Scenarios without it skip the
 			// check, so unrelated goldens stay untouched and offline/deterministic.
-			latest, hasLatest := readScenarioLatest(dir)
+			latest, hasLatest := readScenarioLatest(t, dir)
 			rep, err := audit(context.Background(), c, auditOptions{
 				checkVersionCurrency: hasLatest, latestPatch: latest,
 			})
@@ -111,11 +111,17 @@ func mockCP(t *testing.T, dir string) *httptest.Server {
 }
 
 // readScenarioLatest returns the optional latest-version.txt baseline for a
-// scenario and whether it was present (the file enables the version check).
-func readScenarioLatest(dir string) (string, bool) {
+// scenario and whether it was present (the file enables the version check). Only a
+// genuine "not found" disables the check; any other read error fails the test so a
+// transient/permission fault can't silently skip the version check.
+func readScenarioLatest(t *testing.T, dir string) (string, bool) {
+	t.Helper()
 	b, err := os.ReadFile(filepath.Join(dir, "latest-version.txt"))
-	if err != nil {
+	if os.IsNotExist(err) {
 		return "", false
+	}
+	if err != nil {
+		t.Fatalf("reading latest-version.txt: %v", err)
 	}
 	return strings.TrimSpace(string(b)), true
 }
