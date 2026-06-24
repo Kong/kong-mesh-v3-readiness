@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 18,
+    "blockers": 19,
     "info": 1,
     "coverageGaps": 1,
     "parseErrors": 0,
@@ -138,6 +138,17 @@
       "examples": [
         "default/mtp-user",
         "default/mtp-system (system — CP-managed, update before 3.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Policies",
+      "category": "`to` targetRef kind",
+      "title": "MeshTimeout to[].targetRef.kind=MeshSubset",
+      "detail": "`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.",
+      "count": 1,
+      "examples": [
+        "default/mt-to-subset"
       ]
     },
     {
