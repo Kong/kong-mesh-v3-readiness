@@ -11,9 +11,9 @@
     "default"
   ],
   "summary": {
-    "blockers": 21,
+    "blockers": 22,
     "warnings": 1,
-    "info": 1,
+    "info": 0,
     "coverageGaps": 3,
     "parseErrors": 0,
     "systemFindings": 1
@@ -241,6 +241,17 @@
       ]
     },
     {
+      "severity": "blocker",
+      "group": "Other",
+      "category": "Zone proxies",
+      "title": "zoneingresses present",
+      "detail": "Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.",
+      "count": 1,
+      "examples": [
+        "zi-1"
+      ]
+    },
+    {
       "severity": "warning",
       "group": "Control plane",
       "category": "Control plane configuration",
@@ -249,17 +260,6 @@
       "count": 1,
       "examples": [
         "zone zone-1: runtime.kubernetes.workloadLabels unset"
-      ]
-    },
-    {
-      "severity": "info",
-      "group": "Other",
-      "category": "Zone proxies",
-      "title": "zoneingresses present",
-      "detail": "ZoneIngress/ZoneEgress are superseded by the unified Zone Proxy in Exclusive mode.",
-      "count": 1,
-      "examples": [
-        "zi-1"
       ]
     }
   ],

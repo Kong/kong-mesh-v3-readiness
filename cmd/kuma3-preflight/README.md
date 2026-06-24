@@ -120,7 +120,8 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   `/config`/`/zones+insights`, is a coverage gap — never a silent pass.
 - **Resource names** — Mesh/MeshService/MeshExternalService/MeshMultiZoneService names that
   are not valid RFC-1035 DNS labels.
-- **Zone proxies** — informational count of ZoneIngress/ZoneEgress.
+- **Zone proxies** — flags ZoneIngress/ZoneEgress (the separate resources are replaced by
+  the unified Zone Proxy in 3.0).
 - **Envoy config (opt-in, `--inspect-dataplanes N`)** — fetches up to N proxies' config
   dumps and flags use of the legacy Envoy DNS filter.
 

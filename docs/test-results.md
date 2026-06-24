@@ -141,9 +141,9 @@ valid 2.x construct — doc-consistent (L72) but still warrants explicit eng con
 (open question in the plan).
 
 ### ✅ TC-15 — Feature tour
-- (a) Fully legacy mesh → **28 blockers** (15 removed resources + 9 Mesh settings +
-  `from` + top-level targetRef + reachableServices + gateway-DP), **3 warnings**
-  (meshServices.mode, `to[]` kind=Mesh, proxyTypes), **2 info** (zoneingress/egress).
+- (a) Fully legacy mesh → **30 blockers** (15 removed resources + 9 Mesh settings +
+  `from` + top-level targetRef + reachableServices + gateway-DP + zoneingress/egress),
+  **3 warnings** (meshServices.mode, `to[]` kind=Mesh, proxyTypes).
   Exit 1. All severities correct.
 - (b) Exclusive + new-policies-only mesh (targetRef.kind=Mesh, to[].kind=MeshService) →
   0 blockers, exit 0, `✅`. No false blocker.

@@ -497,8 +497,8 @@ func (a *auditor) checkZoneProxies(ctx context.Context) error {
 			return fmt.Errorf("listing %s: %w", wsPath, err)
 		}
 		for _, it := range items {
-			a.rep.add(info, "Zone proxies", wsPath+" present",
-				"ZoneIngress/ZoneEgress are superseded by the unified Zone Proxy in Exclusive mode.", it.Name)
+			a.rep.add(blocker, "Zone proxies", wsPath+" present",
+				"Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.", it.Name)
 		}
 	}
 	return nil
