@@ -1142,7 +1142,6 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // the legacy CoreDNS path by checkDataplaneVersions (a reported `coredns`
 // dependency) plus the --inspect-dataplanes deep check, so none is repeated here.
 var manualChecks = []manualCheck{
-	{Title: "Gateway API / GAMMA usage migrated off built-in support"},
 	{
 		Title: "Old inspect APIs removed (switch to the new inspect API)",
 		Detail: "Kuma 3.0 removes the old dataplane rules-inspection endpoint (`_rules`) and " +
@@ -1263,6 +1262,47 @@ var kubernetesManualChecks = []manualCheck{
 			"enable the gate or fall back to `ContainerPatch`. The command below reports your " +
 			"API server version and whether action is needed.",
 		Command: `kubectl version -o json | jq -r '(.serverVersion.minor | gsub("[^0-9]";"") | tonumber) as $m | "K8s " + .serverVersion.major + "." + .serverVersion.minor + (if $m >= 34 then ": pod-level resources on by default — no action" else ": enable the PodLevelResources feature gate or use ContainerPatch" end)'`,
+	},
+	{
+		Title: "Gateway API / GAMMA usage migrated off built-in support",
+		Detail: "Kuma 3.0 exits the gateway business: the builtin gateway and the " +
+			"Kubernetes Gateway API / GAMMA translation layer are both removed. Any " +
+			"north-south ingress routed through a `Gateway` (an HTTPRoute attached to a " +
+			"Gateway) and any east-west GAMMA route (an HTTPRoute attached to a Service) " +
+			"that Kuma renders today stops working after the upgrade. These are native " +
+			"`gateway.networking.k8s.io` CRDs owned by upstream controllers, not Kuma " +
+			"resources, so they never appear over the control-plane API — only the " +
+			"`MeshGateway`/`MeshGatewayRoute` they generate get flagged automatically. " +
+			"Kuma claims usage through the GatewayClass controller " +
+			"`gateways.kuma.io/controller`: move north-south ingress onto a delegated " +
+			"gateway (Kong or another third-party) and re-express GAMMA routes as native " +
+			"`MeshHTTPRoute`/`MeshTCPRoute` policies. The command reports whether the " +
+			"Gateway API is installed and, if so, lists the Kuma GatewayClasses, the " +
+			"Gateways bound to them, and any Service-attached HTTPRoutes still in use — " +
+			"no rows means nothing left to migrate; connectivity or RBAC errors surface " +
+			"rather than being mistaken for a clean result.",
+		Command: `(
+  gw=$(kubectl api-resources --api-group=gateway.networking.k8s.io -o name) || exit 1
+  if [ -z "$gw" ]; then
+    echo "Gateway API not installed — no Gateway API / GAMMA usage to migrate"
+    exit 0
+  fi
+  kubectl get gatewayclass,gateway,httproute -A -o json \
+    | jq -rs '
+        (.[0].items // []) as $items
+        | [ $items[]
+            | select(.kind == "GatewayClass" and .spec.controllerName == "gateways.kuma.io/controller")
+            | .metadata.name ] as $kc
+        | $items[]
+        | . as $r
+        | select(
+                (.kind == "GatewayClass" and ($kc | index($r.metadata.name)))
+             or (.kind == "Gateway"      and ($kc | index($r.spec.gatewayClassName)))
+             or (.kind == "HTTPRoute"    and ((.spec.parentRefs // []) | any(.kind == "Service")))
+          )
+        | [.kind, (.metadata.namespace // "-"), .metadata.name]
+        | join("/")'
+)`,
 	},
 }
 

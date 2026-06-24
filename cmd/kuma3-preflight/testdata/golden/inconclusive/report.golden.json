@@ -47,9 +47,6 @@
   ],
   "manualChecks": [
     {
-      "title": "Gateway API / GAMMA usage migrated off built-in support"
-    },
-    {
       "title": "Old inspect APIs removed (switch to the new inspect API)",
       "detail": "Kuma 3.0 removes the old dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. The dropped endpoint returned every policy's rules for a proxy in one nested blob (fromRules/toRules/inboundRules/toResourceRules), and it goes away together with `kuma.io/service` routing support. The new API splits that into per-scope endpoints that reference resources by KRI, listed below. The control-plane API cannot tell you which clients still call the old endpoint, whether that's kumactl, the GUI, dashboards, scripts, or monitoring, so you have to find and migrate those consumers yourself; a 2.x kumactl or GUI pointed at a 3.0 CP gets a 404. Upgrade kumactl and the GUI to their 3.0 builds, which already use the new endpoints.",
       "command": "# Removed in 3.0\nGET /meshes/{mesh}/dataplanes/{name}/_rules\n\n# Replacement endpoints (new KRI-based inspect API)\nGET /meshes/{mesh}/dataplanes/{name}/_layout\nGET /meshes/{mesh}/dataplanes/{name}/_policies\nGET /meshes/{mesh}/dataplanes/{name}/_inbounds/{inbound_kri}/_policies\nGET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_policies\nGET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes\nGET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes/{route_kri}/_policies"
