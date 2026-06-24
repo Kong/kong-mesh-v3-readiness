@@ -23,7 +23,8 @@ func sampleReport() *report {
 	}
 	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")
 	r.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label", "Add label.", "default/dp-1")
-	r.add(info, "Zone proxies", "zoneingresses present", "Superseded.", "zi-1")
+	r.add(blocker, "Zone proxies", "zoneingresses present", "Migrate to the unified Zone Proxy.", "zi-1")
+	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", "1/2")
 	r.add(warning, cpConfigCategory, "Workload labels not configured", "Set workloadLabels.", "runtime.kubernetes.workloadLabels unset")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
@@ -34,13 +35,13 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Status != statusBlockers {
 		t.Fatalf("status = %q, want %q", m.Status, statusBlockers)
 	}
-	if m.Summary.Blockers != 15 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping)
-		t.Errorf("blockers = %d, want 15", m.Summary.Blockers)
+	if m.Summary.Blockers != 16 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies)
+		t.Errorf("blockers = %d, want 16", m.Summary.Blockers)
 	}
 	if m.Summary.Warnings != 1 { // Workload labels not configured
 		t.Errorf("warnings = %d, want 1", m.Summary.Warnings)
 	}
-	if m.Summary.Info != 1 { // Zone proxies
+	if m.Summary.Info != 1 { // Dataplane DNS sampling coverage
 		t.Errorf("info = %d, want 1", m.Summary.Info)
 	}
 	if m.Summary.CoverageGaps != 1 || m.Summary.ParseErrors != 1 {

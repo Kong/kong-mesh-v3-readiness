@@ -176,7 +176,7 @@ func TestIngestReportsMergeAndDelta(t *testing.T) {
 		Severity: "blocker", Category: "Removed resources",
 		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []string{"trafficroute/route-all"},
 	}
-	infoFinding := findingModel{Severity: "info", Category: "Zone proxies", Title: "zoneingresses present", Count: 1}
+	infoFinding := findingModel{Severity: "info", Category: "Dataplane DNS", Title: "Envoy config inspected for a sample of dataplanes", Count: 1}
 	// CP-level findings describe the e2e CP itself, not a test's resource — excluded.
 	cpFinding := findingModel{
 		Severity: "blocker", Category: cpConfigCategory, Title: "Delta xDS not enabled",
