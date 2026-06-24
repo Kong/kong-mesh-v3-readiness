@@ -325,14 +325,25 @@ func renderMarkdownSection(b *strings.Builder, m reportModel, heading, sev strin
 	if len(section) == 0 {
 		return
 	}
+	// Count distinct categories per group so a single-category group can skip the
+	// redundant category subheading (the group heading already names it).
+	catsPerGroup := map[string]map[string]struct{}{}
+	for _, f := range section {
+		g := groupOf(f)
+		if catsPerGroup[g] == nil {
+			catsPerGroup[g] = map[string]struct{}{}
+		}
+		catsPerGroup[g][f.Category] = struct{}{}
+	}
 	fmt.Fprintf(b, "## %s\n\n", heading)
 	lastGroup, lastCategory := "", ""
 	for _, f := range section {
-		if g := groupOf(f); g != lastGroup {
+		g := groupOf(f)
+		if g != lastGroup {
 			fmt.Fprintf(b, "### %s\n\n", g)
 			lastGroup, lastCategory = g, ""
 		}
-		if f.Category != lastCategory {
+		if len(catsPerGroup[g]) > 1 && f.Category != lastCategory {
 			fmt.Fprintf(b, "#### %s\n\n", f.Category)
 			lastCategory = f.Category
 		}

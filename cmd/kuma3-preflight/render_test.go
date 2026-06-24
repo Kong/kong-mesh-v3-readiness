@@ -85,10 +85,9 @@ func TestRenderMarkdownGolden(t *testing.T) {
 		"- Includes 2 CP-managed (policy-role: system) resource(s) — update these before upgrading",
 		"## Blockers — must resolve before upgrading",
 		"### Mesh object",
-		"#### Mesh object settings",
-		"### Policies",
-		"#### Policy `from` field",
-		"### Other", // info section groups the Zone proxies finding
+		"#### Mesh object settings", // Mesh object has 2 categories → subheaders shown
+		"### Policies",              // single-category group → no redundant subheader
+		"### Other",                 // info section groups the Zone proxies finding
 		"- **MeshTimeout uses `from`** — 12 found. Rewrite from.",
 		"… (+2 more)", // 12 occurrences, capped at 10 examples
 		"## Coverage gaps — collections NOT audited",
@@ -102,6 +101,10 @@ func TestRenderMarkdownGolden(t *testing.T) {
 	}
 	if strings.Index(got, "### Mesh object") > strings.Index(got, "### Policies") {
 		t.Error("groups out of order: Mesh object should precede Policies")
+	}
+	// A single-category group must not repeat the category as a subheading.
+	if strings.Contains(got, "#### Policy `from` field") {
+		t.Error("single-category group should not render a redundant category subheader")
 	}
 }
 
