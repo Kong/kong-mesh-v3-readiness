@@ -33,6 +33,7 @@ func goodK8sConfig() cpConfig {
 	c.Experimental.DeltaXds = true
 	c.Experimental.KdsEventBasedWatchdog.Enabled = true
 	c.Experimental.SidecarContainers = true
+	c.Runtime.Kubernetes.WorkloadLabels = []string{"app.kubernetes.io/name"}
 	return c
 }
 
@@ -69,6 +70,35 @@ func TestAddCPConfigFindings(t *testing.T) {
 		a.addCPConfigFindings(goodK8sConfig(), "")
 		if n := len(a.rep.findings); n != 0 {
 			t.Errorf("good config produced %d findings, want 0", n)
+		}
+	})
+
+	t.Run("k8s without workloadLabels emits a workload warning", func(t *testing.T) {
+		c := goodK8sConfig()
+		c.Runtime.Kubernetes.WorkloadLabels = nil
+		a := &auditor{rep: &report{}}
+		a.addCPConfigFindings(c, "")
+		f, ok := func() (finding, bool) {
+			for _, f := range a.rep.findings {
+				if f.title == "Workload labels not configured" {
+					return f, true
+				}
+			}
+			return finding{}, false
+		}()
+		if !ok {
+			t.Fatalf("empty workloadLabels did not emit the workload warning; findings=%+v", a.rep.findings)
+		}
+		if f.severity != warning {
+			t.Errorf("workload finding severity = %v, want warning", f.severity)
+		}
+		if a.rep.count(blocker) != 0 {
+			t.Errorf("empty workloadLabels must not gate CI (blockers=%d)", a.rep.count(blocker))
+		}
+		// The core new invariant: a fully-observed run carrying only warnings is
+		// still clean (exit 0), so a warning never gates CI.
+		if got := a.rep.status(); got != statusClean {
+			t.Errorf("warning-only report status = %q, want %q", got, statusClean)
 		}
 	})
 

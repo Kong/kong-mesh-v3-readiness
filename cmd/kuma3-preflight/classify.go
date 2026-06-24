@@ -270,7 +270,7 @@ func (ci *classIndex) ingestReports(dir string) error {
 		}
 		for _, f := range m.Findings {
 			if f.Severity != blocker.String() {
-				continue // info findings (zone-proxy counts, sampling) are not deprecations
+				continue // warning/info findings (advisories, zone-proxy counts, sampling) are not deprecations
 			}
 			if cpLevelCategory(f.Category) {
 				continue // CP/global config, not a per-test resource usage

@@ -12,6 +12,7 @@
   ],
   "summary": {
     "blockers": 0,
+    "warnings": 0,
     "info": 0,
     "coverageGaps": 0,
     "parseErrors": 0,
@@ -24,7 +25,6 @@
     "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)",
     "Old inspect APIs removed (switch to the new inspect API)",
     "Pod resources instead of container resources",
-    "Adopt the Workload resource for proxy grouping (metrics/traces dimension) instead of kuma.io/service tags",
     "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
     "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label"
   ]

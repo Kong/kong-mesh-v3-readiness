@@ -455,6 +455,14 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 		if !a.unmarshalSpec(it, &spec, qualified(it)) {
 			continue
 		}
+		// Universal-only: the kuma.io/workload label drives Workload generation (the
+		// 3.0 metrics/traces grouping dimension); without it the CP generates no
+		// Workload for this proxy. On Kubernetes the injector sets it from the pod,
+		// so only flag non-k8s dataplanes that are missing it.
+		if it.Labels["kuma.io/env"] != "kubernetes" && it.Labels["kuma.io/workload"] == "" {
+			a.rep.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label",
+				"On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.", qualified(it))
+		}
 		// Universal-only: spec.probes is removed in 3.0. On Kubernetes probes are
 		// derived from the pod and need no action, so only flag non-k8s dataplanes.
 		if hasJSON(spec.Probes) && it.Labels["kuma.io/env"] != "kubernetes" {
@@ -559,6 +567,10 @@ type cpConfig struct {
 					Enabled bool `json:"enabled"`
 				} `json:"ebpf"`
 			} `json:"injector"`
+			// WorkloadLabels is the prioritized pod-label list the CP uses to
+			// generate the kuma.io/workload label (the 3.0 metrics/traces grouping
+			// dimension). Empty means it falls back to the pod ServiceAccount name.
+			WorkloadLabels []string `json:"workloadLabels"`
 		} `json:"kubernetes"`
 	} `json:"runtime"`
 }
@@ -680,6 +692,16 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 		a.rep.add(blocker, cpConfigCategory, "Native sidecar containers not enabled",
 			"Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
 			ref("experimental.sidecarContainers=false"))
+	}
+
+	// Workload grouping (metrics/traces dimension): with no workloadLabels set the
+	// CP derives the kuma.io/workload label from each pod's ServiceAccount. That is
+	// valid but only useful if ServiceAccounts are distinct per workload — a cluster
+	// left on the `default` ServiceAccount collapses every proxy into one workload.
+	if onK8s && len(cfg.Runtime.Kubernetes.WorkloadLabels) == 0 {
+		a.rep.add(warning, cpConfigCategory, "Workload labels not configured",
+			"`runtime.kubernetes.workloadLabels` is unset, so the `kuma.io/workload` label (the 3.0 metrics/traces grouping dimension) is derived from each pod's ServiceAccount. Ensure ServiceAccounts are distinct per workload, or set `workloadLabels`, or proxies collapse into a single default workload.",
+			ref("runtime.kubernetes.workloadLabels unset"))
 	}
 }
 
@@ -1084,14 +1106,15 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 
 // manualChecks are 3.0 drops that cannot be detected from CP resources alone.
 // Settings exposed by GET /config (unified naming, inbound tags, experimental
-// flags, autoReachableServices, global-on-k8s, eBPF transparent proxy) are
-// audited automatically by checkControlPlaneConfig and are not repeated here.
+// flags, autoReachableServices, global-on-k8s, eBPF transparent proxy, k8s
+// workloadLabels) are audited automatically by checkControlPlaneConfig, and
+// Universal proxies missing the kuma.io/workload label by checkDataplanes, so
+// neither is repeated here.
 var manualChecks = []string{
 	"Gateway API / GAMMA usage migrated off built-in support",
 	"DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)",
 	"Old inspect APIs removed (switch to the new inspect API)",
 	"Pod resources instead of container resources",
-	"Adopt the Workload resource for proxy grouping (metrics/traces dimension) instead of kuma.io/service tags",
 	"Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
 	"Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
 }

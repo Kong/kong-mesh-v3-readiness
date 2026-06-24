@@ -12,7 +12,7 @@ Pick the site by check shape:
 - **Deprecated/relocated field in a policy spec:** add/extend a `case` in `checkPolicyFields`
   (`audit.go:273`, switch on `it.Type`). Unmarshal only the fields you inspect into a local
   anonymous struct; on unmarshal error `return` (already counted as a parse error upstream).
-  Field deprecations are **blockers** — the tool has only two severities: `blocker` and `info`.
+  Field deprecations are **blockers** — the tool has three severities: `blocker`, `warning` and `info`.
 - **Mesh object setting:** extend `checkMeshSettings` (`audit.go:157`, decode into `meshSpec`).
 - **Dataplane / zone-proxy / resource-name check:** extend the matching `check*` method.
 
@@ -33,11 +33,15 @@ New manual (non-CP-detectable) items go in the `manualChecks` slice in `audit.go
 
 ## Severity — choose deliberately
 
-There are only two severities: **everything actionable is a `blocker`** (there is no
-`warning` tier — deprecations, relocations and should-fix items are blockers too), and `info`
-is reserved for non-actionable counts.
+Three severities. **Default to `blocker` for anything actionable** — deprecations,
+relocations and should-fix items are blockers. `warning` is the narrow exception: an item
+the operator should review but that does **not** break the 3.0 upgrade (the default is valid,
+just possibly not what they want), so it must not gate CI. `info` is reserved for
+non-actionable counts. Only `blocker` changes the exit code; `warning` and `info` leave a
+fully-observed run `clean` (exit 0).
 
 | Severity  | Meaning | Use for |
 |-----------|---------|---------|
-| `blocker` | Anything the operator must act on before 3.0; gates CI (exit 1) | removed resources, inline mTLS/metrics/tracing/logging on Mesh, `routing.*`, `reachableServices`, gateway-in-Dataplane, policy `from`, non-Mesh/Dataplane top-level `targetRef.kind`, **`meshServices.mode != Exclusive`**, CP-config **unified naming off** / **inbound tags still enabled** / global-on-k8s / autoReachableServices / eBPF; plus the former warnings: `proxyTypes`, removed `to` kinds (subset/selector + MeshGateway; `Mesh`/`Mesh*Service`/`MeshHTTPRoute` stay valid), OTel `endpoint`, relocated fields, non-RFC-1035 names, Universal Dataplane `probes`, per-proxy `spec.metrics`, version-incompatible dataplanes, **control plane (or any connected zone CP) not on the latest 2.14 patch**, CP-config deltaXds/KDS-watchdog/sidecar-containers off, unparseable specs |
+| `blocker` | Anything the operator must act on before 3.0; gates CI (exit 1) | removed resources, inline mTLS/metrics/tracing/logging on Mesh, `routing.*`, `reachableServices`, gateway-in-Dataplane, policy `from`, non-Mesh/Dataplane top-level `targetRef.kind`, **`meshServices.mode != Exclusive`**, CP-config **unified naming off** / **inbound tags still enabled** / global-on-k8s / autoReachableServices / eBPF; plus the former warnings: `proxyTypes`, removed `to` kinds (subset/selector + MeshGateway; `Mesh`/`Mesh*Service`/`MeshHTTPRoute` stay valid), OTel `endpoint`, relocated fields, non-RFC-1035 names, Universal Dataplane `probes`, per-proxy `spec.metrics`, version-incompatible dataplanes, **control plane (or any connected zone CP) not on the latest 2.14 patch**, CP-config deltaXds/KDS-watchdog/sidecar-containers off, unparseable specs; **Universal Dataplane missing the `kuma.io/workload` label** |
+| `warning` | Actionable advisory that does not break the upgrade; does NOT gate CI | k8s **`workloadLabels` unset** (kuma.io/workload falls back to the pod ServiceAccount — fine only if ServiceAccounts are distinct per workload) |
 | `info`    | Informational, no action mandated | zone proxy counts, sampled-dataplane inspection coverage |

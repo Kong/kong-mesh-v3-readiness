@@ -20,7 +20,7 @@ Reference list of features deprecated, replaced, or slated for removal. Used as 
 | **Reachable services** | `kuma.io/transparent-proxying-reachable-services` / `reachableServices` (kuma.io/service based) | `reachableBackends` (MeshService based) | Tied to Exclusive mode + MeshService migration |
 | **Locality-aware LB** | `Mesh.spec.routing.localityAwareLoadBalancing` (boolean) | **MeshLoadBalancingStrategy** | Boolean superseded by the policy |
 | **Inbound tags** | inbound `kuma.io/*` tags generated on dataplane inbounds (default) | run with inbound tags **disabled** | See Experimental config below |
-| **Proxy grouping** | `kuma.io/service` tag groups proxies (incl. metrics/traces dimension) | **Workload** resource | Adopt Workload — the new logical grouping of dataplane proxies and the primary grouping key for metrics/traces; pairs with MeshService + inbound-tags-disabled. `pkg/core/resources/apis/workload` |
+| **Proxy grouping** | `kuma.io/service` tag groups proxies (incl. metrics/traces dimension) | **Workload** resource | Adopt Workload — the new logical grouping of dataplane proxies and the primary grouping key for metrics/traces; pairs with MeshService + inbound-tags-disabled. `pkg/core/resources/apis/workload`. The kuma.io/workload label is generated from `runtime.kubernetes.workloadLabels` (prioritized pod-label list; empty → pod ServiceAccount name) on k8s, or set directly on the Dataplane on Universal (where the workload generator reads it). Preflight auto-detects readiness: warning when k8s `workloadLabels` is unset, blocker for a Universal Dataplane missing the label. |
 
 ## Experimental config → becoming default
 

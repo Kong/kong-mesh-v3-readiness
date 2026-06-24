@@ -47,6 +47,7 @@ type controlPlane struct {
 
 type summary struct {
 	Blockers       int `json:"blockers"`
+	Warnings       int `json:"warnings"`
 	Info           int `json:"info"`
 	CoverageGaps   int `json:"coverageGaps"`
 	ParseErrors    int `json:"parseErrors"`
@@ -103,6 +104,7 @@ var categoryToGroup = map[string]string{
 	"OpenTelemetry endpoint":   groupPolicies,
 	"Removed resources":        groupRemovedResources,
 	"reachableServices":        groupDataPlane,
+	"Workload grouping":        groupDataPlane,
 	"Gateway in Dataplane":     groupDataPlane,
 	"Dataplane probes":         groupDataPlane,
 	"Dataplane metrics":        groupDataPlane,
@@ -132,15 +134,18 @@ func groupIndex(group string) int {
 	return len(groupOrder)
 }
 
-// severityRank orders severities for rendering: blocker before info, unknown last.
+// severityRank orders severities for rendering: blocker, then warning, then info,
+// unknown last.
 func severityRank(sev string) int {
 	switch sev {
 	case blocker.String():
 		return 0
-	case info.String():
+	case warning.String():
 		return 1
-	default:
+	case info.String():
 		return 2
+	default:
+		return 3
 	}
 }
 
@@ -174,6 +179,8 @@ func (s severity) String() string {
 	switch s {
 	case blocker:
 		return "blocker"
+	case warning:
+		return "warning"
 	case info:
 		return "info"
 	default:
@@ -182,7 +189,8 @@ func (s severity) String() string {
 }
 
 // status classifies the run; blockers take precedence over inconclusive so a
-// failing audit is never softened by a coverage gap.
+// failing audit is never softened by a coverage gap. Warnings are advisory and do
+// not gate: a run with only warnings (no blockers, fully observed) is still clean.
 func (r *report) status() string {
 	switch {
 	case r.count(blocker) > 0:
@@ -211,6 +219,7 @@ func (r *report) toModel(generatedAt string) reportModel {
 		Meshes:       append([]string{}, r.meshes...),
 		Summary: summary{
 			Blockers:       r.count(blocker),
+			Warnings:       r.count(warning),
 			Info:           r.count(info),
 			CoverageGaps:   len(r.coverage),
 			ParseErrors:    r.parseErrors,
