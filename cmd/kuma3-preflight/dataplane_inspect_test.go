@@ -33,6 +33,29 @@ func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 	}
 }
 
+// TestDataplaneCoreDNSDependencyReported checks that a proxy whose insight reports
+// a bundled `coredns` dependency surfaces as a blocker (legacy embedded-DNS path),
+// while a proxy without it does not — no --inspect-dataplanes required.
+func TestDataplaneCoreDNSDependencyReported(t *testing.T) {
+	insights := `{"total":2,"items":[
+		{"type":"DataplaneOverview","mesh":"default","name":"dns-dp",
+		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.9.0","kumaCpCompatible":true},"dependencies":{"coredns":"1.11.1"}}}]}},
+		{"type":"DataplaneOverview","mesh":"default","name":"plain-dp",
+		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.9.0","kumaCpCompatible":true}}}]}}
+	],"next":null}`
+	m := auditResponses(t, map[string]string{"/dataplanes+insights": insights})
+	f, ok := findFinding(m, "blocker", "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS")
+	if !ok {
+		t.Fatalf("expected a legacy-CoreDNS blocker, got %+v", m.Findings)
+	}
+	if f.Count != 1 {
+		t.Errorf("count = %d, want 1 (only the proxy reporting coredns)", f.Count)
+	}
+	if len(f.Examples) == 0 || !strings.Contains(f.Examples[0], "dns-dp") {
+		t.Errorf("example should name dns-dp, got %+v", f.Examples)
+	}
+}
+
 // TestDataplaneMetricsOverrideReported checks that a per-proxy metrics backend on
 // a Dataplane surfaces as a blocker (deprecated → MeshMetric).
 func TestDataplaneMetricsOverrideReported(t *testing.T) {

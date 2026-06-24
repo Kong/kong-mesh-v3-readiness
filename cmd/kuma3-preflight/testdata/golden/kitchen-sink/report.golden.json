@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 22,
+    "blockers": 23,
     "warnings": 1,
     "info": 0,
     "coverageGaps": 3,
@@ -177,6 +177,17 @@
     {
       "severity": "blocker",
       "group": "Data plane \u0026 workloads",
+      "category": "Dataplane DNS",
+      "title": "Dataplane uses the legacy embedded CoreDNS",
+      "detail": "This proxy reports a bundled CoreDNS dependency; 3.0 removes the CoreDNS + Envoy DNS-filter path — upgrade kuma-dp.",
+      "count": 1,
+      "examples": [
+        "default/legacy-dp.kuma-demo (coredns 1.11.1)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
       "category": "Dataplane metrics",
       "title": "Dataplane has a per-proxy metrics override",
       "detail": "`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.",
@@ -280,9 +291,6 @@
   "manualChecks": [
     {
       "title": "Gateway API / GAMMA usage migrated off built-in support"
-    },
-    {
-      "title": "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)"
     },
     {
       "title": "Old inspect APIs removed (switch to the new inspect API)"
