@@ -56,11 +56,14 @@ type summary struct {
 }
 
 type findingModel struct {
-	Severity string   `json:"severity"`
-	Group    string   `json:"group"`
-	Category string   `json:"category"`
-	Title    string   `json:"title"`
-	Detail   string   `json:"detail"`
+	Severity string `json:"severity"`
+	Group    string `json:"group"`
+	Category string `json:"category"`
+	Title    string `json:"title"`
+	Detail   string `json:"detail"`
+	// Doc links to the Kong Mesh page explaining the 3.0 replacement API/feature.
+	// Optional: omitted for findings with no replacement to point at.
+	Doc      string   `json:"doc,omitempty"`
 	Count    int      `json:"count"`
 	Examples []string `json:"examples"`
 }
@@ -269,6 +272,7 @@ func (r *report) toModel(generatedAt string) reportModel {
 			Category: f.category,
 			Title:    f.title,
 			Detail:   f.detail,
+			Doc:      f.doc,
 			Count:    f.count,
 			Examples: append([]string{}, f.examples...),
 		})

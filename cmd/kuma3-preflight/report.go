@@ -13,6 +13,10 @@ type finding struct {
 	category string
 	title    string
 	detail   string
+	// doc is a Kong Mesh documentation URL explaining the 3.0 replacement API or
+	// feature for this finding (empty when there is no replacement to point at,
+	// e.g. an unparseable spec or a coverage note).
+	doc      string
 	count    int
 	examples []string
 }
@@ -54,9 +58,18 @@ func (r *report) addGap(path, reason string) {
 	r.coverage = append(r.coverage, coverageGap{path: path, reason: reason})
 }
 
-// add records one occurrence of a finding, merging by (severity, category, title)
-// and accumulating an example reference (capped).
+// add records one occurrence of a finding with no documentation link — for
+// advisory/info items, coverage notes and unparseable specs that have no 3.0
+// replacement API to point at. Most blockers use addDoc instead.
 func (r *report) add(sev severity, category, title, detail, example string) {
+	r.addDoc(sev, category, title, detail, "", example)
+}
+
+// addDoc records one occurrence of a finding, merging by (severity, category,
+// title) and accumulating an example reference (capped). doc is a Kong Mesh
+// documentation URL explaining the 3.0 replacement; it is taken from the first
+// occurrence (identical (severity, category, title) tuples carry the same doc).
+func (r *report) addDoc(sev severity, category, title, detail, doc, example string) {
 	r.total++
 	for i := range r.findings {
 		f := &r.findings[i]
@@ -70,7 +83,7 @@ func (r *report) add(sev severity, category, title, detail, example string) {
 	}
 	r.findings = append(r.findings, finding{
 		severity: sev, category: category, title: title, detail: detail,
-		count: 1, examples: []string{example},
+		doc: doc, count: 1, examples: []string{example},
 	})
 }
 

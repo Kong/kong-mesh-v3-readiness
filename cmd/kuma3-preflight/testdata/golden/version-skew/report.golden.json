@@ -23,6 +23,7 @@
       "category": "Control plane version",
       "title": "Control plane behind the latest 2.14 patch",
       "detail": "Upgrade to the latest 2.14 patch (2.14.0) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.",
+      "doc": "https://developer.konghq.com/mesh/upgrade/",
       "count": 2,
       "examples": [
         "zone zone-b (2.13.5)",
