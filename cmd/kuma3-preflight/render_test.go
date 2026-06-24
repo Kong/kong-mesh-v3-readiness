@@ -30,6 +30,28 @@ func sampleReport() *report {
 	return r
 }
 
+// TestAddDocBackfillsDocOnMerge guards that a finding's doc link survives merging
+// regardless of call order: a doc-less occurrence followed by a doc-bearing one
+// backfills the link, and a doc-bearing occurrence is not cleared by a later
+// doc-less one.
+func TestAddDocBackfillsDocOnMerge(t *testing.T) {
+	const url = "https://developer.konghq.com/mesh/policies/meshtrafficpermission/"
+
+	r := &report{}
+	r.add(blocker, "C", "t", "d", "ex1") // doc-less first
+	r.addDoc(blocker, "C", "t", "d", url, "ex2")
+	if got := r.findings[0].doc; got != url {
+		t.Errorf("doc not backfilled on merge: got %q, want %q", got, url)
+	}
+
+	r2 := &report{}
+	r2.addDoc(blocker, "C", "t", "d", url, "ex1") // doc first
+	r2.add(blocker, "C", "t", "d", "ex2")
+	if got := r2.findings[0].doc; got != url {
+		t.Errorf("real doc cleared by a later doc-less merge: got %q, want %q", got, url)
+	}
+}
+
 func TestToModelSummaryAndStatus(t *testing.T) {
 	m := sampleReport().toModel("2026-06-17T10:00:00Z")
 	if m.Status != statusBlockers {

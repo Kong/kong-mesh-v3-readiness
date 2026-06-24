@@ -7,10 +7,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
+
+// doclessBlockerAdd matches a doc-less `add(blocker, ...)` call, tolerating
+// whitespace around the paren and comma, but NOT `addDoc(blocker, ...)`: in
+// `.addDoc(` the character after `add` is `D`, not `(`, so `\.add\(` can't match.
+var doclessBlockerAdd = regexp.MustCompile(`\.add\(\s*blocker\s*,`)
 
 // update regenerates the *.golden.json reference files instead of asserting:
 //
@@ -125,16 +131,13 @@ func TestBlockerCallSitesUseAddDoc(t *testing.T) {
 		t.Fatalf("reading audit.go: %v", err)
 	}
 	for i, line := range strings.Split(string(src), "\n") {
-		trimmed := strings.TrimSpace(line)
-		// addDoc(blocker, ...) does not contain the substring ".add(blocker", so
-		// only the doc-less add is matched here.
-		if !strings.Contains(trimmed, ".add(blocker,") {
+		if !doclessBlockerAdd.MatchString(line) {
 			continue
 		}
-		if strings.Contains(trimmed, `"Unparseable resources"`) {
+		if strings.Contains(line, `"Unparseable resources"`) {
 			continue // the sole blocker with no replacement API to link
 		}
-		t.Errorf("audit.go:%d records a blocker via the doc-less add(); use addDoc with a docX link:\n\t%s", i+1, trimmed)
+		t.Errorf("audit.go:%d records a blocker via the doc-less add(); use addDoc with a docX link:\n\t%s", i+1, strings.TrimSpace(line))
 	}
 }
 

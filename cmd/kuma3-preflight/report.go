@@ -67,14 +67,20 @@ func (r *report) add(sev severity, category, title, detail, example string) {
 
 // addDoc records one occurrence of a finding, merging by (severity, category,
 // title) and accumulating an example reference (capped). doc is a Kong Mesh
-// documentation URL explaining the 3.0 replacement; it is taken from the first
-// occurrence (identical (severity, category, title) tuples carry the same doc).
+// documentation URL explaining the 3.0 replacement.
 func (r *report) addDoc(sev severity, category, title, detail, doc, example string) {
 	r.total++
 	for i := range r.findings {
 		f := &r.findings[i]
 		if f.severity == sev && f.category == category && f.title == title {
 			f.count++
+			// Backfill the doc link if the first occurrence carried none (a doc-less
+			// add, or an older --from-json payload merged in), so the merged finding
+			// keeps a link regardless of call order. Non-empty docs for a given tuple
+			// are identical, so this never flip-flops.
+			if f.doc == "" {
+				f.doc = doc
+			}
 			if len(f.examples) < exampleCap {
 				f.examples = append(f.examples, example)
 			}
