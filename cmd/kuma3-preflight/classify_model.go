@@ -19,7 +19,19 @@ type classificationModel struct {
 	SourceDir   string         `json:"sourceDir,omitempty"`
 	ReportsDir  string         `json:"reportsDir,omitempty"`
 	Summary     classSummary   `json:"summary"`
+	Global      []globalModel  `json:"global"`
 	Features    []featureModel `json:"features"`
+}
+
+// globalModel is a cross-cutting deprecation: a non-removable field/policy/mesh
+// setting recurring across many suites, fixed once centrally rather than per suite.
+type globalModel struct {
+	Kind        string `json:"kind"`
+	Category    string `json:"category"`
+	Replacement string `json:"replacement"`
+	Removable   bool   `json:"removable"`
+	Suites      int    `json:"suites"`
+	Count       int    `json:"count"`
 }
 
 type classSummary struct {
@@ -27,6 +39,7 @@ type classSummary struct {
 	Remove           int `json:"remove"`
 	Rewrite          int `json:"rewrite"`
 	DeprecatedUsages int `json:"deprecatedUsages"`
+	GlobalMigrations int `json:"globalMigrations"`
 }
 
 type featureModel struct {
@@ -43,6 +56,62 @@ type usageModel struct {
 	Count       int      `json:"count"`
 	Sources     []string `json:"sources"`
 	Examples    []string `json:"examples"`
+	// Global marks a usage whose kind was lifted into the cross-cutting Global table;
+	// per-suite renderers omit these to avoid repeating the same fix in every suite.
+	Global bool `json:"global,omitempty"`
+}
+
+// globalSuiteThreshold: a non-removable deprecation seen in at least this many suites
+// is a cross-cutting "global" migration (one centralized fix), lifted out of the
+// per-suite view. Removed resources are never global — each is per-suite removal work.
+const globalSuiteThreshold = 3
+
+// computeGlobal aggregates non-removable usages recurring across >= globalSuiteThreshold
+// suites into cross-cutting rows, returning the set of global kinds so the per-suite view
+// can drop them. Order: most suites first, then most usages, then kind (deterministic).
+func computeGlobal(features []featureModel) ([]globalModel, map[string]bool) {
+	type agg struct {
+		category, replacement string
+		removable             bool
+		suites, count         int
+	}
+	byKind := map[string]*agg{}
+	for _, f := range features {
+		for _, u := range f.Usages {
+			if u.Removable {
+				continue // removed resources stay per-suite removal work
+			}
+			a := byKind[u.Kind]
+			if a == nil {
+				a = &agg{category: u.Category, replacement: u.Replacement, removable: u.Removable}
+				byKind[u.Kind] = a
+			}
+			a.suites++
+			a.count += u.Count
+		}
+	}
+	globalKinds := map[string]bool{}
+	out := []globalModel{}
+	for kind, a := range byKind {
+		if a.suites < globalSuiteThreshold {
+			continue
+		}
+		globalKinds[kind] = true
+		out = append(out, globalModel{
+			Kind: kind, Category: a.category, Replacement: a.replacement,
+			Removable: a.removable, Suites: a.suites, Count: a.count,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Suites != out[j].Suites {
+			return out[i].Suites > out[j].Suites
+		}
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Kind < out[j].Kind
+	})
+	return out, globalKinds
 }
 
 func recRank(rec string) int {
@@ -108,6 +177,17 @@ func (ci *classIndex) toModel(sourceDir, reportsDir, generatedAt string) classif
 		}
 		return m.Features[i].Name < m.Features[j].Name
 	})
+
+	global, globalKinds := computeGlobal(m.Features)
+	m.Global = global
+	m.Summary.GlobalMigrations = len(global)
+	for fi := range m.Features {
+		for ui := range m.Features[fi].Usages {
+			if globalKinds[m.Features[fi].Usages[ui].Kind] {
+				m.Features[fi].Usages[ui].Global = true
+			}
+		}
+	}
 	return m
 }
 
@@ -139,26 +219,18 @@ func or(s, fallback string) string {
 
 // renderClassificationMarkdown emits one collapsible env block (GitHub-flavored
 // markdown): an `<details open>` wrapper whose summary carries the env's headline
-// counts, a per-recommendation summary table, then a nested `<details>` per test
-// suite. The e2e workflow concatenates one of these per env under a single H1, so
-// the combined job summary is three expandable env sections rather than a wall of
-// ~2,000 lines. Severity (🟥 remove / 🟧 rewrite / ✅ clean) and category emoji give
-// the report at-a-glance structure.
+// counts, then a 🌐 Global-migrations table (cross-cutting fixes that recur across
+// suites, lifted out once) followed by 📁 Per-suite tables listing only what is unique
+// to each suite. The e2e workflow concatenates one of these per env under a single H1.
+// Emojis are wayfinding only (one env-status glyph + one icon per section); tables carry
+// no emoji so the data scans cleanly.
 func renderClassificationMarkdown(m classificationModel) string {
 	var b strings.Builder
 	env := classEnvLabel(m)
 
-	headSev := "🟧"
-	switch {
-	case m.Summary.Features == 0:
-		headSev = "✅"
-	case m.Summary.Remove > 0:
-		headSev = "🟥"
-	}
-
 	fmt.Fprintln(&b, "<details open>")
-	fmt.Fprintf(&b, "<summary>%s <b><code>%s</code></b> — %d suites · 🟥 %d remove/replace · 🟧 %d rewrite · %d usages</summary>\n\n",
-		headSev, html.EscapeString(env), m.Summary.Features, m.Summary.Remove, m.Summary.Rewrite, m.Summary.DeprecatedUsages)
+	fmt.Fprintf(&b, "<summary>%s <b><code>%s</code></b> — %d suites · %d remove · %d rewrite · %d usages</summary>\n\n",
+		envStatusIcon(m), html.EscapeString(env), m.Summary.Features, m.Summary.Remove, m.Summary.Rewrite, m.Summary.DeprecatedUsages)
 	fmt.Fprintf(&b, "> 📂 `%s` &nbsp;·&nbsp; 📸 `%s`\n\n", or(m.SourceDir, "(none)"), or(m.ReportsDir, "(none)"))
 
 	if m.Summary.Features == 0 {
@@ -170,16 +242,8 @@ func renderClassificationMarkdown(m classificationModel) string {
 		return b.String()
 	}
 
-	removeUsages, rewriteUsages := recUsageTotals(m)
-	fmt.Fprintln(&b, "| Recommendation | Suites | Usages |")
-	fmt.Fprintln(&b, "|---|--:|--:|")
-	fmt.Fprintf(&b, "| 🟥 Remove / replace | %d | %d |\n", m.Summary.Remove, removeUsages)
-	fmt.Fprintf(&b, "| 🟧 Rewrite | %d | %d |\n\n", m.Summary.Rewrite, rewriteUsages)
-
-	renderMarkdownRecSection(&b, m, recRemove, "🟥",
-		"Remove / replace — the test's subject is a resource removed in 3.0")
-	renderMarkdownRecSection(&b, m, recRewrite, "🟧",
-		"Rewrite — uses a deprecated feature as scaffolding for an unrelated test")
+	renderMarkdownGlobal(&b, m)
+	renderMarkdownPerSuite(&b, m)
 
 	fmt.Fprintln(&b, "_Source of truth: `docs/deprecated-features.md` / `audit.go`._")
 	fmt.Fprintln(&b)
@@ -187,43 +251,113 @@ func renderClassificationMarkdown(m classificationModel) string {
 	return b.String()
 }
 
-func renderMarkdownRecSection(b *strings.Builder, m classificationModel, rec, sev, heading string) {
-	section := make([]featureModel, 0)
-	for _, f := range m.Features {
-		if f.Recommendation == rec {
-			section = append(section, f)
-		}
+// envStatusIcon is the single status glyph on the env headline: ✅ clean, ⛔ has
+// removal candidates, ⚠️ rewrite-only. The only severity emoji in the report.
+func envStatusIcon(m classificationModel) string {
+	switch {
+	case m.Summary.Features == 0:
+		return "✅"
+	case m.Summary.Remove > 0:
+		return "⛔"
+	default:
+		return "⚠️"
 	}
-	if len(section) == 0 {
+}
+
+// renderMarkdownGlobal renders the cross-cutting migrations as one table (omitted when
+// there are none). Each row is a fix applied once that clears usages in many suites.
+func renderMarkdownGlobal(b *strings.Builder, m classificationModel) {
+	if len(m.Global) == 0 {
 		return
 	}
-	fmt.Fprintf(b, "#### %s %s\n\n", sev, heading)
-	for _, f := range section {
-		usages := 0
-		for _, u := range f.Usages {
-			usages += u.Count
+	fmt.Fprintln(b, "#### 🌐 Global migrations — fix once, applies across suites")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "| Deprecated | Replacement | Suites | Usages |")
+	fmt.Fprintln(b, "|---|---|--:|--:|")
+	for _, g := range m.Global {
+		fmt.Fprintf(b, "| %s | %s | %d | %d |\n", mdCode(g.Kind), or(g.Replacement, "—"), g.Suites, g.Count)
+	}
+	fmt.Fprintln(b)
+}
+
+// renderMarkdownPerSuite renders one collapsible table per suite listing only its
+// unique (non-global) findings. Suites whose findings are entirely covered by the
+// global table are collapsed into a single trailing line instead of empty sections.
+func renderMarkdownPerSuite(b *strings.Builder, m classificationModel) {
+	fmt.Fprintln(b, "#### 📁 Per-suite findings — unique to each suite")
+	fmt.Fprintln(b)
+	var globalOnly []string
+	any := false
+	for _, f := range m.Features {
+		uniq := uniqueUsages(f)
+		if len(uniq) == 0 {
+			globalOnly = append(globalOnly, f.Name)
+			continue
 		}
-		fmt.Fprintf(b, "<details><summary>%s <b>%s</b> — %d finding(s) · %d usage(s)</summary>\n\n",
-			sev, html.EscapeString(f.Name), len(f.Usages), usages)
-		for _, u := range f.Usages {
-			repl := ""
-			if u.Replacement != "" {
-				repl = " → **" + u.Replacement + "**"
-			}
-			fmt.Fprintf(b, "- %s **%s** _(%s)_ — %d× · `%s`%s\n",
-				categoryEmoji(u.Category), u.Kind, u.Category, u.Count, strings.Join(u.Sources, ", "), repl)
-			if len(u.Examples) > 0 {
-				more := ""
-				if u.Count > len(u.Examples) {
-					more = fmt.Sprintf(", … (+%d more)", u.Count-len(u.Examples))
-				}
-				fmt.Fprintf(b, "  - e.g. %s%s\n", joinInlineCode(u.Examples), more)
-			}
+		any = true
+		fmt.Fprintf(b, "<details><summary><code>%s</code> — %s · %d unique finding(s)</summary>\n\n",
+			html.EscapeString(f.Name), recLabel(f.Recommendation), len(uniq))
+		fmt.Fprintln(b, "| Kind | Category | Count | Sources | Replacement | Examples |")
+		fmt.Fprintln(b, "|---|---|--:|---|---|---|")
+		for _, u := range uniq {
+			fmt.Fprintf(b, "| %s | %s | %d | %s | %s | %s |\n",
+				mdCode(u.Kind), u.Category, u.Count, strings.Join(u.Sources, ", "),
+				or(u.Replacement, "—"), previewExamples(u))
 		}
 		fmt.Fprintln(b)
 		fmt.Fprintln(b, "</details>")
 		fmt.Fprintln(b)
 	}
+	if !any {
+		fmt.Fprintln(b, "_No suite-specific findings — everything is covered by the global migrations above._")
+		fmt.Fprintln(b)
+	}
+	if len(globalOnly) > 0 {
+		coded := make([]string, len(globalOnly))
+		for i, n := range globalOnly {
+			coded[i] = "`" + n + "`"
+		}
+		fmt.Fprintf(b, "_%d suite(s) need only the global migrations above: %s_\n\n",
+			len(globalOnly), strings.Join(coded, ", "))
+	}
+}
+
+// uniqueUsages returns a feature's non-global usages — those the per-suite view shows.
+func uniqueUsages(f featureModel) []usageModel {
+	out := make([]usageModel, 0, len(f.Usages))
+	for _, u := range f.Usages {
+		if !u.Global {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// recLabel is the plain-text recommendation shown in a per-suite summary (no emoji).
+func recLabel(rec string) string {
+	if rec == recRemove {
+		return "remove/replace"
+	}
+	return "rewrite"
+}
+
+// exampleShowCap bounds how many example refs a per-suite table cell shows inline
+// before collapsing the remainder into a "+N more" suffix, keeping rows readable.
+const exampleShowCap = 3
+
+func previewExamples(u usageModel) string {
+	if len(u.Examples) == 0 {
+		return "—"
+	}
+	show := u.Examples
+	if len(show) > exampleShowCap {
+		show = show[:exampleShowCap]
+	}
+	s := joinInlineCode(show)
+	if hidden := u.Count - len(show); hidden > 0 {
+		s += fmt.Sprintf(", +%d more", hidden)
+	}
+	return s
 }
 
 // classEnvLabel names the env this classification covers, taken from the scanned
@@ -239,44 +373,25 @@ func classEnvLabel(m classificationModel) string {
 	}
 }
 
-// recUsageTotals sums deprecated-usage counts per recommendation for the summary table.
-func recUsageTotals(m classificationModel) (remove, rewrite int) {
-	for _, f := range m.Features {
-		n := 0
-		for _, u := range f.Usages {
-			n += u.Count
-		}
-		if f.Recommendation == recRemove {
-			remove += n
+// mdCode wraps a value as GitHub-flavored inline code, surviving backticks inside the
+// value (some finding kinds embed `from`) by widening the fence per the CommonMark rule.
+func mdCode(s string) string {
+	if !strings.Contains(s, "`") {
+		return "`" + s + "`"
+	}
+	longest, cur := 0, 0
+	for _, r := range s {
+		if r == '`' {
+			cur++
+			if cur > longest {
+				longest = cur
+			}
 		} else {
-			rewrite += n
+			cur = 0
 		}
 	}
-	return remove, rewrite
-}
-
-// categoryEmoji picks a glyph for a usage category so bullets scan by kind.
-func categoryEmoji(category string) string {
-	switch {
-	case strings.Contains(category, "Removed"):
-		return "⛔"
-	case strings.Contains(category, "Dataplane"):
-		return "🛰️"
-	case strings.Contains(category, "Mesh"):
-		return "🕸️"
-	case strings.Contains(category, "targetRef"),
-		strings.Contains(category, "proxyTypes"),
-		strings.Contains(category, "from"):
-		return "🎯"
-	case strings.Contains(category, "Relocated"):
-		return "📦"
-	case strings.Contains(category, "OpenTelemetry"):
-		return "📡"
-	case strings.Contains(category, "RFC"):
-		return "🏷️"
-	default:
-		return "⚙️"
-	}
+	fence := strings.Repeat("`", longest+1)
+	return fence + " " + s + " " + fence
 }
 
 // joinInlineCode renders each example as inline code, comma-joined.
@@ -297,8 +412,8 @@ func renderClassificationHTML(m classificationModel) string {
 	fmt.Fprintf(&b, "<h1>Kuma e2e — Kuma 3.0 deprecation classification</h1>\n")
 	fmt.Fprintf(&b, "<p class=\"meta\">Source tree: <code>%s</code> · Dynamic snapshots: <code>%s</code></p>\n",
 		html.EscapeString(or(m.SourceDir, "(none)")), html.EscapeString(or(m.ReportsDir, "(none)")))
-	fmt.Fprintf(&b, "<p class=\"meta\">%d feature(s) flagged — <b>%d</b> to remove/replace, <b>%d</b> to rewrite, %d deprecated usages.</p>\n",
-		m.Summary.Features, m.Summary.Remove, m.Summary.Rewrite, m.Summary.DeprecatedUsages)
+	fmt.Fprintf(&b, "<p class=\"meta\">%d feature(s) flagged — <b>%d</b> to remove/replace, <b>%d</b> to rewrite, %d deprecated usages · %d global migration(s).</p>\n",
+		m.Summary.Features, m.Summary.Remove, m.Summary.Rewrite, m.Summary.DeprecatedUsages, m.Summary.GlobalMigrations)
 
 	if m.Summary.Features == 0 {
 		b.WriteString("<p class=\"ok\">No deprecated-feature usage detected.</p>\n")
@@ -306,13 +421,30 @@ func renderClassificationHTML(m classificationModel) string {
 		return b.String()
 	}
 
+	if len(m.Global) > 0 {
+		b.WriteString("<h2>Global migrations <span class=\"sub\">— fix once, applies across suites</span></h2>\n")
+		b.WriteString("<table>\n<thead><tr><th>Deprecated</th><th>Replacement</th><th>Suites</th><th>Usages</th></tr></thead>\n<tbody>\n")
+		for _, g := range m.Global {
+			fmt.Fprintf(&b, "<tr><td><code>%s</code></td><td>%s</td><td>%d</td><td>%d</td></tr>\n",
+				html.EscapeString(g.Kind), html.EscapeString(or(g.Replacement, "—")), g.Suites, g.Count)
+		}
+		b.WriteString("</tbody>\n</table>\n")
+	}
+
+	b.WriteString("<h2>Per-suite findings <span class=\"sub\">— unique to each suite</span></h2>\n")
 	b.WriteString("<table>\n<thead><tr><th>Feature</th><th>Recommendation</th><th>Kind</th><th>Category</th><th>Count</th><th>Source</th><th>Replacement</th><th>Examples</th></tr></thead>\n<tbody>\n")
+	var globalOnly []string
 	for _, f := range m.Features {
+		uniq := uniqueUsages(f)
+		if len(uniq) == 0 {
+			globalOnly = append(globalOnly, f.Name)
+			continue
+		}
 		recClass := "rewrite"
 		if f.Recommendation == recRemove {
 			recClass = "remove"
 		}
-		for i, u := range f.Usages {
+		for i, u := range uniq {
 			feat, rec := "", ""
 			if i == 0 {
 				feat = html.EscapeString(f.Name)
@@ -322,11 +454,15 @@ func renderClassificationHTML(m classificationModel) string {
 				recClass, feat, rec,
 				html.EscapeString(u.Kind), html.EscapeString(u.Category), u.Count,
 				html.EscapeString(strings.Join(u.Sources, ", ")),
-				html.EscapeString(u.Replacement),
+				html.EscapeString(or(u.Replacement, "—")),
 				html.EscapeString(strings.Join(u.Examples, ", ")))
 		}
 	}
 	b.WriteString("</tbody>\n</table>\n")
+	if len(globalOnly) > 0 {
+		fmt.Fprintf(&b, "<p class=\"meta\">%d suite(s) need only the global migrations above: %s</p>\n",
+			len(globalOnly), html.EscapeString(strings.Join(globalOnly, ", ")))
+	}
 	b.WriteString(classHTMLTail)
 	return b.String()
 }
@@ -345,6 +481,8 @@ body{margin:0;background:var(--bg);color:var(--text);
   font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .wrap{max-width:1200px;margin:0 auto;padding:32px 20px 80px}
 h1{font-size:22px;margin:0 0 8px}
+h2{font-size:17px;margin:28px 0 4px}
+.sub{color:var(--muted);font-weight:400;font-size:13px}
 .meta{color:var(--muted);font-size:13px;margin:2px 0}
 .ok{color:var(--ok)}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em}
