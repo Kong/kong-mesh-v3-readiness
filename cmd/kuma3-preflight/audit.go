@@ -1095,5 +1095,4 @@ var manualChecks = []string{
 	"Adopt the Workload resource for proxy grouping (metrics/traces dimension) instead of kuma.io/service tags",
 	"Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
 	"Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
-	"Zone-pinned external services (legacy ExternalService `kuma.io/zone` tag — already a blocker; MeshExternalService has no zone field)",
 }
