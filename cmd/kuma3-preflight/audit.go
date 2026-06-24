@@ -1144,7 +1144,72 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 var manualChecks = []manualCheck{
 	{Title: "Gateway API / GAMMA usage migrated off built-in support"},
 	{Title: "Old inspect APIs removed (switch to the new inspect API)"},
-	{Title: "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA"},
+	{
+		Title: "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
+		Detail: "Pre-1.4.x Kuma signed dataplane, zone and user tokens with a symmetric " +
+			"HMAC256 key; 1.4+ uses asymmetric RSA (RS256). Kuma 3.0 removes the HMAC256 " +
+			"verification fallback, so any token still signed by a legacy symmetric key — and " +
+			"the leftover key Secret itself — stops validating after the upgrade and the " +
+			"affected proxies or users can no longer authenticate. The control-plane API " +
+			"never exposes signing-key bytes (they are sensitive), so the tool cannot detect " +
+			"this for you. The script below reads the token-signing-key Secrets directly and " +
+			"classifies each: an RSA key is PEM/DER and parses, a legacy HMAC256 key is raw " +
+			"bytes that do not. It needs secret-read access (cluster-admin on Kubernetes, an " +
+			"admin token on Universal) plus jq and openssl, and never prints key material. " +
+			"Paste the whole script — each section runs only where its CLI is present — then " +
+			"rotate anything flagged LEGACY to RSA with `kumactl generate signing-key` and " +
+			"reissue tokens before upgrading.",
+		Command: `# Detect pre-1.4.x HMAC256 token signing keys (must be asymmetric RSA before 3.0).
+# Needs: jq, openssl + secret-read access. Never prints key material.
+# Safe to paste whole: each section runs only if its CLI is present.
+
+classify() {  # reads a base64 key on stdin, prints a verdict
+  b64=$(cat)
+  if printf %s "$b64" | base64 -d 2>/dev/null | openssl rsa -noout 2>/dev/null; then
+    echo "OK (RSA PEM)"
+  elif printf %s "$b64" | base64 -d 2>/dev/null | openssl rsa -inform DER -noout 2>/dev/null; then
+    echo "OK (RSA DER)"
+  else
+    echo "LEGACY HMAC256 -> ROTATE"
+  fi
+}
+
+# --- Kubernetes (CP namespace; set NS=kuma-system for open-source Kuma) ---
+if command -v kubectl >/dev/null 2>&1; then
+  NS=kong-mesh-system
+  kubectl -n "$NS" get secret -o json \
+    | jq -r '.items[]
+        | select(.type | test("kuma.io/(global-)?secret"))
+        | select(.metadata.name | test("token-signing-key"))
+        | select(.data.value != null)
+        | [.metadata.name, .data.value] | @tsv' \
+    | while read -r name val; do
+        printf '%-45s %s\n' "$name" "$(printf %s "$val" | classify)"
+      done
+fi
+
+# --- Universal (point kumactl at the CP) ---
+if command -v kumactl >/dev/null 2>&1; then
+  kumactl get global-secrets -o json \
+    | jq -r '.items[]
+        | select(.name | test("token-signing-key"))
+        | select(.data != null)
+        | [.name, .data] | @tsv' \
+    | while read -r name data; do
+        printf '%-45s %s\n' "$name" "$(printf %s "$data" | classify)"
+      done
+  for mesh in $(kumactl get meshes -o json | jq -r '.items[].name'); do
+    kumactl get secrets --mesh "$mesh" -o json \
+      | jq -r '.items[]
+          | select(.name | test("token-signing-key"))
+          | select(.data != null)
+          | [.name, .data] | @tsv' \
+      | while read -r name data; do
+          printf '%-25s %-30s %s\n' "$mesh" "$name" "$(printf %s "$data" | classify)"
+        done
+  done
+fi`,
+	},
 }
 
 // kubernetesManualChecks are appended only when the audit observed Kubernetes in

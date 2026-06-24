@@ -277,13 +277,21 @@ func TestManualCommandCardRendersCopyableBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"function renderCmd", "function copyText", "execCommand", "Copy command", "cmdbox"} {
+	for _, want := range []string{"function renderCmd", "function copyText", "execCommand", "Copy command", "cmdbox", "cmd-collapsible"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("rendered HTML missing copy affordance %q", want)
 		}
 	}
 	if !strings.Contains(html, "kubectl get ns,pods") {
 		t.Error("k8s validation command not embedded in the report payload")
+	}
+	// The HMAC256 signing-key card ships a multi-line detector script (collapsed
+	// client-side by renderCmd) embedded in the report payload. Assert on markers
+	// free of <>& so they survive json.Marshal's HTML escaping verbatim.
+	for _, want := range []string{"classify()", "LEGACY HMAC256"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("HMAC256 signing-key detector command missing %q from report payload", want)
+		}
 	}
 }
 

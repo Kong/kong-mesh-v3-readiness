@@ -119,9 +119,17 @@ ul.manual .detail{color:var(--muted);font-size:14px;margin:8px 0 0 26px}
   border:1px solid var(--border);border-radius:6px;color:var(--muted);
   font-size:12px;padding:3px 9px;cursor:pointer}
 .cmdbox .copy:hover{color:var(--text);border-color:var(--accent)}
+.cmd-collapsible{margin:10px 0 0 26px}
+.cmd-collapsible>summary{cursor:pointer;list-style:none;color:var(--accent);
+  font-size:13px;font-weight:600;padding:5px 0;user-select:none}
+.cmd-collapsible>summary::-webkit-details-marker{display:none}
+.cmd-collapsible>summary::before{content:'\25B8 ';color:var(--muted)}
+.cmd-collapsible[open]>summary::before{content:'\25BE '}
+.cmd-collapsible>summary:hover{text-decoration:underline}
+.cmd-collapsible .cmdbox{margin:6px 0 0 0}
 ul.manual li.done{border-left-color:var(--border)}
 .done span{text-decoration:line-through;color:var(--muted)}
-.done .detail,.done .cmdbox{opacity:.55}
+.done .detail,.done .cmdbox,.done .cmd-collapsible{opacity:.55}
 .prog{color:var(--muted);font-size:13px;margin:0 0 8px}
 .empty{color:var(--muted);padding:30px;text-align:center;border:1px dashed var(--border);border-radius:var(--radius)}
 .src{color:var(--muted);font-size:12px;margin-top:44px;border-top:1px solid var(--border);padding-top:14px}
@@ -487,7 +495,8 @@ const htmlTail = `
   }
 
   // renderCmd builds a copy-able command block: a code box with a Copy button that
-  // gives transient feedback.
+  // gives transient feedback. Multi-line scripts are wrapped in a <details>
+  // disclosure so a long block stays collapsed by default; one-liners render inline.
   function renderCmd(command){
     var box = el('div', {class:'cmdbox'});
     var btn = el('button', {'class':'copy', type:'button', 'aria-label':'Copy command', text:'Copy'});
@@ -499,7 +508,11 @@ const htmlTail = `
     });
     box.appendChild(el('pre', {class:'cmd'}, el('code', {text:command})));
     box.appendChild(btn);
-    return box;
+    if(command.indexOf('\n') < 0) return box;
+    var det = el('details', {class:'cmd-collapsible'});
+    det.appendChild(el('summary', {text:'Show command (' + command.split('\n').length + ' lines)'}));
+    det.appendChild(box);
+    return det;
   }
 
   // ---- manual checklist (progress persisted per report) ----
