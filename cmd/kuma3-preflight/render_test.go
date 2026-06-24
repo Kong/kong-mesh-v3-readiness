@@ -22,7 +22,9 @@ func sampleReport() *report {
 		r.add(blocker, "Policy `from` field", "MeshTimeout uses `from`", "Rewrite from.", "default/t")
 	}
 	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")
+	r.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label", "Add label.", "default/dp-1")
 	r.add(info, "Zone proxies", "zoneingresses present", "Superseded.", "zi-1")
+	r.add(warning, cpConfigCategory, "Workload labels not configured", "Set workloadLabels.", "runtime.kubernetes.workloadLabels unset")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
 }
@@ -32,10 +34,13 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Status != statusBlockers {
 		t.Fatalf("status = %q, want %q", m.Status, statusBlockers)
 	}
-	if m.Summary.Blockers != 14 { // 1 + 12 + 1 (MeshService mode)
-		t.Errorf("blockers = %d, want 14", m.Summary.Blockers)
+	if m.Summary.Blockers != 15 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping)
+		t.Errorf("blockers = %d, want 15", m.Summary.Blockers)
 	}
-	if m.Summary.Info != 1 {
+	if m.Summary.Warnings != 1 { // Workload labels not configured
+		t.Errorf("warnings = %d, want 1", m.Summary.Warnings)
+	}
+	if m.Summary.Info != 1 { // Zone proxies
 		t.Errorf("info = %d, want 1", m.Summary.Info)
 	}
 	if m.Summary.CoverageGaps != 1 || m.Summary.ParseErrors != 1 {
@@ -47,13 +52,40 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	}
 }
 
+// TestSeverityTier guards the three-tier model: blocker, warning, info render as
+// distinct strings and sort in that order (warning sits between the other two).
+func TestSeverityTier(t *testing.T) {
+	if blocker.String() != "blocker" || warning.String() != "warning" || info.String() != "info" {
+		t.Fatalf("severity strings: %q/%q/%q", blocker.String(), warning.String(), info.String())
+	}
+	if severityRank("blocker") >= severityRank("warning") || severityRank("warning") >= severityRank("info") {
+		t.Errorf("severity rank order wrong: blocker=%d warning=%d info=%d",
+			severityRank("blocker"), severityRank("warning"), severityRank("info"))
+	}
+	m := sampleReport().toModel("")
+	seen := ""
+	last := -1
+	for _, f := range m.Findings {
+		if f.Severity != seen {
+			seen = f.Severity
+		}
+		if r := severityRank(f.Severity); r < last {
+			t.Errorf("findings not severity-ordered at %q (rank %d after %d)", f.Title, r, last)
+		} else {
+			last = r
+		}
+	}
+}
+
 func TestToModelGroups(t *testing.T) {
 	m := sampleReport().toModel("")
 	want := map[string]string{
-		"Inline mTLS on Mesh":                groupMeshObject,
-		"meshServices.mode is not Exclusive": groupMeshObject,
-		"MeshTimeout uses `from`":            groupPolicies,
-		"zoneingresses present":              groupOther,
+		"Inline mTLS on Mesh":                                groupMeshObject,
+		"meshServices.mode is not Exclusive":                 groupMeshObject,
+		"MeshTimeout uses `from`":                            groupPolicies,
+		"zoneingresses present":                              groupOther,
+		"Universal Dataplane missing kuma.io/workload label": groupDataPlane,
+		"Workload labels not configured":                     groupControlPlane,
 	}
 	for _, f := range m.Findings {
 		if g, ok := want[f.Title]; ok && f.Group != g {

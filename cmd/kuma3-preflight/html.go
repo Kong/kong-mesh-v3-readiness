@@ -60,6 +60,7 @@ header.rep h1{font-size:24px;margin:0 0 6px}
 .card .n{font-size:28px;font-weight:700;line-height:1}
 .card .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:6px}
 .card.blocker .n{color:var(--blocker)}
+.card.warning .n{color:var(--warning)}
 .card.info .n{color:var(--info)}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0;
   position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:5}
@@ -72,6 +73,7 @@ section.grp{margin:26px 0}
 section.grp>h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
 .sevdot{width:10px;height:10px;border-radius:50%;display:inline-block}
 .sevdot.blocker{background:var(--blocker)}
+.sevdot.warning{background:var(--warning)}
 .sevdot.info{background:var(--info)}
 .cat{margin:16px 0 8px;font-size:12px;font-weight:600;color:var(--muted);
   text-transform:uppercase;letter-spacing:.04em}
@@ -128,9 +130,11 @@ const htmlTail = `
   try { data = JSON.parse(document.getElementById('report-data').textContent); }
   catch(e){ app.textContent = 'Failed to parse report data: ' + e; return; }
 
-  var SEV = ['blocker','info'];
+  var SEV = ['blocker','warning','info'];
+  var SEVKEY = {blocker:'blockers', warning:'warnings', info:'info'};
   var HEADINGS = {
     blocker:'Blockers — must resolve before upgrading',
+    warning:'Warnings — review before upgrading',
     info:'Informational'
   };
   var query = '';
@@ -264,7 +268,7 @@ const htmlTail = `
     if(st === 'failed') text = 'Audit failed — do NOT treat this control plane as upgrade-safe.';
     else if(st === 'blockers') text = s.blockers + ' blocker(s) must be resolved before upgrading to 3.0.';
     else if(st === 'inconclusive') text = 'No blockers found, but the audit was inconclusive — this is NOT a clean bill of health.';
-    else text = 'No blocking resources or Mesh settings found. Review informational notes and manual checks before upgrading.';
+    else text = 'No blocking resources or Mesh settings found. Review warnings, informational notes and manual checks before upgrading.';
     var b = el('div', {class:'banner ' + st}, text);
     if(st === 'failed' && data.error) b.classList.add('only');
     return b;
@@ -275,7 +279,7 @@ const htmlTail = `
     var s = data.summary || {};
     var wrap = el('div', {class:'cards'});
     SEV.forEach(function(sev){
-      var n = s[sev === 'blocker' ? 'blockers' : 'info'] || 0;
+      var n = s[SEVKEY[sev]] || 0;
       var card = el('div', {class:'card ' + sev});
       card.appendChild(el('div', {class:'n', text:String(n)}));
       card.appendChild(el('div', {class:'l', text:sev + 's'}));

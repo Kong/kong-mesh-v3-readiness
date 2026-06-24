@@ -4,6 +4,7 @@ type severity int
 
 const (
 	blocker severity = iota
+	warning
 	info
 )
 

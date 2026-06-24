@@ -24,10 +24,13 @@ const readyConfigJSON = `{
     "inboundTagsDisabled": true,
     "kdsEventBasedWatchdog": {"enabled": true}
   },
-  "runtime": {"kubernetes": {"injector": {
-    "unifiedResourceNamingEnabled": true,
-    "ebpf": {"enabled": false}
-  }}}
+  "runtime": {"kubernetes": {
+    "injector": {
+      "unifiedResourceNamingEnabled": true,
+      "ebpf": {"enabled": false}
+    },
+    "workloadLabels": ["app.kubernetes.io/name"]
+  }}
 }`
 
 // auditResponses audits a mock control plane that serves the given path->JSON

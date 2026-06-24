@@ -11,7 +11,8 @@
     "default"
   ],
   "summary": {
-    "blockers": 20,
+    "blockers": 21,
+    "warnings": 1,
     "info": 1,
     "coverageGaps": 3,
     "parseErrors": 0,
@@ -209,6 +210,17 @@
     {
       "severity": "blocker",
       "group": "Data plane \u0026 workloads",
+      "category": "Workload grouping",
+      "title": "Universal Dataplane missing kuma.io/workload label",
+      "detail": "On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.",
+      "count": 1,
+      "examples": [
+        "default/dp-1"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
       "category": "reachableServices",
       "title": "Dataplane uses reachableServices",
       "detail": "Replace `reachableServices` with `reachableBackends` (MeshService-based).",
@@ -226,6 +238,17 @@
       "count": 1,
       "examples": [
         "default/My_Service"
+      ]
+    },
+    {
+      "severity": "warning",
+      "group": "Control plane",
+      "category": "Control plane configuration",
+      "title": "Workload labels not configured",
+      "detail": "`runtime.kubernetes.workloadLabels` is unset, so the `kuma.io/workload` label (the 3.0 metrics/traces grouping dimension) is derived from each pod's ServiceAccount. Ensure ServiceAccounts are distinct per workload, or set `workloadLabels`, or proxies collapse into a single default workload.",
+      "count": 1,
+      "examples": [
+        "zone zone-1: runtime.kubernetes.workloadLabels unset"
       ]
     },
     {
@@ -260,7 +283,6 @@
     "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)",
     "Old inspect APIs removed (switch to the new inspect API)",
     "Pod resources instead of container resources",
-    "Adopt the Workload resource for proxy grouping (metrics/traces dimension) instead of kuma.io/service tags",
     "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
     "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
     "Zone-pinned external services (legacy ExternalService `kuma.io/zone` tag — already a blocker; MeshExternalService has no zone field)"

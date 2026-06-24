@@ -53,6 +53,7 @@ header.rep h1{font-size:24px;margin:0 0 6px}
 .card .n{font-size:28px;font-weight:700;line-height:1}
 .card .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:6px}
 .card.blocker .n{color:var(--blocker)}
+.card.warning .n{color:var(--warning)}
 .card.info .n{color:var(--info)}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0;
   position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:5}
@@ -65,6 +66,7 @@ section.grp{margin:26px 0}
 section.grp>h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
 .sevdot{width:10px;height:10px;border-radius:50%;display:inline-block}
 .sevdot.blocker{background:var(--blocker)}
+.sevdot.warning{background:var(--warning)}
 .sevdot.info{background:var(--info)}
 .cat{margin:16px 0 8px;font-size:12px;font-weight:600;color:var(--muted);
   text-transform:uppercase;letter-spacing:.04em}
@@ -113,7 +115,7 @@ ul.manual input{margin-top:4px}
 {
   "schema": "kuma3-preflight/v2",
   "tool": "kuma3-preflight",
-  "generatedAt": "2026-06-24T13:29:27Z",
+  "generatedAt": "2026-06-24T16:12:03Z",
   "status": "blockers",
   "controlPlane": {
     "product": "Kong Mesh",
@@ -126,11 +128,12 @@ ul.manual input{margin-top:4px}
     "legacy"
   ],
   "summary": {
-    "blockers": 51,
+    "blockers": 39,
+    "warnings": 1,
     "info": 0,
     "coverageGaps": 0,
     "parseErrors": 0,
-    "systemFindings": 14
+    "systemFindings": 8
   },
   "findings": [
     {
@@ -329,48 +332,6 @@ ul.manual input{margin-top:4px}
     {
       "severity": "blocker",
       "group": "Policies",
-      "category": "`to` targetRef kind",
-      "title": "MeshCircuitBreaker to[].targetRef.kind=Mesh",
-      "detail": "`to` may only target MeshService/MeshExternalService/MeshMultiZoneService.",
-      "count": 3,
-      "examples": [
-        "clean/mesh-circuit-breaker-all-clean.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "default/mesh-circuit-breaker-all-default.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "legacy/mesh-circuit-breaker-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Policies",
-      "category": "`to` targetRef kind",
-      "title": "MeshRetry to[].targetRef.kind=Mesh",
-      "detail": "`to` may only target MeshService/MeshExternalService/MeshMultiZoneService.",
-      "count": 3,
-      "examples": [
-        "clean/mesh-retry-all-clean.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "default/mesh-retry-all-default.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "legacy/mesh-retry-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Policies",
-      "category": "`to` targetRef kind",
-      "title": "MeshTimeout to[].targetRef.kind=Mesh",
-      "detail": "`to` may only target MeshService/MeshExternalService/MeshMultiZoneService.",
-      "count": 6,
-      "examples": [
-        "clean/mesh-gateways-timeout-all-clean.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "clean/mesh-timeout-all-clean.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "default/mesh-gateways-timeout-all-default.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "default/mesh-timeout-all-default.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "legacy/mesh-gateways-timeout-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "legacy/mesh-timeout-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Policies",
       "category": "targetRef proxyTypes",
       "title": "MeshTimeout uses targetRef.proxyTypes",
       "detail": "`proxyTypes` is removed (gateway support dropped).",
@@ -493,6 +454,17 @@ ul.manual input{margin-top:4px}
       "examples": [
         "default/reachable-app-55446f777c-gng5w.k3pf-test"
       ]
+    },
+    {
+      "severity": "warning",
+      "group": "Control plane",
+      "category": "Control plane configuration",
+      "title": "Workload labels not configured",
+      "detail": "`runtime.kubernetes.workloadLabels` is unset, so the `kuma.io/workload` label (the 3.0 metrics/traces grouping dimension) is derived from each pod's ServiceAccount. Ensure ServiceAccounts are distinct per workload, or set `workloadLabels`, or proxies collapse into a single default workload.",
+      "count": 1,
+      "examples": [
+        "runtime.kubernetes.workloadLabels unset"
+      ]
     }
   ],
   "coverageGaps": [],
@@ -502,7 +474,6 @@ ul.manual input{margin-top:4px}
     "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)",
     "Old inspect APIs removed (switch to the new inspect API)",
     "Pod resources instead of container resources",
-    "Adopt the Workload resource for proxy grouping (metrics/traces dimension) instead of kuma.io/service tags",
     "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
     "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
     "Zone-pinned external services (legacy ExternalService `kuma.io/zone` tag — already a blocker; MeshExternalService has no zone field)"
@@ -516,9 +487,11 @@ ul.manual input{margin-top:4px}
   try { data = JSON.parse(document.getElementById('report-data').textContent); }
   catch(e){ app.textContent = 'Failed to parse report data: ' + e; return; }
 
-  var SEV = ['blocker','info'];
+  var SEV = ['blocker','warning','info'];
+  var SEVKEY = {blocker:'blockers', warning:'warnings', info:'info'};
   var HEADINGS = {
     blocker:'Blockers — must resolve before upgrading',
+    warning:'Warnings — review before upgrading',
     info:'Informational'
   };
   var query = '';
@@ -652,7 +625,7 @@ ul.manual input{margin-top:4px}
     if(st === 'failed') text = 'Audit failed — do NOT treat this control plane as upgrade-safe.';
     else if(st === 'blockers') text = s.blockers + ' blocker(s) must be resolved before upgrading to 3.0.';
     else if(st === 'inconclusive') text = 'No blockers found, but the audit was inconclusive — this is NOT a clean bill of health.';
-    else text = 'No blocking resources or Mesh settings found. Review informational notes and manual checks before upgrading.';
+    else text = 'No blocking resources or Mesh settings found. Review warnings, informational notes and manual checks before upgrading.';
     var b = el('div', {class:'banner ' + st}, text);
     if(st === 'failed' && data.error) b.classList.add('only');
     return b;
@@ -663,7 +636,7 @@ ul.manual input{margin-top:4px}
     var s = data.summary || {};
     var wrap = el('div', {class:'cards'});
     SEV.forEach(function(sev){
-      var n = s[sev === 'blocker' ? 'blockers' : 'info'] || 0;
+      var n = s[SEVKEY[sev]] || 0;
       var card = el('div', {class:'card ' + sev});
       card.appendChild(el('div', {class:'n', text:String(n)}));
       card.appendChild(el('div', {class:'l', text:sev + 's'}));

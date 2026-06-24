@@ -50,6 +50,11 @@ func TestDataplaneDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			severity: "blocker", category: "Dataplane probes", title: "Dataplane has a probes section",
 		},
 		{
+			name:     "universal missing workload label",
+			dp:       map[string]any{"labels": map[string]any{"kuma.io/env": "universal"}},
+			severity: "blocker", category: "Workload grouping", title: "Universal Dataplane missing kuma.io/workload label",
+		},
+		{
 			name:     "unparseable spec",
 			dp:       map[string]any{"networking": "this-should-be-an-object-not-a-string"},
 			severity: "blocker", category: "Unparseable resources", title: "Dataplane spec could not be parsed",
@@ -88,10 +93,30 @@ func TestDataplaneProbesIgnoredOnKubernetes(t *testing.T) {
 	}
 }
 
+// TestWorkloadLabelCheckIsUniversalOnly confirms the kuma.io/workload check fires
+// only for Universal proxies missing the label: a Kubernetes proxy (label injected
+// from the pod) and a Universal proxy that already carries it are both clean.
+func TestWorkloadLabelCheckIsUniversalOnly(t *testing.T) {
+	const title = "Universal Dataplane missing kuma.io/workload label"
+	t.Run("kubernetes proxy is not flagged", func(t *testing.T) {
+		m := auditDataplane(t, map[string]any{"labels": map[string]any{"kuma.io/env": "kubernetes"}})
+		if _, ok := findFinding(m, "blocker", "Workload grouping", title); ok {
+			t.Errorf("k8s dataplane wrongly flagged for a missing workload label\nfindings: %+v", m.Findings)
+		}
+	})
+	t.Run("universal proxy with the label is not flagged", func(t *testing.T) {
+		m := auditDataplane(t, map[string]any{"labels": map[string]any{"kuma.io/env": "universal", "kuma.io/workload": "payments"}})
+		if _, ok := findFinding(m, "blocker", "Workload grouping", title); ok {
+			t.Errorf("labeled universal dataplane wrongly flagged\nfindings: %+v", m.Findings)
+		}
+	})
+}
+
 // TestCleanDataplaneHasNoIssues is the control: a migrated Dataplane yields a
 // clean report with no findings.
 func TestCleanDataplaneHasNoIssues(t *testing.T) {
 	m := auditDataplane(t, map[string]any{
+		"labels":     map[string]any{"kuma.io/workload": "dp-1"},
 		"networking": map[string]any{"inbound": []any{map[string]any{"port": 8080}}},
 	})
 	if m.Status != statusClean {
