@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"sort"
 )
@@ -76,6 +77,28 @@ type manualCheck struct {
 	Title   string `json:"title"`
 	Detail  string `json:"detail,omitempty"`
 	Command string `json:"command,omitempty"`
+}
+
+// UnmarshalJSON accepts either the v3 object form or the v2 form, where each
+// manual check was a bare string. A legacy string maps to Title, so --from-json
+// still renders reports captured before the schema bump (the v2 schema value
+// passes loadModel's prefix check).
+func (m *manualCheck) UnmarshalJSON(b []byte) error {
+	if t := bytes.TrimSpace(b); len(t) > 0 && t[0] == '"' {
+		var title string
+		if err := json.Unmarshal(b, &title); err != nil {
+			return err
+		}
+		m.Title = title
+		return nil
+	}
+	type alias manualCheck // avoid recursing into this method
+	var a alias
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	*m = manualCheck(a)
+	return nil
 }
 
 // Finding groups organize the rendered report into top-level sections. Every

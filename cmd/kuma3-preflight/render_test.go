@@ -187,6 +187,29 @@ func TestRenderJSONRoundTrips(t *testing.T) {
 	}
 }
 
+// A v2 report carried manualChecks as plain strings. The tolerant manualCheck
+// unmarshaler must still load it (mapping each string to Title) so --from-json
+// renders reports captured before the v3 schema bump.
+func TestLoadV2ManualChecksStrings(t *testing.T) {
+	v2 := `{"schema":"kuma3-preflight/v2","tool":"kuma3-preflight","status":"clean",` +
+		`"controlPlane":{"product":"Kuma","version":"2.9.0"},"meshes":[],` +
+		`"summary":{},"findings":[],"coverageGaps":[],` +
+		`"manualChecks":["Rotate legacy keys","Migrate gateways"]}`
+	m, err := loadModelBytes([]byte(v2))
+	if err != nil {
+		t.Fatalf("v2 report failed to load: %v", err)
+	}
+	if len(m.Manual) != 2 {
+		t.Fatalf("manual checks = %d, want 2", len(m.Manual))
+	}
+	if m.Manual[0].Title != "Rotate legacy keys" || m.Manual[0].Detail != "" || m.Manual[0].Command != "" {
+		t.Errorf("v2 string did not map to a Title-only card: %+v", m.Manual[0])
+	}
+	if _, err := renderJSON(m); err != nil {
+		t.Fatalf("rendering loaded v2 model: %v", err)
+	}
+}
+
 func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	m := sampleReport().toModel("2026-06-17T10:00:00Z")
 	html, err := renderHTML(m)

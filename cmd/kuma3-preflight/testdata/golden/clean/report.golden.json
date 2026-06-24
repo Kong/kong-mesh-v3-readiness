@@ -39,7 +39,7 @@
     {
       "title": "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
       "detail": "On Kubernetes a Pod or Namespace is bound to a non-default mesh through `kuma.io/mesh`, which can be set as either an annotation or a label. Kuma 2.x still reads the annotation but logs a deprecation warning; 3.0 honors only the label. The control-plane API exposes only the resolved mesh name, not which metadata field set it, so the tool cannot detect this for you. You have to inspect the cluster objects directly. Move every `kuma.io/mesh` annotation to a label with the same value on Pods, Namespaces, and any other namespaced Kuma resource. The command below lists offenders; empty output means there is nothing left to fix.",
-      "command": "kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations[\"kuma.io/mesh\"]) | \"\\(.kind)/\\(.metadata.namespace)/\\(.metadata.name)\"'"
+      "command": "kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations[\"kuma.io/mesh\"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != \"\")) | join(\"/\")'"
     }
   ]
 }

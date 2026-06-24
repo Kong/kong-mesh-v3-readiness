@@ -1151,7 +1151,7 @@ var kubernetesManualChecks = []manualCheck{
 			"label with the same value on Pods, Namespaces, and any other namespaced Kuma " +
 			"resource. The command below lists offenders; empty output means there is " +
 			"nothing left to fix.",
-		Command: `kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | "\(.kind)/\(.metadata.namespace)/\(.metadata.name)"'`,
+		Command: `kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != "")) | join("/")'`,
 	},
 }
 
