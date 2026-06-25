@@ -1,62 +1,49 @@
 # v3-readiness
 
-Tooling and manual-test material for auditing a running **Kuma 2.x** control plane for
-**Kuma 3.0** upgrade readiness.
+`kuma3-preflight` checks whether a running **Kuma 2.x** control plane is ready to upgrade to
+**Kuma 3.0**. It audits the control plane over its REST API and writes a report of everything
+that must change first — removed resources, deprecated policy fields, settings that flip in
+3.0 — as a self-contained HTML page (or JSON). Point it at one zone or at the global CP to
+cover the whole multizone estate in a single run.
 
-## Contents
+Built with the Go standard library only — no third-party dependencies.
 
-- **[`cmd/kuma3-preflight`](cmd/kuma3-preflight/)** — a stdlib-only Go CLI that audits a
-  CP over its REST API and emits a pre-upgrade report (blockers / manual checks)
-  as JSON or a self-contained HTML page (default HTML). Markdown is produced by its
-  `--classify` mode. See its
-  [README](cmd/kuma3-preflight/README.md) for checks, flags, and output formats.
-- **[`examples/`](examples/)** — real reports captured against live Kubernetes and
-  Universal control planes, so you can see the output without running anything.
-- **[`docs/`](docs/)**
-  - [`deprecated-features.md`](docs/deprecated-features.md) — source of truth for 3.0
-    deprecations/removals every check tracks.
-  - [`test-plan.md`](docs/test-plan.md) — manual test plan (TC-1…TC-27 + smoke tests).
-  - [`test-setup.md`](docs/test-setup.md) — reproducible Kubernetes (k3d) **and** Universal
-    CP environments + fixtures.
-  - [`test-results.md`](docs/test-results.md) — executed results, including real-CP runs.
-  - [`e2e-classification.md`](docs/e2e-classification.md) — classify a Kuma **e2e suite**
-    by its 3.0-deprecated-feature usage (which tests to remove/replace vs rewrite).
-
-## Quick start
+## Install
 
 ```bash
-go build -o bin/kuma3-preflight ./cmd/kuma3-preflight
+# With Go:
+go install github.com/Kong/kong-mesh-v3-readiness/cmd/kuma3-preflight@latest
 
-# Point at a CP (port-forward a k8s zone CP, or run a local universal CP — see docs/test-setup.md)
-# A CP audit emits a self-contained HTML page by default:
-./bin/kuma3-preflight --address http://localhost:5681 --output report.html
-echo "exit=$?"   # 0 clean · 1 blockers · 2 operational error · 3 inconclusive
-
-# Or capture JSON in CI, then regenerate the HTML page offline from it:
-./bin/kuma3-preflight --address http://localhost:5681 --format json --output report.json
-./bin/kuma3-preflight --from-json report.json --format html --output report.html
+# Or download a prebuilt binary (linux/darwin, amd64/arm64) from the Releases page:
+#   https://github.com/Kong/kong-mesh-v3-readiness/releases
 ```
 
-Point it at **either a zone or the global** CP. Against a global it covers the whole
-multizone estate from one run: resources/policies are global already (KDS sync), and each
-zone's control-plane settings are read from `GET /zones+insights` (the zone ships its config
-over KDS), so per-zone config findings read `zone <name>: …`.
-
-`--token` is optional, but Kong Mesh gates `GET /config` behind RBAC — without a valid token
-that endpoint is skipped as a coverage gap (the run is **inconclusive**, exit 3, not a hard
-failure), so pass `--token` to audit control-plane settings.
-
-### Classify e2e tests by deprecated-feature usage
-
-The same binary can audit a **Kuma e2e test suite** instead of a CP, to find which tests
-exercise 3.0-removed features (candidates to remove/replace or rewrite for 3.0):
+## Usage
 
 ```bash
-# Static scan of the e2e sources (no CP needed):
-./bin/kuma3-preflight --classify --source-dir ~/kuma/test/e2e_env/universal --format markdown
+# 1. Audit a control plane → self-contained HTML report
+kuma3-preflight --address http://localhost:5681 --output report.html
+
+# 2. Kubernetes zone CP: port-forward in the background, then audit (the default
+#    --address is http://localhost:5681); pass --token to also audit /config
+kubectl -n kuma-system port-forward svc/kuma-control-plane 5681:5681 &
+kuma3-preflight --token "$KUMA_TOKEN" --output report.html
+
+# 3. CI: capture JSON and gate on the exit code, render HTML offline later
+kuma3-preflight --address http://localhost:5681 --format json --output report.json
+kuma3-preflight --from-json report.json --format html --output report.html
 ```
 
-Optionally fold in per-spec snapshots captured during a live e2e run — see
-[`docs/e2e-classification.md`](docs/e2e-classification.md) for the full capture loop.
+Exit codes: `0` clean · `1` blockers found · `2` operational error · `3` inconclusive.
 
-The tool is **stdlib-only** (no external dependencies).
+`--token` is optional, but Kong Mesh gates `GET /config` behind RBAC — without it that
+endpoint is skipped (the run is inconclusive, exit 3), so pass a token to audit control-plane
+settings. See an example report in [`examples/`](examples/).
+
+## More
+
+- **[Full flag reference + the checks it runs](cmd/kuma3-preflight/README.md)**
+- [`docs/deprecated-features.md`](docs/deprecated-features.md) — the 3.0 deprecations every check tracks
+- [`docs/test-setup.md`](docs/test-setup.md) — spin up a local k3d or Universal CP to try it against
+- The same binary can also classify a Kuma **e2e test suite** by its 3.0-removed-feature
+  usage — see [`docs/e2e-classification.md`](docs/e2e-classification.md).

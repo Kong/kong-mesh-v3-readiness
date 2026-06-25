@@ -305,7 +305,13 @@ func failureModel(addr string, auditErr error, generatedAt string) reportModel {
 }
 
 func renderJSON(m reportModel) (string, error) {
-	b, err := json.MarshalIndent(m, "", "  ")
+	return marshalIndentJSON(m)
+}
+
+// marshalIndentJSON renders v as 2-space-indented JSON with a trailing newline —
+// the on-disk/stdout shape shared by the CP-audit and --classify JSON renderers.
+func marshalIndentJSON(v any) (string, error) {
+	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return "", err
 	}

@@ -1,28 +1,26 @@
-# Example reports
+# Example report
 
-Real `kuma3-preflight` output, captured against live 2.x control planes seeded with the
-fixtures from [`../docs/test-setup.md`](../docs/test-setup.md). These show exactly what an
-operator sees before upgrading to Kuma 3.0.
+A real `kuma3-preflight` HTML report, captured against a live 2.x Kubernetes (k3d) control
+plane seeded with the fixtures from [`../docs/test-setup.md`](../docs/test-setup.md). Open it
+in a browser to see exactly what an operator sees before upgrading to Kuma 3.0.
 
 | File | CP | Scope | Exit |
 |---|---|---|---|
-| [`kubernetes-all-meshes.md`](kubernetes-all-meshes.md) | k3d (Kubernetes) | all meshes | 1 (blockers) |
-| [`kubernetes-mesh-clean.md`](kubernetes-mesh-clean.md) | k3d (Kubernetes) | `--mesh clean` | 1 (blockers) |
-| [`universal-all-meshes.md`](universal-all-meshes.md) | Universal (in-memory) | all meshes | 1 (blockers) |
-| [`universal-mesh-clean.md`](universal-mesh-clean.md) | Universal (in-memory) | `--mesh clean` | 1 (blockers) |
+| [`html/kubernetes-all-meshes.html`](html/kubernetes-all-meshes.html) | k3d (Kubernetes) | all meshes | 1 (blockers) |
 
-## How they were produced
+## How it was produced
 
 ```bash
 go build -o bin/kuma3-preflight ./cmd/kuma3-preflight
-bin/kuma3-preflight --address http://localhost:5681 --output examples/<name>.md
+# A CP audit emits a self-contained HTML page by default:
+bin/kuma3-preflight --address http://localhost:5681 --output examples/html/kubernetes-all-meshes.html
 ```
 
-Each fixture estate has four meshes: `default` (legacy resources + a Dataplane with
+The fixture estate has four meshes: `default` (legacy resources + a Dataplane with
 `reachableServices`), `legacy` (all inline Mesh settings + `from`/bad-targetRef policies),
 `clean` (`meshServices.mode: Exclusive`), and `1badname` (a non-RFC-1035 name).
 
-## Kubernetes vs Universal — the one real difference
+## Kubernetes vs Universal — CP-managed defaults
 
 Both CPs inline core/Mesh/Dataplane spec the same way, so every spec-level check fires
 identically. The difference is in **CP-managed default policies**:
@@ -30,7 +28,7 @@ identically. The difference is in **CP-managed default policies**:
 - **Kubernetes** labels its auto-generated defaults (`mesh-timeout-all-<mesh>`, …) with
   `kuma.io/policy-role: system`. The report marks each `(system — CP-managed, update
   before 3.0)` and the header reads `Includes N CP-managed (policy-role: system)
-  resource(s)`.
+  resource(s)` — as in the example above.
 - **Universal** does **not** set that label. The same defaults are still flagged as
   blockers, but **without** the marker and **without** the header line.
 
