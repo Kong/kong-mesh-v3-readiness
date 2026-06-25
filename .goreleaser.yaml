@@ -1,6 +1,6 @@
 # GoReleaser builds and publishes the kuma3-preflight binary to GitHub Releases on
 # every `v*` tag. Consumers (kuma / kong-mesh nightly CI) download the linux asset
-# from the release instead of building from source — see docs/e2e-v3-readiness-ci.md.
+# from the release instead of building from source.
 #
 # Local dry run: `goreleaser release --snapshot --clean`
 version: 2
