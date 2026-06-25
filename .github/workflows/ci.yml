@@ -47,3 +47,19 @@ jobs:
 
       - name: go build
         run: go build -o /dev/null ./cmd/kuma3-preflight
+
+      - name: examples up-to-date
+        # Re-render examples/html/*.html from the committed JSON fixtures and fail
+        # if anything changed — the checked-in pages must match the current
+        # template (cmd/kuma3-preflight/html.go). Fix: `mise run examples`, commit.
+        run: |
+          examples/regen.sh
+          # --porcelain catches both modified tracked pages and new untracked
+          # ones (e.g. a fixture added without its rendered HTML), which a bare
+          # `git diff` would miss.
+          drift="$(git status --porcelain -- examples/html)"
+          if [ -n "$drift" ]; then
+            echo "::error::examples/html is out of date — run 'mise run examples' and commit the result."
+            echo "$drift"
+            exit 1
+          fi
