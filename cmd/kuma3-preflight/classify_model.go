@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"html"
 	"path/filepath"
@@ -209,11 +208,7 @@ func renderClassification(format string, m classificationModel) (string, error) 
 }
 
 func renderClassificationJSON(m classificationModel) (string, error) {
-	b, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(b) + "\n", nil
+	return marshalIndentJSON(m)
 }
 
 func or(s, fallback string) string {
