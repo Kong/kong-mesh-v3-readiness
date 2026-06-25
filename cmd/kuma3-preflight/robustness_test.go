@@ -63,6 +63,33 @@ func TestNonKumaEndpointReportsFriendlyError(t *testing.T) {
 	}
 }
 
+// TestIndexBodyTimeoutPropagates: a --timeout (or context cancel) firing AFTER the
+// 200 headers arrive, while the index body is being read, is a real transport
+// failure and must surface as such — not be misreported as "not a Kuma control
+// plane". Guards the narrowed index() reinterpretation (JSON-shape/empty only).
+func TestIndexBodyTimeoutPropagates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush() // 200 headers out, then hold the body open until the client times out
+		}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+	c, err := newClient(srv.URL, "", 250*time.Millisecond)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	_, err = audit(context.Background(), c, auditOptions{})
+	if err == nil {
+		t.Fatal("audit returned no error on a body-read timeout")
+	}
+	if strings.Contains(err.Error(), "does not look like a Kuma control plane") {
+		t.Errorf("body-read timeout misreported as non-Kuma: %v", err.Error())
+	}
+}
+
 // TestConfigForbiddenDegradesToGap: a 403 on /config (Kong Mesh RBAC) must not
 // abort the audit — it becomes a coverage gap and the run is inconclusive.
 func TestConfigForbiddenDegradesToGap(t *testing.T) {
