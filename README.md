@@ -6,7 +6,7 @@ that must change first — removed resources, deprecated policy fields, settings
 3.0 — as a self-contained HTML page (or JSON). Point it at one zone or at the global CP to
 cover the whole multizone estate in a single run.
 
-Single static binary, no dependencies.
+Built with the Go standard library only — no third-party dependencies.
 
 ## Install
 
@@ -24,8 +24,9 @@ go install github.com/Kong/kong-mesh-v3-readiness/cmd/kuma3-preflight@latest
 # 1. Audit a control plane → self-contained HTML report
 kuma3-preflight --address http://localhost:5681 --output report.html
 
-# 2. Kubernetes zone CP: port-forward first, pass --token to also audit /config
-kubectl -n kuma-system port-forward svc/kuma-control-plane 5681:5681
+# 2. Kubernetes zone CP: port-forward in the background, then audit (the default
+#    --address is http://localhost:5681); pass --token to also audit /config
+kubectl -n kuma-system port-forward svc/kuma-control-plane 5681:5681 &
 kuma3-preflight --token "$KUMA_TOKEN" --output report.html
 
 # 3. CI: capture JSON and gate on the exit code, render HTML offline later
