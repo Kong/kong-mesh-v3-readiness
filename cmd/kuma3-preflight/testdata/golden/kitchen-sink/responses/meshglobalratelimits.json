@@ -1,0 +1,15 @@
+{
+  "total": 1,
+  "items": [
+    {
+      "type": "MeshGlobalRateLimit",
+      "mesh": "default",
+      "name": "global-rl",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [ { "targetRef": { "kind": "Mesh" }, "default": {} } ]
+      }
+    }
+  ],
+  "next": null
+}

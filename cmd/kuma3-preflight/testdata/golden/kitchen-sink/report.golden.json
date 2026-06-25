@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 23,
+    "blockers": 24,
     "warnings": 1,
     "info": 0,
     "coverageGaps": 3,
@@ -174,6 +174,18 @@
       "count": 1,
       "examples": [
         "default/mt-to-subset"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Removed resources",
+      "category": "Removed resources",
+      "title": "MeshGlobalRateLimit (removed in 3.0)",
+      "detail": "MeshGlobalRateLimit is removed in 3.0 with no direct replacement (global rate limiting is dropped); remove these policies before upgrading.",
+      "doc": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "examples": [
+        "default/global-rl"
       ]
     },
     {
