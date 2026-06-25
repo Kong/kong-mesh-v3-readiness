@@ -1,0 +1,31 @@
+{
+  "schema": "kuma3-preflight/v3",
+  "tool": "kuma3-preflight",
+  "generatedAt": "2026-06-25T09:30:00Z",
+  "status": "clean",
+  "address": "http://localhost:5681",
+  "controlPlane": {
+    "product": "Kong Mesh",
+    "version": "2.14.2",
+    "mode": "global"
+  },
+  "meshes": [
+    "default",
+    "payments",
+    "checkout",
+    "orders",
+    "shipping",
+    "platform"
+  ],
+  "summary": {
+    "blockers": 0,
+    "warnings": 0,
+    "info": 0,
+    "coverageGaps": 0,
+    "parseErrors": 0,
+    "systemFindings": 0
+  },
+  "findings": [],
+  "coverageGaps": [],
+  "manualChecks": []
+}

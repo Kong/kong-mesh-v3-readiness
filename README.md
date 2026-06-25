@@ -38,7 +38,7 @@ Exit codes: `0` clean · `1` blockers found · `2` operational error · `3` inco
 
 `--token` is optional, but Kong Mesh gates `GET /config` behind RBAC — without it that
 endpoint is skipped (the run is inconclusive, exit 3), so pass a token to audit control-plane
-settings. See an example report in [`examples/`](examples/).
+settings. See the example report gallery in [`examples/`](examples/).
 
 ## More
 

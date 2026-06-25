@@ -1,24 +1,39 @@
-# Example report
+# Example reports
 
-A real `kuma3-preflight` HTML report, captured against a live 2.x Kubernetes (k3d) control
-plane seeded with the fixtures from [`../docs/test-setup.md`](../docs/test-setup.md). Open it
-in a browser to see exactly what an operator sees before upgrading to Kuma 3.0.
+Self-contained `kuma3-preflight` HTML reports (`--format html`, the default) — open any in a
+browser to see exactly what an operator sees before upgrading to Kuma 3.0. Each is rendered
+from a static fixture in [`json/`](json/), chosen to cover every report state and a realistic
+range of estate sizes (a spotless, fully-migrated estate → 7,490 blockers across 20 meshes).
+Nothing is fetched at view time, so they work straight from a `file://` URL.
 
-| File | CP | Scope | Exit |
-|---|---|---|---|
-| [`html/kubernetes-all-meshes.html`](html/kubernetes-all-meshes.html) | k3d (Kubernetes) | all meshes | 1 (blockers) |
+| File | CP | Mode | Meshes | State |
+|---|---|---|---|---|
+| [`html/multizone-all-clear.html`](html/multizone-all-clear.html) | Kong Mesh | global | 6 | spotless — migration done, upgrade-ready |
+| [`html/kubernetes-clean.html`](html/kubernetes-clean.html) | Kuma | zone | 1 | clean, with advisories |
+| [`html/universal-standalone.html`](html/universal-standalone.html) | Kuma | standalone | 1 | 53 blockers |
+| [`html/kubernetes-all-meshes.html`](html/kubernetes-all-meshes.html) | Kong Mesh | zone | 3 | 41 blockers |
+| [`html/kubernetes-zone-medium.html`](html/kubernetes-zone-medium.html) | Kuma | zone | 5 | 280 blockers (~320 DPPs) |
+| [`html/multizone-global-large.html`](html/multizone-global-large.html) | Kong Mesh | global | 12 | 1,577 blockers (~1,680 DPPs) |
+| [`html/universal-global-xlarge.html`](html/universal-global-xlarge.html) | Kuma | global | 20 | 7,490 blockers (~5,200 DPPs) |
+| [`html/inconclusive-coverage-gaps.html`](html/inconclusive-coverage-gaps.html) | Kuma | zone | 3 | inconclusive (coverage gaps) |
+| [`html/audit-failed.html`](html/audit-failed.html) | — | — | — | failed (endpoint is not a CP) |
 
-## How it was produced
+## Regenerating
+
+The JSON fixtures in `json/` are the source of truth; the HTML is rendered from them, so the
+checked-in pages can never drift from the template (`cmd/kuma3-preflight/html.go`). After
+changing the template or a fixture:
 
 ```bash
-go build -o bin/kuma3-preflight ./cmd/kuma3-preflight
-# A CP audit emits a self-contained HTML page by default:
-bin/kuma3-preflight --address http://localhost:5681 --output examples/html/kubernetes-all-meshes.html
+mise run examples              # build the CLI + render every fixture
+# or directly:
+examples/regen.sh              # same (builds the binary first)
+examples/regen.sh --no-build   # reuse an existing bin/kuma3-preflight
 ```
 
-The fixture estate has four meshes: `default` (legacy resources + a Dataplane with
-`reachableServices`), `legacy` (all inline Mesh settings + `from`/bad-targetRef policies),
-`clean` (`meshServices.mode: Exclusive`), and `1badname` (a non-RFC-1035 name).
+To add an example, drop a `reportModel` JSON into `json/` and re-run — it renders to
+`html/<name>.html` automatically. (You can also capture a live control plane straight to a
+file: `kuma3-preflight --address http://localhost:5681 --output examples/html/<name>.html`.)
 
 ## Kubernetes vs Universal — CP-managed defaults
 
@@ -26,12 +41,11 @@ Both CPs inline core/Mesh/Dataplane spec the same way, so every spec-level check
 identically. The difference is in **CP-managed default policies**:
 
 - **Kubernetes** labels its auto-generated defaults (`mesh-timeout-all-<mesh>`, …) with
-  `kuma.io/policy-role: system`. The report marks each `(system — CP-managed, update
-  before 3.0)` and the header reads `Includes N CP-managed (policy-role: system)
-  resource(s)` — as in the example above.
-- **Universal** does **not** set that label. The same defaults are still flagged as
-  blockers, but **without** the marker and **without** the header line.
+  `kuma.io/policy-role: system`. The report tags each such resource and counts them under
+  **System-managed** in the summary.
+- **Universal** does **not** set that label. The same defaults are still flagged as blockers,
+  but without the marker and without the count.
 
 This is CP behavior, not a tool difference — the tool reflects the label the CP provides.
-The `Dataplane has a probes section` check is also Universal-only (on Kubernetes, probes
-are pod-derived and intentionally skipped).
+The `Dataplane has a probes section` check is also Universal-only (on Kubernetes, probes are
+pod-derived and intentionally skipped).

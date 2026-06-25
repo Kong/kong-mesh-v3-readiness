@@ -1,17 +1,4 @@
-package main
-
-// htmlHead and htmlTail bracket the embedded report JSON. The page is fully
-// self-contained (inline CSS + vanilla JS, no network requests) so it renders
-// offline from a file:// URL. The report is embedded as JSON in a <script> tag
-// and rendered client-side, which keeps the Go side a single template and makes
-// the page a true "static site generated from the JSON".
-//
-// Scale is a first-class concern: a control plane with thousands of dataplanes
-// across many meshes must stay scannable. The renderer keeps the DOM bounded
-// (findings are pre-merged with a capped example sample) and adds navigation —
-// a sticky table-of-contents with live counts — plus per-finding progressive
-// disclosure (every detail collapses), a density toggle and expand/collapse-all.
-const htmlHead = `<!doctype html>
+<!doctype html>
 <html lang="en" data-theme="dark" data-density="cozy">
 <head>
 <meta charset="utf-8">
@@ -331,9 +318,37 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 <div class="layout" id="app"></div>
 <noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
 <script id="report-data" type="application/json">
-`
-
-const htmlTail = `
+{
+  "schema": "kuma3-preflight/v3",
+  "tool": "kuma3-preflight",
+  "generatedAt": "2026-06-25T09:30:00Z",
+  "status": "clean",
+  "address": "http://localhost:5681",
+  "controlPlane": {
+    "product": "Kong Mesh",
+    "version": "2.14.2",
+    "mode": "global"
+  },
+  "meshes": [
+    "default",
+    "payments",
+    "checkout",
+    "orders",
+    "shipping",
+    "platform"
+  ],
+  "summary": {
+    "blockers": 0,
+    "warnings": 0,
+    "info": 0,
+    "coverageGaps": 0,
+    "parseErrors": 0,
+    "systemFindings": 0
+  },
+  "findings": [],
+  "coverageGaps": [],
+  "manualChecks": []
+}
 </script>
 <script>
 (function(){
@@ -1003,4 +1018,3 @@ const htmlTail = `
 </script>
 </body>
 </html>
-`

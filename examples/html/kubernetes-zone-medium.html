@@ -1,17 +1,4 @@
-package main
-
-// htmlHead and htmlTail bracket the embedded report JSON. The page is fully
-// self-contained (inline CSS + vanilla JS, no network requests) so it renders
-// offline from a file:// URL. The report is embedded as JSON in a <script> tag
-// and rendered client-side, which keeps the Go side a single template and makes
-// the page a true "static site generated from the JSON".
-//
-// Scale is a first-class concern: a control plane with thousands of dataplanes
-// across many meshes must stay scannable. The renderer keeps the DOM bounded
-// (findings are pre-merged with a capped example sample) and adds navigation —
-// a sticky table-of-contents with live counts — plus per-finding progressive
-// disclosure (every detail collapses), a density toggle and expand/collapse-all.
-const htmlHead = `<!doctype html>
+<!doctype html>
 <html lang="en" data-theme="dark" data-density="cozy">
 <head>
 <meta charset="utf-8">
@@ -331,9 +318,324 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 <div class="layout" id="app"></div>
 <noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
 <script id="report-data" type="application/json">
-`
-
-const htmlTail = `
+{
+  "schema": "kuma3-preflight/v3",
+  "tool": "kuma3-preflight",
+  "generatedAt": "2026-06-25T09:30:00Z",
+  "status": "blockers",
+  "address": "http://localhost:5681",
+  "controlPlane": {
+    "product": "Kuma",
+    "version": "2.12.1",
+    "mode": "zone"
+  },
+  "meshes": [
+    "default",
+    "payments",
+    "checkout",
+    "inventory",
+    "shipping"
+  ],
+  "summary": {
+    "blockers": 280,
+    "warnings": 5,
+    "info": 1,
+    "coverageGaps": 0,
+    "parseErrors": 0,
+    "systemFindings": 4
+  },
+  "findings": [
+    {
+      "severity": "blocker",
+      "group": "Control plane",
+      "category": "Control plane configuration",
+      "title": "Delta xDS not enabled",
+      "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
+      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "count": 1,
+      "examples": [
+        "experimental.deltaXds=false"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Control plane",
+      "category": "Control plane configuration",
+      "title": "Unified resource naming not enabled",
+      "detail": "Unified resource naming is mandatory in 3.0; enable it and validate first.",
+      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "count": 1,
+      "examples": [
+        "experimental.unifiedResourceNaming=false"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Mesh object",
+      "category": "Mesh object settings",
+      "title": "Inline mTLS on Mesh",
+      "detail": "Inline mTLS on the Mesh object is removed in 3.0; migrate to a MeshTLS policy.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
+      "count": 5,
+      "examples": [
+        "default (field)",
+        "payments (field)",
+        "checkout (field)",
+        "inventory (field)",
+        "shipping (field)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Mesh object",
+      "category": "Mesh object settings",
+      "title": "Inline metrics on Mesh",
+      "detail": "Inline metrics on the Mesh object is removed in 3.0; migrate to MeshMetric.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
+      "count": 5,
+      "examples": [
+        "default (field)",
+        "payments (field)",
+        "checkout (field)",
+        "inventory (field)",
+        "shipping (field)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Mesh object",
+      "category": "Mesh object settings",
+      "title": "Inline tracing on Mesh",
+      "detail": "Inline tracing on the Mesh object is removed in 3.0; migrate to MeshTrace.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
+      "count": 5,
+      "examples": [
+        "default (field)",
+        "payments (field)",
+        "checkout (field)",
+        "inventory (field)",
+        "shipping (field)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Policies",
+      "category": "OpenTelemetry endpoint",
+      "title": "OTel endpoint format",
+      "detail": "MeshTrace OpenTelemetry `endpoint` format changes in 3.0.",
+      "doc": "https://developer.konghq.com/mesh/policies/meshtrace/",
+      "count": 4,
+      "examples": [
+        "default/policy-1",
+        "payments/policy-2",
+        "checkout/policy-3",
+        "inventory/policy-4"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Policies",
+      "category": "Policy `from` field",
+      "title": "Policy `from` removed",
+      "detail": "The policy `from` array is removed in 3.0; express inbound rules differently.",
+      "doc": "https://developer.konghq.com/mesh/targetref/",
+      "count": 22,
+      "examples": [
+        "default/policy-1",
+        "payments/policy-2",
+        "checkout/policy-3",
+        "inventory/policy-4",
+        "shipping/policy-5",
+        "default/policy-6",
+        "payments/policy-7",
+        "checkout/policy-8",
+        "inventory/policy-9",
+        "shipping/policy-10"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Policies",
+      "category": "Relocated policy fields",
+      "title": "Relocated policy fields",
+      "detail": "A policy spec field moved location in 3.0; update the manifest.",
+      "doc": "https://developer.konghq.com/mesh/targetref/",
+      "count": 64,
+      "examples": [
+        "default/policy-1",
+        "payments/policy-2",
+        "checkout/policy-3",
+        "inventory/policy-4",
+        "shipping/policy-5",
+        "default/policy-6",
+        "payments/policy-7",
+        "checkout/policy-8",
+        "inventory/policy-9",
+        "shipping/policy-10"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Policies",
+      "category": "`to` targetRef kind",
+      "title": "Removed `to` targetRef kind",
+      "detail": "A `to[].targetRef.kind` removed in 3.0 (subset/selector or MeshGateway); migrate the policy.",
+      "doc": "https://developer.konghq.com/mesh/targetref/",
+      "count": 38,
+      "examples": [
+        "default/policy-1",
+        "payments/policy-2",
+        "checkout/policy-3",
+        "inventory/policy-4",
+        "shipping/policy-5",
+        "default/policy-6",
+        "payments/policy-7",
+        "checkout/policy-8",
+        "inventory/policy-9",
+        "shipping/policy-10"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Policies",
+      "category": "targetRef proxyTypes",
+      "title": "targetRef proxyTypes removed",
+      "detail": "`targetRef.proxyTypes` is removed in 3.0.",
+      "doc": "https://developer.konghq.com/mesh/targetref/",
+      "count": 9,
+      "examples": [
+        "default/policy-1",
+        "payments/policy-2",
+        "checkout/policy-3",
+        "inventory/policy-4",
+        "shipping/policy-5",
+        "default/policy-6",
+        "payments/policy-7",
+        "checkout/policy-8",
+        "inventory/policy-9"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
+      "category": "Dataplane version",
+      "title": "Version-incompatible dataplane",
+      "detail": "Dataplane proxy version is incompatible with the 3.0 control plane.",
+      "doc": "https://developer.konghq.com/mesh/dataplane/",
+      "count": 18,
+      "examples": [
+        "default/dp-1",
+        "payments/dp-2",
+        "checkout/dp-3",
+        "inventory/dp-4",
+        "shipping/dp-5",
+        "default/dp-6",
+        "payments/dp-7",
+        "checkout/dp-8",
+        "inventory/dp-9",
+        "shipping/dp-10"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
+      "category": "Gateway in Dataplane",
+      "title": "Gateway config in Dataplane",
+      "detail": "Builtin gateway config in the Dataplane resource is removed in 3.0; use MeshGateway.",
+      "doc": "https://developer.konghq.com/mesh/dataplane/",
+      "count": 12,
+      "examples": [
+        "default/gw-1",
+        "payments/gw-2",
+        "checkout/gw-3",
+        "inventory/gw-4",
+        "shipping/gw-5",
+        "default/gw-6",
+        "payments/gw-7",
+        "checkout/gw-8",
+        "inventory/gw-9",
+        "shipping/gw-10"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane \u0026 workloads",
+      "category": "reachableServices",
+      "title": "reachableServices on Dataplane",
+      "detail": "`networking.transparentProxying.reachableServices` (tag form) is removed in 3.0.",
+      "doc": "https://developer.konghq.com/mesh/dataplane/",
+      "count": 96,
+      "examples": [
+        "default/dp-1",
+        "payments/dp-2",
+        "checkout/dp-3",
+        "inventory/dp-4",
+        "shipping/dp-5",
+        "default/dp-6",
+        "payments/dp-7",
+        "checkout/dp-8",
+        "inventory/dp-9",
+        "shipping/dp-10"
+      ]
+    },
+    {
+      "severity": "warning",
+      "group": "Data plane \u0026 workloads",
+      "category": "Workload grouping",
+      "title": "workloadLabels unset (k8s)",
+      "detail": "kuma.io/workload falls back to the pod ServiceAccount; fine only if ServiceAccounts are distinct per workload.",
+      "count": 5,
+      "examples": [
+        "default (field)",
+        "payments (field)",
+        "checkout (field)",
+        "inventory (field)",
+        "shipping (field)"
+      ]
+    },
+    {
+      "severity": "info",
+      "group": "Data plane \u0026 workloads",
+      "category": "Dataplane metrics",
+      "title": "Sampled dataplane inspection coverage",
+      "detail": "Inspection sampled a subset of dataplanes for per-proxy checks.",
+      "count": 1,
+      "examples": [
+        "sampled 50/318"
+      ]
+    }
+  ],
+  "coverageGaps": [],
+  "manualChecks": [
+    {
+      "title": "Old inspect APIs removed (switch to the new inspect API)",
+      "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",
+      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 — migrate callers to the KRI inspect API"
+    },
+    {
+      "title": "Rebuild custom policy plugins against the 3.0 SDK",
+      "detail": "Any in-house policy plugins must be recompiled against the 3.0 plugin SDK; the policy ABI changed."
+    },
+    {
+      "title": "Migrate Helm values renamed or removed in 3.0",
+      "detail": "Several control-plane Helm values are renamed or dropped. Diff your release against the 3.0 chart before upgrading.",
+      "command": "helm get values kong-mesh -n kong-mesh-system -o yaml \u003e values.bak.yaml\nhelm diff upgrade kong-mesh kong-mesh/kong-mesh \\\n  -f values.bak.yaml --version 3.0.0"
+    },
+    {
+      "title": "Snapshot the control-plane datastore before upgrading",
+      "detail": "Back up Postgres (Universal) or the Kubernetes resources so the migration is reversible."
+    },
+    {
+      "title": "kuma.io/mesh annotation becomes a label",
+      "detail": "On 3.0 the mesh association moves from an annotation to a label on the Pod/namespace. Re-label workloads before upgrading.",
+      "command": "kubectl get ns,pods -A -o json | jq -r '.items[]|select(.metadata.annotations[\"kuma.io/mesh\"])|.metadata.name'"
+    },
+    {
+      "title": "Split Pod-level vs container-level sidecar resources",
+      "detail": "Sidecar resource requests move from Pod annotations to the container spec. Review overrides before upgrading."
+    }
+  ]
+}
 </script>
 <script>
 (function(){
@@ -1003,4 +1305,3 @@ const htmlTail = `
 </script>
 </body>
 </html>
-`
