@@ -141,6 +141,13 @@ func (c *client) index(ctx context.Context) (cpIndex, error) {
 	var idx cpIndex
 	status, err := c.getJSON(ctx, "/", &idx)
 	if err != nil {
+		// A 200 whose body is not a JSON control-plane index (e.g. an HTML login or
+		// ingress page sharing the host) is not a transport failure. Swallow the raw
+		// JSON decode error and return an empty index so audit() reports the friendly
+		// "does not look like a Kuma control plane" rather than "invalid character '<'".
+		if status == http.StatusOK {
+			return cpIndex{}, nil
+		}
 		return idx, err
 	}
 	if status != http.StatusOK {

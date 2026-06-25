@@ -37,6 +37,32 @@ func gapForPath(r *report, path string) (coverageGap, bool) {
 	return coverageGap{}, false
 }
 
+// TestNonKumaEndpointReportsFriendlyError: pointing --address at a 200 endpoint
+// whose body is not a JSON CP index (e.g. an HTML login/ingress page, or a wrong
+// subpath like /gui) must fail as "not a Kuma control plane" — never leak a raw
+// JSON decode error ("invalid character '<'") that obscures the real problem.
+func TestNonKumaEndpointReportsFriendlyError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body>login</body></html>"))
+	}))
+	t.Cleanup(srv.Close)
+	c, err := newClient(srv.URL, "", 10*time.Second)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	_, err = audit(context.Background(), c, auditOptions{})
+	if err == nil {
+		t.Fatal("audit of a non-Kuma HTML endpoint returned no error (would be a false green)")
+	}
+	if !strings.Contains(err.Error(), "does not look like a Kuma control plane") {
+		t.Errorf("error = %q, want it to mention 'does not look like a Kuma control plane'", err)
+	}
+	if strings.Contains(err.Error(), "invalid character") || strings.Contains(err.Error(), "decoding") {
+		t.Errorf("error leaked a raw JSON decode message instead of the friendly one: %q", err)
+	}
+}
+
 // TestConfigForbiddenDegradesToGap: a 403 on /config (Kong Mesh RBAC) must not
 // abort the audit — it becomes a coverage gap and the run is inconclusive.
 func TestConfigForbiddenDegradesToGap(t *testing.T) {
