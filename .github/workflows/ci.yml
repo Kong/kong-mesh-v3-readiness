@@ -54,8 +54,12 @@ jobs:
         # template (cmd/kuma3-preflight/html.go). Fix: `mise run examples`, commit.
         run: |
           examples/regen.sh
-          if ! git diff --quiet -- examples/html; then
+          # --porcelain catches both modified tracked pages and new untracked
+          # ones (e.g. a fixture added without its rendered HTML), which a bare
+          # `git diff` would miss.
+          drift="$(git status --porcelain -- examples/html)"
+          if [ -n "$drift" ]; then
             echo "::error::examples/html is out of date — run 'mise run examples' and commit the result."
-            git --no-pager diff --stat -- examples/html
+            echo "$drift"
             exit 1
           fi
