@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -141,6 +142,18 @@ func (c *client) index(ctx context.Context) (cpIndex, error) {
 	var idx cpIndex
 	status, err := c.getJSON(ctx, "/", &idx)
 	if err != nil {
+		// A 200 whose body is not a JSON control-plane index (an HTML login/ingress
+		// page sharing the host, a wrong subpath like /gui, or an empty body) is not a
+		// transport failure: return an empty index so audit() reports the friendly
+		// "does not look like a Kuma control plane" rather than "invalid character
+		// '<'". Narrow this to genuine JSON-shape / empty-body errors so a real
+		// transport problem surfacing AFTER the 200 headers — a --timeout firing or
+		// context cancellation mid-read — still propagates with its own message.
+		var syntaxErr *json.SyntaxError
+		var typeErr *json.UnmarshalTypeError
+		if status == http.StatusOK && (errors.As(err, &syntaxErr) || errors.As(err, &typeErr) || errors.Is(err, io.EOF)) {
+			return cpIndex{}, nil
+		}
 		return idx, err
 	}
 	if status != http.StatusOK {

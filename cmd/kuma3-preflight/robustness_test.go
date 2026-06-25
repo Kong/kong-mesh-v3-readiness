@@ -37,6 +37,59 @@ func gapForPath(r *report, path string) (coverageGap, bool) {
 	return coverageGap{}, false
 }
 
+// TestNonKumaEndpointReportsFriendlyError: pointing --address at a 200 endpoint
+// whose body is not a JSON CP index (e.g. an HTML login/ingress page, or a wrong
+// subpath like /gui) must fail as "not a Kuma control plane" — never leak a raw
+// JSON decode error ("invalid character '<'") that obscures the real problem.
+func TestNonKumaEndpointReportsFriendlyError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body>login</body></html>"))
+	}))
+	t.Cleanup(srv.Close)
+	c, err := newClient(srv.URL, "", 10*time.Second)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	_, err = audit(context.Background(), c, auditOptions{})
+	if err == nil {
+		t.Fatal("audit of a non-Kuma HTML endpoint returned no error (would be a false green)")
+	}
+	if !strings.Contains(err.Error(), "does not look like a Kuma control plane") {
+		t.Errorf("error = %q, want it to mention 'does not look like a Kuma control plane'", err)
+	}
+	if strings.Contains(err.Error(), "invalid character") || strings.Contains(err.Error(), "decoding") {
+		t.Errorf("error leaked a raw JSON decode message instead of the friendly one: %q", err)
+	}
+}
+
+// TestIndexBodyTimeoutPropagates: a --timeout (or context cancel) firing AFTER the
+// 200 headers arrive, while the index body is being read, is a real transport
+// failure and must surface as such — not be misreported as "not a Kuma control
+// plane". Guards the narrowed index() reinterpretation (JSON-shape/empty only).
+func TestIndexBodyTimeoutPropagates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush() // 200 headers out, then hold the body open until the client times out
+		}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+	c, err := newClient(srv.URL, "", 250*time.Millisecond)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	_, err = audit(context.Background(), c, auditOptions{})
+	if err == nil {
+		t.Fatal("audit returned no error on a body-read timeout")
+	}
+	if strings.Contains(err.Error(), "does not look like a Kuma control plane") {
+		t.Errorf("body-read timeout misreported as non-Kuma: %v", err.Error())
+	}
+}
+
 // TestConfigForbiddenDegradesToGap: a 403 on /config (Kong Mesh RBAC) must not
 // abort the audit — it becomes a coverage gap and the run is inconclusive.
 func TestConfigForbiddenDegradesToGap(t *testing.T) {
