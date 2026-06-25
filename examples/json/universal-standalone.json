@@ -1,0 +1,172 @@
+{
+  "schema": "kuma3-preflight/v3",
+  "tool": "kuma3-preflight",
+  "generatedAt": "2026-06-25T09:30:00Z",
+  "status": "blockers",
+  "address": "http://localhost:5681",
+  "controlPlane": {
+    "product": "Kuma",
+    "version": "2.10.4",
+    "mode": "standalone"
+  },
+  "meshes": [
+    "default"
+  ],
+  "summary": {
+    "blockers": 53,
+    "warnings": 0,
+    "info": 0,
+    "coverageGaps": 0,
+    "parseErrors": 0,
+    "systemFindings": 2
+  },
+  "findings": [
+    {
+      "severity": "blocker",
+      "group": "Control plane",
+      "category": "Control plane configuration",
+      "title": "Unified resource naming not enabled",
+      "detail": "Unified resource naming is mandatory in 3.0; enable it and validate first.",
+      "count": 1,
+      "examples": [
+        "experimental.unifiedResourceNaming=false"
+      ],
+      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/"
+    },
+    {
+      "severity": "blocker",
+      "group": "Control plane",
+      "category": "Control plane configuration",
+      "title": "Inbound tags still enabled",
+      "detail": "3.0 runs with inbound tags disabled; set `inboundTagsDisabled: true` and validate first.",
+      "count": 1,
+      "examples": [
+        "experimental.inboundTagsDisabled=false"
+      ],
+      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/"
+    },
+    {
+      "severity": "blocker",
+      "group": "Mesh object",
+      "category": "Mesh object settings",
+      "title": "Inline mTLS on Mesh",
+      "detail": "Inline mTLS on the Mesh object is removed in 3.0; migrate to a MeshTLS policy.",
+      "count": 1,
+      "examples": [
+        "default (field)"
+      ],
+      "doc": "https://developer.konghq.com/mesh/policies/"
+    },
+    {
+      "severity": "blocker",
+      "group": "Mesh object",
+      "category": "Mesh object settings",
+      "title": "Inline logging on Mesh",
+      "detail": "Inline logging on the Mesh object is removed in 3.0; migrate to MeshAccessLog.",
+      "count": 1,
+      "examples": [
+        "default (field)"
+      ],
+      "doc": "https://developer.konghq.com/mesh/policies/"
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane & workloads",
+      "category": "Dataplane probes",
+      "title": "Universal Dataplane probes",
+      "detail": "Universal Dataplane `probes` block is removed in 3.0; use virtual probes.",
+      "count": 9,
+      "examples": [
+        "default/dp-1",
+        "default/dp-2",
+        "default/dp-3",
+        "default/dp-4",
+        "default/dp-5",
+        "default/dp-6",
+        "default/dp-7",
+        "default/dp-8",
+        "default/dp-9"
+      ],
+      "doc": "https://developer.konghq.com/mesh/dataplane/"
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane & workloads",
+      "category": "Workload grouping",
+      "title": "Missing kuma.io/workload label",
+      "detail": "Universal Dataplane is missing the `kuma.io/workload` label required in 3.0.",
+      "count": 21,
+      "examples": [
+        "default/dp-1",
+        "default/dp-2",
+        "default/dp-3",
+        "default/dp-4",
+        "default/dp-5",
+        "default/dp-6",
+        "default/dp-7",
+        "default/dp-8",
+        "default/dp-9",
+        "default/dp-10"
+      ],
+      "doc": "https://developer.konghq.com/mesh/dataplane/"
+    },
+    {
+      "severity": "blocker",
+      "group": "Data plane & workloads",
+      "category": "reachableServices",
+      "title": "reachableServices on Dataplane",
+      "detail": "`networking.transparentProxying.reachableServices` (tag form) is removed in 3.0.",
+      "count": 14,
+      "examples": [
+        "default/dp-1",
+        "default/dp-2",
+        "default/dp-3",
+        "default/dp-4",
+        "default/dp-5",
+        "default/dp-6",
+        "default/dp-7",
+        "default/dp-8",
+        "default/dp-9",
+        "default/dp-10"
+      ],
+      "doc": "https://developer.konghq.com/mesh/dataplane/"
+    },
+    {
+      "severity": "blocker",
+      "group": "Policies",
+      "category": "Relocated policy fields",
+      "title": "Relocated policy fields",
+      "detail": "A policy spec field moved location in 3.0; update the manifest.",
+      "count": 5,
+      "examples": [
+        "default/policy-1",
+        "default/policy-2",
+        "default/policy-3",
+        "default/policy-4",
+        "default/policy-5"
+      ],
+      "doc": "https://developer.konghq.com/mesh/targetref/"
+    }
+  ],
+  "coverageGaps": [],
+  "manualChecks": [
+    {
+      "title": "Old inspect APIs removed (switch to the new inspect API)",
+      "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",
+      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 \u2014 migrate callers to the KRI inspect API"
+    },
+    {
+      "title": "Rebuild custom policy plugins against the 3.0 SDK",
+      "detail": "Any in-house policy plugins must be recompiled against the 3.0 plugin SDK; the policy ABI changed."
+    },
+    {
+      "title": "Migrate Helm values renamed or removed in 3.0",
+      "detail": "Several control-plane Helm values are renamed or dropped. Diff your release against the 3.0 chart before upgrading.",
+      "command": "helm get values kong-mesh -n kong-mesh-system -o yaml > values.bak.yaml\nhelm diff upgrade kong-mesh kong-mesh/kong-mesh \\\n  -f values.bak.yaml --version 3.0.0"
+    },
+    {
+      "title": "Snapshot the control-plane datastore before upgrading",
+      "detail": "Back up Postgres (Universal) or the Kubernetes resources so the migration is reversible."
+    }
+  ]
+}

@@ -44,6 +44,13 @@ if [ -n "$unformatted" ]; then
 fi
 '''
 
+[tasks.examples]
+description = "Regenerate examples/html/*.html from the examples/json/*.json fixtures"
+depends = ["build"]
+sources = ["cmd/kuma3-preflight/html.go", "examples/json/*.json", "bin/kuma3-preflight"]
+outputs = ["examples/html/*.html"]
+run = "examples/regen.sh --no-build"
+
 [tasks.check]
 description = "Run all pre-commit quality gates"
 depends = ["test", "lint", "nilaway", "vet", "fmt-check"]

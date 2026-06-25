@@ -1,17 +1,4 @@
-package main
-
-// htmlHead and htmlTail bracket the embedded report JSON. The page is fully
-// self-contained (inline CSS + vanilla JS, no network requests) so it renders
-// offline from a file:// URL. The report is embedded as JSON in a <script> tag
-// and rendered client-side, which keeps the Go side a single template and makes
-// the page a true "static site generated from the JSON".
-//
-// Scale is a first-class concern: a control plane with thousands of dataplanes
-// across many meshes must stay scannable. The renderer keeps the DOM bounded
-// (findings are pre-merged with a capped example sample) and adds navigation —
-// a sticky table-of-contents with live counts — plus per-finding progressive
-// disclosure (every detail collapses), a density toggle and expand/collapse-all.
-const htmlHead = `<!doctype html>
+<!doctype html>
 <html lang="en" data-theme="dark" data-density="cozy">
 <head>
 <meta charset="utf-8">
@@ -331,9 +318,117 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 <div class="layout" id="app"></div>
 <noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
 <script id="report-data" type="application/json">
-`
-
-const htmlTail = `
+{
+  "schema": "kuma3-preflight/v3",
+  "tool": "kuma3-preflight",
+  "generatedAt": "2026-06-25T09:30:00Z",
+  "status": "inconclusive",
+  "address": "http://localhost:5681",
+  "controlPlane": {
+    "product": "Kuma",
+    "version": "2.11.3",
+    "mode": "zone"
+  },
+  "meshes": [
+    "default",
+    "payments",
+    "checkout"
+  ],
+  "summary": {
+    "blockers": 0,
+    "warnings": 10,
+    "info": 1,
+    "coverageGaps": 3,
+    "parseErrors": 2,
+    "systemFindings": 1
+  },
+  "findings": [
+    {
+      "severity": "warning",
+      "group": "Data plane \u0026 workloads",
+      "category": "Dataplane DNS",
+      "title": "Custom DNS settings on Dataplane",
+      "detail": "Per-Dataplane DNS overrides should be reviewed against the 3.0 MeshService DNS model.",
+      "count": 7,
+      "examples": [
+        "default/dp-1",
+        "payments/dp-2",
+        "checkout/dp-3",
+        "default/dp-4",
+        "payments/dp-5",
+        "checkout/dp-6",
+        "default/dp-7"
+      ]
+    },
+    {
+      "severity": "warning",
+      "group": "Data plane \u0026 workloads",
+      "category": "Workload grouping",
+      "title": "workloadLabels unset (k8s)",
+      "detail": "kuma.io/workload falls back to the pod ServiceAccount; fine only if ServiceAccounts are distinct per workload.",
+      "count": 3,
+      "examples": [
+        "default (field)",
+        "payments (field)",
+        "checkout (field)"
+      ]
+    },
+    {
+      "severity": "info",
+      "group": "Data plane \u0026 workloads",
+      "category": "Dataplane metrics",
+      "title": "Sampled dataplane inspection coverage",
+      "detail": "Inspection sampled a subset of dataplanes for per-proxy checks.",
+      "count": 1,
+      "examples": [
+        "sampled 40/120"
+      ]
+    }
+  ],
+  "coverageGaps": [
+    {
+      "path": "/meshes/payments/meshhttproutes",
+      "reason": "HTTP 403 — RBAC denied; collection not audited, absence of blockers is unproven"
+    },
+    {
+      "path": "/meshes/checkout/meshtimeouts",
+      "reason": "HTTP 500 — control plane error; collection not audited"
+    },
+    {
+      "path": "/meshes/default/meshtraces",
+      "reason": "HTTP 404 — collection not audited"
+    }
+  ],
+  "manualChecks": [
+    {
+      "title": "Old inspect APIs removed (switch to the new inspect API)",
+      "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",
+      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 — migrate callers to the KRI inspect API"
+    },
+    {
+      "title": "Rebuild custom policy plugins against the 3.0 SDK",
+      "detail": "Any in-house policy plugins must be recompiled against the 3.0 plugin SDK; the policy ABI changed."
+    },
+    {
+      "title": "Migrate Helm values renamed or removed in 3.0",
+      "detail": "Several control-plane Helm values are renamed or dropped. Diff your release against the 3.0 chart before upgrading.",
+      "command": "helm get values kong-mesh -n kong-mesh-system -o yaml \u003e values.bak.yaml\nhelm diff upgrade kong-mesh kong-mesh/kong-mesh \\\n  -f values.bak.yaml --version 3.0.0"
+    },
+    {
+      "title": "Snapshot the control-plane datastore before upgrading",
+      "detail": "Back up Postgres (Universal) or the Kubernetes resources so the migration is reversible."
+    },
+    {
+      "title": "kuma.io/mesh annotation becomes a label",
+      "detail": "On 3.0 the mesh association moves from an annotation to a label on the Pod/namespace. Re-label workloads before upgrading.",
+      "command": "kubectl get ns,pods -A -o json | jq -r '.items[]|select(.metadata.annotations[\"kuma.io/mesh\"])|.metadata.name'"
+    },
+    {
+      "title": "Split Pod-level vs container-level sidecar resources",
+      "detail": "Sidecar resource requests move from Pod annotations to the container spec. Review overrides before upgrading."
+    }
+  ]
+}
 </script>
 <script>
 (function(){
@@ -1003,4 +1098,3 @@ const htmlTail = `
 </script>
 </body>
 </html>
-`

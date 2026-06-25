@@ -1,125 +1,332 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" data-density="cozy">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kuma 3.0 Upgrade Pre-flight Report</title>
 <style>
 :root{
-  --bg:#0d1117;--surface:#161b22;--surface-2:#1c2230;--border:#2a3038;
-  --text:#e6edf3;--muted:#8b949e;--accent:#4c8dff;
-  --blocker:#f85149;--blocker-bg:rgba(248,81,73,.12);
-  --warning:#d29922;--warning-bg:rgba(210,153,34,.14);
-  --info:#58a6ff;--info-bg:rgba(88,166,255,.12);
-  --ok:#3fb950;--ok-bg:rgba(63,185,80,.12);
-  --radius:12px;
+  --bg:#0a0c11;--bg-grad:#0c0f16;
+  --surface:#10141c;--surface-2:#161b26;--surface-3:#1c2331;
+  --border:#222a38;--border-2:#2c3648;
+  --text:#e8edf4;--muted:#9aa6b8;--faint:#6a7689;
+  --accent:#6ea8ff;--accent-2:#8bc0ff;--accent-soft:rgba(110,168,255,.14);
+  --blocker:#ff6b62;--blocker-bg:rgba(255,107,98,.11);--blocker-bd:rgba(255,107,98,.40);
+  --warning:#e3b341;--warning-bg:rgba(227,179,65,.12);--warning-bd:rgba(227,179,65,.38);
+  --info:#67b7ff;--info-bg:rgba(103,183,255,.11);--info-bd:rgba(103,183,255,.36);
+  --ok:#54d178;--ok-bg:rgba(84,209,120,.12);--ok-bd:rgba(84,209,120,.40);
+  --shadow:0 1px 2px rgba(0,0,0,.30),0 8px 24px -12px rgba(0,0,0,.55);
+  --radius:12px;--radius-sm:8px;
+  --row:14px;--row-px:16px;
 }
 html[data-theme="light"]{
-  --bg:#f6f8fa;--surface:#ffffff;--surface-2:#eef1f4;--border:#d0d7de;
-  --text:#1f2328;--muted:#636c76;--accent:#0969da;
-  --blocker:#cf222e;--blocker-bg:rgba(207,34,46,.07);
-  --warning:#9a6700;--warning-bg:rgba(154,103,0,.10);
-  --info:#0969da;--info-bg:rgba(9,105,218,.07);
-  --ok:#1a7f37;--ok-bg:rgba(26,127,55,.09);
+  --bg:#f4f6fa;--bg-grad:#eef1f7;
+  --surface:#ffffff;--surface-2:#f3f5fa;--surface-3:#e9edf4;
+  --border:#dce1ea;--border-2:#cbd3e0;
+  --text:#16202e;--muted:#586478;--faint:#8893a5;
+  --accent:#2563eb;--accent-2:#1d4ed8;--accent-soft:rgba(37,99,235,.10);
+  --blocker:#d83a30;--blocker-bg:rgba(216,58,48,.07);--blocker-bd:rgba(216,58,48,.32);
+  --warning:#9a6b00;--warning-bg:rgba(154,107,0,.09);--warning-bd:rgba(154,107,0,.30);
+  --info:#1f6feb;--info-bg:rgba(31,111,235,.08);--info-bd:rgba(31,111,235,.28);
+  --ok:#1a7f37;--ok-bg:rgba(26,127,55,.09);--ok-bd:rgba(26,127,55,.30);
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 10px 24px -14px rgba(16,24,40,.18);
 }
+html[data-density="compact"]{--row:8px;--row-px:12px}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);
-  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-a{color:var(--accent)}
-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
-.wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
-header.rep h1{font-size:24px;margin:0 0 6px}
-.meta{color:var(--muted);font-size:13px;display:flex;flex-wrap:wrap;gap:2px 18px}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+html{scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;color:var(--text);
+  background:
+    radial-gradient(1200px 600px at 78% -8%,var(--accent-soft),transparent 60%),
+    linear-gradient(180deg,var(--bg-grad),var(--bg) 360px);
+  background-attachment:fixed;
+  font:15px/1.55 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:.9em}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+button{font:inherit}
+
+/* ---- shell layout: sticky TOC + content ---- */
+.layout{max-width:1240px;margin:0 auto;padding:0 24px;
+  display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+@media(min-width:1040px){
+  .layout{grid-template-columns:248px minmax(0,1fr);gap:44px;align-items:start}
+}
+.sidebar{display:none}
+@media(min-width:1040px){
+  .sidebar{display:flex;flex-direction:column;gap:14px;position:sticky;top:0;
+    max-height:100vh;overflow:auto;padding:26px 4px 26px 0;scrollbar-width:thin}
+}
+.content{min-width:0;padding:26px 0 110px}
+
+/* ---- brand mark (CSS mesh-node grid, no external asset) ---- */
+.mark{width:22px;height:22px;border-radius:6px;flex:none;
+  background:
+    radial-gradient(circle at center,var(--accent) 1.5px,transparent 1.9px) 0 0/7.3px 7.3px,
+    linear-gradient(135deg,var(--accent-soft),transparent);
+  box-shadow:inset 0 0 0 1px var(--border-2)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.2px}
+.brand .sub{font-size:11px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.08em}
+
+/* ---- sidebar verdict + nav ---- */
+.sb-verdict{display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:10px;
+  border:1px solid var(--border);background:var(--surface);font-weight:650;font-size:13.5px}
+.sb-verdict .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.sb-verdict.blockers,.sb-verdict.failed{color:var(--blocker)}
+.sb-verdict.blockers .dot,.sb-verdict.failed .dot{background:var(--blocker);box-shadow:0 0 0 4px var(--blocker-bg)}
+.sb-verdict.inconclusive{color:var(--warning)}
+.sb-verdict.inconclusive .dot{background:var(--warning);box-shadow:0 0 0 4px var(--warning-bg)}
+.sb-verdict.clean{color:var(--ok)}
+.sb-verdict.clean .dot{background:var(--ok);box-shadow:0 0 0 4px var(--ok-bg)}
+nav.toc{display:flex;flex-direction:column;gap:2px;margin-top:2px}
+.toc .nav-sev{display:flex;align-items:center;gap:9px;width:100%;text-align:left;cursor:pointer;
+  background:none;border:0;color:var(--text);font-weight:680;font-size:13.5px;
+  padding:8px 9px;border-radius:8px;margin-top:8px;transition:background .12s}
+.toc .nav-sev:hover{background:var(--surface-2)}
+.toc .nav-ico{width:9px;height:9px;border-radius:3px;flex:none}
+.toc .nav-ico.blocker{background:var(--blocker)}
+.toc .nav-ico.warning{background:var(--warning)}
+.toc .nav-ico.info{background:var(--info)}
+.toc .nav-lbl{flex:1}
+.toc .nav-n{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:700;font-size:12px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:0 7px;min-width:24px;text-align:center}
+.toc .nav-grp{display:flex;align-items:center;gap:8px;width:100%;text-align:left;cursor:pointer;
+  background:none;border:0;color:var(--muted);font-size:12.5px;padding:5px 9px 5px 27px;border-radius:7px;
+  transition:background .12s,color .12s;border-left:2px solid transparent}
+.toc .nav-grp:hover{background:var(--surface-2);color:var(--text)}
+.toc .nav-grp.active{color:var(--text);background:var(--accent-soft);border-left-color:var(--accent)}
+.toc .nav-grp .nav-grp-lbl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toc .nav-grp .nav-n.sm{font-size:11px;min-width:20px;padding:0 5px}
+.toc .nav-link{display:flex;align-items:center;gap:8px;width:100%;text-align:left;cursor:pointer;
+  background:none;border:0;color:var(--muted);font-size:12.5px;font-weight:600;padding:7px 9px;border-radius:7px;margin-top:6px}
+.toc .nav-link:hover{background:var(--surface-2);color:var(--text)}
+.sb-tools{display:flex;gap:8px;margin-top:auto;padding-top:14px}
+
+/* ---- header ---- */
+header.rep{margin-bottom:6px}
+header.rep .htop{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+header.rep h1{font-size:23px;line-height:1.2;margin:0;letter-spacing:-.01em;font-weight:730}
+.meta{color:var(--muted);font-size:12.5px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+.meta .b{color:var(--text);font-weight:620}
+.meta .sep{color:var(--faint)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:13px;align-items:center}
+.chips .lbl{color:var(--faint);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:650;margin-right:2px}
 .chip{background:var(--surface-2);border:1px solid var(--border);border-radius:999px;
-  padding:2px 10px;font-size:12px}
-.chip.mesh{font-family:inherit;color:var(--text);cursor:pointer;
-  transition:border-color .15s,background .15s,color .15s}
-.chip.mesh:hover{border-color:var(--accent)}
-.chip.mesh.active{background:var(--accent);border-color:var(--accent);color:#fff}
-.meshhint{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--muted);
-  font-size:13px;margin:0 0 10px}
-.meshhint b{color:var(--text)}
-.meshhint button{background:none;border:0;color:var(--accent);cursor:pointer;
-  font:inherit;padding:0;text-decoration:underline}
-.banner{margin:20px 0;padding:14px 18px;border-radius:var(--radius);font-weight:600;
-  border:1px solid transparent;display:flex;align-items:center;gap:10px}
-.banner.blockers,.banner.failed{background:var(--blocker-bg);border-color:var(--blocker);color:var(--blocker)}
-.banner.inconclusive{background:var(--warning-bg);border-color:var(--warning);color:var(--warning)}
-.banner.clean{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:18px 0}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:14px 16px;text-align:left;font:inherit;color:inherit}
-.card .n{font-size:28px;font-weight:700;line-height:1}
-.card .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:6px}
+  padding:3px 11px;font-size:12px;color:var(--muted)}
+.chip.mesh{color:var(--text);cursor:pointer;font-weight:560;
+  transition:border-color .14s,background .14s,color .14s}
+.chip.mesh:hover{border-color:var(--accent);color:var(--text)}
+.chip.mesh.active{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:700}
+.chip.morechip{cursor:pointer;color:var(--accent);background:none;border-style:dashed}
+
+/* ---- verdict banner ---- */
+.banner{margin:18px 0;padding:15px 18px;border-radius:var(--radius);
+  border:1px solid transparent;display:flex;align-items:flex-start;gap:13px;box-shadow:var(--shadow)}
+.banner .glyph{width:30px;height:30px;border-radius:8px;flex:none;display:grid;place-items:center;
+  font-weight:800;font-size:16px}
+.banner .btxt{display:flex;flex-direction:column;gap:2px}
+.banner .btxt b{font-size:15.5px;font-weight:700}
+.banner .btxt span{font-size:13px;opacity:.92}
+.banner.blockers,.banner.failed{background:var(--blocker-bg);border-color:var(--blocker-bd);color:var(--blocker)}
+.banner.blockers .glyph,.banner.failed .glyph{background:var(--blocker);color:#1a0605}
+.banner.inconclusive{background:var(--warning-bg);border-color:var(--warning-bd);color:var(--warning)}
+.banner.inconclusive .glyph{background:var(--warning);color:#181203}
+.banner.clean{background:var(--ok-bg);border-color:var(--ok-bd);color:var(--ok)}
+.banner.clean .glyph{background:var(--ok);color:#04140a}
+
+/* ---- spotless celebration (migration done, nothing flagged) ---- */
+.celebrate{margin:26px 0;padding:52px 32px 44px;border-radius:16px;text-align:center;
+  border:1px solid var(--ok-bd);box-shadow:var(--shadow);
+  background:radial-gradient(680px 240px at 50% -12%,var(--ok-bg),transparent 70%),var(--surface)}
+.cel-badge{width:72px;height:72px;border-radius:50%;margin:0 auto 22px;display:grid;place-items:center;
+  font-size:38px;font-weight:800;color:#04140a;background:var(--ok);box-shadow:0 0 0 10px var(--ok-bg)}
+.celebrate h2{font-size:26px;margin:0 0 12px;letter-spacing:-.02em;font-weight:760;color:var(--text)}
+.celebrate p{margin:0 auto;max-width:580px;color:var(--muted);font-size:15px;line-height:1.6}
+.cel-congrats{margin-top:20px!important;color:var(--ok)!important;font-weight:680;font-size:16.5px!important}
+.cel-meta{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:26px}
+.cel-meta span{background:var(--surface-2);border:1px solid var(--border);border-radius:999px;
+  padding:4px 13px;font-size:12.5px;color:var(--muted)}
+.cel-meta b{color:var(--text);font-variant-numeric:tabular-nums}
+
+/* ---- overview: stat cards + stacked bar ---- */
+.overview{margin:18px 0 8px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:11px}
+.card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:13px 15px 14px;text-align:left;overflow:hidden;transition:border-color .14s,transform .08s}
+button.card{cursor:pointer;color:inherit}
+button.card:hover{border-color:var(--border-2)}
+button.card:active{transform:translateY(1px)}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-2)}
+.card.blocker::before{background:var(--blocker)}
+.card.warning::before{background:var(--warning)}
+.card.info::before{background:var(--info)}
+.card .n{font-size:27px;font-weight:760;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .card.blocker .n{color:var(--blocker)}
 .card.warning .n{color:var(--warning)}
 .card.info .n{color:var(--info)}
-.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0;
-  position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:5}
-.search{flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);
-  border-radius:8px;padding:9px 12px;color:var(--text);font-size:14px}
-.btn{background:var(--surface);border:1px solid var(--border);border-radius:8px;
-  padding:9px 12px;color:var(--text);cursor:pointer;font-size:13px}
-.btn:hover{border-color:var(--accent)}
-section.grp{margin:26px 0}
-section.grp>h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
-.sevdot{width:10px;height:10px;border-radius:50%;display:inline-block}
-.sevdot.blocker{background:var(--blocker)}
-.sevdot.warning{background:var(--warning)}
-.sevdot.info{background:var(--info)}
-.cat{margin:16px 0 8px;font-size:12px;font-weight:600;color:var(--muted);
-  text-transform:uppercase;letter-spacing:.04em}
+.card .l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:7px;font-weight:620}
+.card .l2{font-size:11px;color:var(--faint);margin-top:3px;font-variant-numeric:tabular-nums}
+.card.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.card .pin{position:absolute;top:9px;right:11px;font-size:10px;color:var(--accent);font-weight:700;display:none}
+.card.on .pin{display:block}
+.sevbar-wrap{margin-top:13px;display:flex;flex-direction:column;gap:8px}
+.sevbar{display:flex;height:9px;border-radius:999px;overflow:hidden;background:var(--surface-2);
+  border:1px solid var(--border)}
+.sevbar i{display:block;height:100%;min-width:0}
+.sevbar i.blocker{background:var(--blocker)}
+.sevbar i.warning{background:var(--warning)}
+.sevbar i.info{background:var(--info)}
+.sevbar i.ok{background:var(--ok)}
+.sevleg{display:flex;flex-wrap:wrap;gap:5px 16px;font-size:12px;color:var(--muted)}
+.sevleg span{display:inline-flex;align-items:center;gap:6px}
+.sevleg .d{width:8px;height:8px;border-radius:2px}
+.sevleg .d.blocker{background:var(--blocker)}.sevleg .d.warning{background:var(--warning)}
+.sevleg .d.info{background:var(--info)}.sevleg .d.ok{background:var(--ok)}
+.sevleg b{color:var(--text);font-variant-numeric:tabular-nums}
+
+/* ---- toolbar (sticky) ---- */
+.toolbar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:18px 0 6px;
+  position:sticky;top:0;z-index:20;padding:11px 0;
+  background:linear-gradient(180deg,var(--bg) 62%,transparent);backdrop-filter:blur(4px)}
+.search{flex:1;min-width:190px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-size:14px;transition:border-color .14s}
+.search:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.btn{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:8px 12px;color:var(--text);cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;
+  transition:border-color .14s,background .14s}
+.btn:hover{border-color:var(--accent);background:var(--surface-2)}
+.btn.icon{padding:8px 10px}
+
+/* ---- finding sections / groups ---- */
+section.grp{margin:24px 0;scroll-margin-top:74px;content-visibility:auto;contain-intrinsic-size:auto 600px}
+section.grp>.sechead{display:flex;align-items:center;gap:9px;margin:0 0 4px;font-size:13px;
+  color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+section.grp>.sechead .sd{width:9px;height:9px;border-radius:3px}
+section.grp>.sechead .sd.blocker{background:var(--blocker)}
+section.grp>.sechead .sd.warning{background:var(--warning)}
+section.grp>.sechead .sd.info{background:var(--info)}
+section.grp>.sechead .n{margin-left:auto;color:var(--faint);font-weight:700;font-variant-numeric:tabular-nums}
+.grpblock{scroll-margin-top:74px}
 .grp-title{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
   background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
-  color:var(--text);font:inherit;font-weight:700;font-size:16px;
-  padding:12px 16px;margin:26px 0 10px;cursor:pointer;transition:border-color .15s,background .15s}
-.grp-title:hover{border-color:var(--accent)}
-.grp-title .caret{color:var(--muted);font-size:12px;transition:transform .15s}
+  color:var(--text);font-weight:700;font-size:14.5px;
+  padding:11px 15px;margin:12px 0 8px;cursor:pointer;transition:border-color .14s,background .14s}
+.grp-title:hover{border-color:var(--border-2)}
+.grp-title .caret{color:var(--faint);font-size:11px;transition:transform .15s;width:10px}
 .grp-title:not(.collapsed) .caret{transform:rotate(90deg)}
 .grp-title .grp-count{margin-left:auto;background:var(--bg);border:1px solid var(--border);
-  border-radius:999px;padding:2px 11px;font-size:13px;font-weight:700;color:var(--text)}
-.grp-body{margin:0 0 8px;padding-left:12px;border-left:2px solid var(--border)}
-.finding{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border);
-  border-radius:var(--radius);padding:14px 16px;margin:8px 0}
-.finding.blocker{border-left-color:var(--blocker)}
-.finding.warning{border-left-color:var(--warning)}
-.finding.info{border-left-color:var(--info)}
-.finding .ttl{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
-.finding .ttl b{font-size:15px}
-.pill{background:var(--surface-2);border:1px solid var(--border);border-radius:999px;
-  padding:1px 9px;font-size:12px;color:var(--muted);white-space:nowrap}
-.finding .detail{color:var(--muted);font-size:14px;margin:6px 0 0}
-.finding .detail.note{color:var(--warning)}
-.ex{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  border-radius:999px;padding:2px 11px;font-size:12.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.grp-body{margin:0 0 6px;display:flex;flex-direction:column;gap:7px}
+
+/* ---- one finding: collapsible row, all detail hidden until opened ---- */
+.finding{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  overflow:hidden;transition:border-color .14s}
+.finding:hover{border-color:var(--border-2)}
+.finding.blocker{box-shadow:inset 3px 0 0 var(--blocker)}
+.finding.warning{box-shadow:inset 3px 0 0 var(--warning)}
+.finding.info{box-shadow:inset 3px 0 0 var(--info)}
+.f-head{display:flex;align-items:center;gap:11px;width:100%;text-align:left;cursor:pointer;
+  background:none;border:0;color:var(--text);padding:var(--row) var(--row-px);padding-left:calc(var(--row-px) + 3px)}
+.f-head:hover{background:var(--surface-2)}
+.f-tick{width:7px;height:7px;border-radius:50%;flex:none}
+.f-tick.blocker{background:var(--blocker)}.f-tick.warning{background:var(--warning)}.f-tick.info{background:var(--info)}
+.f-title{font-weight:630;font-size:14.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.finding:not(.collapsed) .f-title{white-space:normal}
+.f-meta{display:flex;gap:5px;align-items:center;flex:none}
+.f-meta .tag{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
+  padding:1px 7px;font-size:11px;color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.f-meta .tag.cp{color:var(--accent);border-color:var(--accent-soft);background:var(--accent-soft)}
+@media(max-width:680px){.f-meta{display:none}}
+.f-count{font-variant-numeric:tabular-nums;font-weight:720;font-size:13px;color:var(--text);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:1px 10px;flex:none}
+.finding.blocker .f-count{color:var(--blocker)}
+.f-caret{color:var(--faint);font-size:11px;flex:none;transition:transform .15s}
+.finding:not(.collapsed) .f-caret{transform:rotate(90deg)}
+.f-body{padding:0 var(--row-px) 15px;padding-left:calc(var(--row-px) + 3px);
+  border-top:1px solid var(--border);margin-top:-1px;padding-top:13px;
+  display:flex;flex-direction:column;gap:0}
+.f-body .detail{color:var(--muted);font-size:13.5px;margin:0}
+.f-body .detail.note{color:var(--warning);margin-top:8px}
+.ex{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
 .ex .e{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
-  padding:2px 8px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
-.ex .e.sys{border-color:var(--warning);color:var(--warning)}
-.ex .more{color:var(--muted);font-size:12px;align-self:center}
-ul.manual{padding-left:0;margin:8px 0}
-ul.manual li{margin:6px 0;list-style:none}
-ul.manual label{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
-ul.manual input{margin-top:4px}
+  padding:2px 8px;font-size:11.5px;font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--text)}
+.ex .e.sys{border-color:var(--warning-bd);color:var(--warning)}
+.ex .more{color:var(--faint);font-size:11.5px;align-self:center;font-variant-numeric:tabular-nums}
+.doclink{display:inline-flex;align-items:center;gap:6px;margin-top:13px;font-size:12.5px;font-weight:650;
+  align-self:flex-start;background:var(--accent-soft);border:1px solid transparent;
+  padding:5px 11px;border-radius:7px;transition:border-color .14s}
+.doclink:hover{border-color:var(--accent);text-decoration:none}
+.doclink .arr{color:var(--accent)}
+
+/* ---- meshhint / empty ---- */
+.meshhint{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--muted);
+  font-size:13px;margin:0 0 12px;padding:9px 13px;background:var(--accent-soft);border-radius:9px}
+.meshhint b{color:var(--text)}
+.meshhint button{background:none;border:0;color:var(--accent);cursor:pointer;font:inherit;padding:0;text-decoration:underline}
+.empty{color:var(--muted);padding:34px;text-align:center;border:1px dashed var(--border);border-radius:var(--radius);background:var(--surface)}
+
+/* ---- coverage + manual ---- */
+.blockhead{font-size:16px;font-weight:720;margin:0 0 4px;letter-spacing:-.01em}
+.blocksub{color:var(--muted);font-size:13px;margin:0 0 12px}
+ul.manual{padding-left:0;margin:8px 0;list-style:none;display:flex;flex-direction:column;gap:8px}
+ul.manual li{background:var(--surface);border:1px solid var(--border);
+  box-shadow:inset 3px 0 0 var(--warning);border-radius:var(--radius);padding:13px 16px}
+ul.manual label{display:flex;gap:11px;align-items:flex-start;cursor:pointer}
+ul.manual label span{font-size:14.5px;font-weight:630}
+ul.manual input{margin-top:4px;accent-color:var(--accent);width:15px;height:15px;flex:none}
+ul.manual .detail{color:var(--muted);font-size:13.5px;margin:8px 0 0 26px}
+.cmdbox{position:relative;margin:10px 0 0 26px}
+.cmdbox .cmd{margin:0;padding:11px 64px 11px 13px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:8px;overflow-x:auto;
+  font-size:12.5px;white-space:pre;color:var(--text)}
+.cmdbox .copy{position:absolute;top:8px;right:8px;background:var(--surface);
+  border:1px solid var(--border);border-radius:6px;color:var(--muted);
+  font-size:11.5px;padding:4px 10px;cursor:pointer;font-weight:600}
+.cmdbox .copy:hover{color:var(--text);border-color:var(--accent)}
+.cmd-collapsible{margin:10px 0 0 26px}
+.cmd-collapsible>summary{cursor:pointer;list-style:none;color:var(--accent);
+  font-size:12.5px;font-weight:650;padding:5px 0;user-select:none}
+.cmd-collapsible>summary::-webkit-details-marker{display:none}
+.cmd-collapsible>summary::before{content:'\25B8 ';color:var(--faint)}
+.cmd-collapsible[open]>summary::before{content:'\25BE '}
+.cmd-collapsible>summary:hover{text-decoration:underline}
+.cmd-collapsible .cmdbox{margin:6px 0 0 0}
+ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 .done span{text-decoration:line-through;color:var(--muted)}
-.prog{color:var(--muted);font-size:13px;margin:0 0 8px}
-.empty{color:var(--muted);padding:30px;text-align:center;border:1px dashed var(--border);border-radius:var(--radius)}
-.src{color:var(--muted);font-size:12px;margin-top:44px;border-top:1px solid var(--border);padding-top:14px}
-.err{background:var(--surface-2);border:1px solid var(--blocker);border-radius:8px;padding:12px;
-  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;margin-top:12px}
+.done .detail,.done .cmdbox,.done .cmd-collapsible{opacity:.55}
+.prog{color:var(--muted);font-size:13px;margin:0 0 10px;font-variant-numeric:tabular-nums}
+.src{color:var(--faint);font-size:12px;margin-top:46px;border-top:1px solid var(--border);padding-top:16px}
+.err{background:var(--surface-2);border:1px solid var(--blocker);border-radius:8px;padding:13px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;margin-top:14px}
+
+/* ---- print: expand everything, drop chrome, force light ---- */
+@media print{
+  html{--bg:#fff;--bg-grad:#fff}
+  body{background:#fff;color:#111}
+  .sidebar,.toolbar,.sb-tools,.f-caret,.grp-title .caret{display:none!important}
+  .layout{grid-template-columns:1fr;max-width:none;padding:0}
+  .f-body{display:flex!important}
+  .finding,section.grp,.grpblock,ul.manual li{break-inside:avoid;content-visibility:visible}
+  .banner,.card,.finding{box-shadow:none}
+}
 </style>
 </head>
 <body>
-<div class="wrap" id="app"></div>
-<noscript><div class="wrap"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format markdown</code> or <code>--format json</code> for a static view.</p></div></noscript>
+<div class="layout" id="app"></div>
+<noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
 <script id="report-data" type="application/json">
 {
-  "schema": "kuma3-preflight/v2",
+  "schema": "kuma3-preflight/v3",
   "tool": "kuma3-preflight",
-  "generatedAt": "2026-06-24T16:12:03Z",
+  "generatedAt": "2026-06-25T09:30:00Z",
   "status": "blockers",
+  "address": "http://localhost:5681",
   "controlPlane": {
     "product": "Kong Mesh",
-    "version": "unknown",
+    "version": "2.11.3",
     "mode": "zone"
   },
   "meshes": [
@@ -128,10 +335,10 @@ ul.manual input{margin-top:4px}
     "legacy"
   ],
   "summary": {
-    "blockers": 39,
+    "blockers": 41,
     "warnings": 1,
     "info": 0,
-    "coverageGaps": 0,
+    "coverageGaps": 1,
     "parseErrors": 0,
     "systemFindings": 8
   },
@@ -142,6 +349,7 @@ ul.manual input{margin-top:4px}
       "category": "Control plane configuration",
       "title": "Delta xDS not enabled",
       "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
+      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "examples": [
         "experimental.deltaXds=false"
@@ -152,7 +360,8 @@ ul.manual input{margin-top:4px}
       "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Inbound tags still enabled",
-      "detail": "3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
+      "detail": "3.0 runs with inbound tags disabled; set `inboundTagsDisabled: true` and validate first.",
+      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "examples": [
         "experimental.inboundTagsDisabled=false"
@@ -163,7 +372,8 @@ ul.manual input{margin-top:4px}
       "group": "Control plane",
       "category": "Control plane configuration",
       "title": "KDS event-based watchdog not enabled",
-      "detail": "The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
+      "detail": "The KDS event-based watchdog is the 3.0 default; enable it and validate first.",
+      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "examples": [
         "experimental.kdsEventBasedWatchdog.enabled=false"
@@ -174,10 +384,11 @@ ul.manual input{margin-top:4px}
       "group": "Control plane",
       "category": "Control plane configuration",
       "title": "Unified resource naming not enabled",
-      "detail": "3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
+      "detail": "Unified resource naming is mandatory in 3.0; enable it and validate first.",
+      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "examples": [
-        "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        "experimental.unifiedResourceNaming=false"
       ]
     },
     {
@@ -185,10 +396,12 @@ ul.manual input{margin-top:4px}
       "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Inline logging on Mesh",
-      "detail": "Replace `mesh.logging` with the MeshAccessLog policy.",
-      "count": 1,
+      "detail": "Inline logging on the Mesh object is removed in 3.0; migrate to MeshAccessLog.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
+      "count": 2,
       "examples": [
-        "legacy (logging)"
+        "default (field)",
+        "legacy (field)"
       ]
     },
     {
@@ -196,10 +409,12 @@ ul.manual input{margin-top:4px}
       "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Inline mTLS on Mesh",
-      "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust.",
-      "count": 1,
+      "detail": "Inline mTLS on the Mesh object is removed in 3.0; migrate to a MeshTLS policy.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
+      "count": 2,
       "examples": [
-        "legacy (mtls)"
+        "default (field)",
+        "legacy (field)"
       ]
     },
     {
@@ -207,10 +422,12 @@ ul.manual input{margin-top:4px}
       "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Inline metrics on Mesh",
-      "detail": "Replace `mesh.metrics` with the MeshMetric policy.",
-      "count": 1,
+      "detail": "Inline metrics on the Mesh object is removed in 3.0; migrate to MeshMetric.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
+      "count": 2,
       "examples": [
-        "legacy (metrics)"
+        "default (field)",
+        "legacy (field)"
       ]
     },
     {
@@ -218,10 +435,12 @@ ul.manual input{margin-top:4px}
       "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Inline tracing on Mesh",
-      "detail": "Replace `mesh.tracing` with the MeshTrace policy.",
-      "count": 1,
+      "detail": "Inline tracing on the Mesh object is removed in 3.0; migrate to MeshTrace.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
+      "count": 2,
       "examples": [
-        "legacy (tracing)"
+        "default (field)",
+        "legacy (field)"
       ]
     },
     {
@@ -229,10 +448,11 @@ ul.manual input{margin-top:4px}
       "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Mesh membership constraints",
-      "detail": "`mesh.constraints` (membership) is removed.",
+      "detail": "Mesh membership constraints move to MeshTrafficPermission in 3.0.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
       "count": 1,
       "examples": [
-        "legacy (constraints)"
+        "legacy (field)"
       ]
     },
     {
@@ -240,21 +460,25 @@ ul.manual input{margin-top:4px}
       "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "Passthrough on Mesh",
-      "detail": "`mesh.networking.outbound.passthrough` is removed; use MeshPassthrough.",
-      "count": 1,
+      "detail": "Mesh passthrough relocates to MeshPassthrough in 3.0.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
+      "count": 2,
       "examples": [
-        "legacy (networking.outbound.passthrough)"
+        "default (field)",
+        "legacy (field)"
       ]
     },
     {
       "severity": "blocker",
       "group": "Mesh object",
       "category": "Mesh object settings",
-      "title": "defaultForbidMeshExternalServiceAccess on Mesh",
-      "detail": "`mesh.routing.defaultForbidMeshExternalServiceAccess` is removed.",
-      "count": 1,
+      "title": "defaultForbidMeshExternalServiceAccess off on Mesh",
+      "detail": "`defaultForbidMeshExternalServiceAccess` flips to true in 3.0; set it explicitly and validate.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
+      "count": 2,
       "examples": [
-        "legacy (routing.defaultForbidMeshExternalServiceAccess)"
+        "default (field)",
+        "legacy (field)"
       ]
     },
     {
@@ -262,221 +486,126 @@ ul.manual input{margin-top:4px}
       "group": "Mesh object",
       "category": "Mesh object settings",
       "title": "localityAwareLoadBalancing on Mesh",
-      "detail": "Replace with MeshLoadBalancingStrategy.",
-      "count": 1,
-      "examples": [
-        "legacy (routing.localityAwareLoadBalancing)"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Mesh object",
-      "category": "Mesh object settings",
-      "title": "routing.zoneEgress on Mesh",
-      "detail": "`mesh.routing.zoneEgress` is removed.",
-      "count": 1,
-      "examples": [
-        "legacy (routing.zoneEgress)"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Mesh object",
-      "category": "MeshService mode",
-      "title": "meshServices.mode is not Exclusive",
-      "detail": "3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: Disabled).",
+      "detail": "Relocated to MeshLoadBalancingStrategy in 3.0.",
+      "doc": "https://developer.konghq.com/mesh/policies/",
       "count": 2,
       "examples": [
-        "default",
-        "legacy"
+        "default (field)",
+        "legacy (field)"
       ]
     },
     {
       "severity": "blocker",
       "group": "Policies",
-      "category": "Policy `from` field",
-      "title": "MeshTimeout uses `from`",
-      "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
+      "category": "Relocated policy fields",
+      "title": "Relocated policy fields",
+      "detail": "A policy spec field moved location in 3.0; update the manifest.",
+      "doc": "https://developer.konghq.com/mesh/targetref/",
       "count": 6,
       "examples": [
-        "clean/mesh-gateways-timeout-all-clean.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "clean/mesh-timeout-all-clean.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "default/mesh-gateways-timeout-all-default.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "default/mesh-timeout-all-default.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "legacy/mesh-gateways-timeout-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "legacy/mesh-timeout-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)"
+        "default/policy-1",
+        "legacy/policy-2",
+        "default/policy-3",
+        "legacy/policy-4",
+        "default/policy-5",
+        "legacy/policy-6"
       ]
     },
     {
       "severity": "blocker",
       "group": "Policies",
-      "category": "Policy `from` field",
-      "title": "MeshTrafficPermission uses `from`",
-      "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
-      "count": 1,
+      "category": "`to` targetRef kind",
+      "title": "Removed `to` targetRef kind",
+      "detail": "A `to[].targetRef.kind` removed in 3.0 (subset/selector or MeshGateway); migrate the policy.",
+      "doc": "https://developer.konghq.com/mesh/targetref/",
+      "count": 3,
       "examples": [
-        "legacy/mtp-from-legacy.kong-mesh-system (system — CP-managed, update before 3.0)"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Policies",
-      "category": "Top-level targetRef kind",
-      "title": "MeshHTTPRoute top-level targetRef.kind=MeshService",
-      "detail": "Top-level targetRef must be Mesh or Dataplane; use labels.",
-      "count": 1,
-      "examples": [
-        "legacy/mhr-badtargetref.kong-mesh-system (system — CP-managed, update before 3.0)"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Policies",
-      "category": "targetRef proxyTypes",
-      "title": "MeshTimeout uses targetRef.proxyTypes",
-      "detail": "`proxyTypes` is removed (gateway support dropped).",
-      "count": 6,
-      "examples": [
-        "clean/mesh-gateways-timeout-all-clean.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "clean/mesh-timeout-all-clean.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "default/mesh-gateways-timeout-all-default.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "default/mesh-timeout-all-default.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "legacy/mesh-gateways-timeout-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)",
-        "legacy/mesh-timeout-all-legacy.kong-mesh-system (system — CP-managed, update before 3.0)"
+        "legacy/policy-1",
+        "legacy/policy-2",
+        "legacy/policy-3"
       ]
     },
     {
       "severity": "blocker",
       "group": "Removed resources",
       "category": "Removed resources",
-      "title": "CircuitBreaker (removed in 3.0)",
-      "detail": "Replace with MeshCircuitBreaker.",
-      "count": 1,
+      "title": "Removed mesh-scoped resource present",
+      "detail": "A mesh-scoped resource type removed in 3.0 is still present (e.g. TrafficRoute/TrafficPermission).",
+      "doc": "https://developer.konghq.com/mesh/migration-to-3.0/",
+      "count": 9,
       "examples": [
-        "default/cb-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Removed resources",
-      "category": "Removed resources",
-      "title": "ExternalService (removed in 3.0)",
-      "detail": "Replace with MeshExternalService.",
-      "count": 1,
-      "examples": [
-        "default/es-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Removed resources",
-      "category": "Removed resources",
-      "title": "HealthCheck (removed in 3.0)",
-      "detail": "Replace with MeshHealthCheck.",
-      "count": 1,
-      "examples": [
-        "default/hc-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Removed resources",
-      "category": "Removed resources",
-      "title": "ProxyTemplate (removed in 3.0)",
-      "detail": "Replace with MeshProxyPatch.",
-      "count": 1,
-      "examples": [
-        "default/pt-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Removed resources",
-      "category": "Removed resources",
-      "title": "Timeout (removed in 3.0)",
-      "detail": "Replace with MeshTimeout.",
-      "count": 1,
-      "examples": [
-        "default/to-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Removed resources",
-      "category": "Removed resources",
-      "title": "TrafficLog (removed in 3.0)",
-      "detail": "Replace with MeshAccessLog.",
-      "count": 1,
-      "examples": [
-        "default/tl-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Removed resources",
-      "category": "Removed resources",
-      "title": "TrafficPermission (removed in 3.0)",
-      "detail": "Replace with MeshTrafficPermission (rules + spiffeID).",
-      "count": 1,
-      "examples": [
-        "default/tp-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Removed resources",
-      "category": "Removed resources",
-      "title": "TrafficRoute (removed in 3.0)",
-      "detail": "Replace with MeshHTTPRoute / MeshTCPRoute.",
-      "count": 1,
-      "examples": [
-        "default/tr-legacy"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "Removed resources",
-      "category": "Removed resources",
-      "title": "VirtualOutbound (removed in 3.0)",
-      "detail": "Replace with unified naming + MeshService hostnames.",
-      "count": 1,
-      "examples": [
-        "default/vo-legacy"
+        "default/trafficroute-1",
+        "legacy/trafficroute-2",
+        "default/trafficroute-3",
+        "legacy/trafficroute-4",
+        "default/trafficroute-5",
+        "legacy/trafficroute-6",
+        "default/trafficroute-7",
+        "legacy/trafficroute-8",
+        "default/trafficroute-9"
       ]
     },
     {
       "severity": "blocker",
       "group": "Data plane \u0026 workloads",
       "category": "reachableServices",
-      "title": "Dataplane uses reachableServices",
-      "detail": "Replace `reachableServices` with `reachableBackends` (MeshService-based).",
-      "count": 1,
+      "title": "reachableServices on Dataplane",
+      "detail": "`networking.transparentProxying.reachableServices` (tag form) is removed in 3.0.",
+      "doc": "https://developer.konghq.com/mesh/dataplane/",
+      "count": 4,
       "examples": [
-        "default/reachable-app-55446f777c-gng5w.k3pf-test"
+        "default/dp-1",
+        "legacy/dp-2",
+        "default/dp-3",
+        "legacy/dp-4"
       ]
     },
     {
       "severity": "warning",
-      "group": "Control plane",
-      "category": "Control plane configuration",
-      "title": "Workload labels not configured",
-      "detail": "`runtime.kubernetes.workloadLabels` is unset, so the `kuma.io/workload` label (the 3.0 metrics/traces grouping dimension) is derived from each pod's ServiceAccount. Ensure ServiceAccounts are distinct per workload, or set `workloadLabels`, or proxies collapse into a single default workload.",
+      "group": "Data plane \u0026 workloads",
+      "category": "Workload grouping",
+      "title": "workloadLabels unset (k8s)",
+      "detail": "kuma.io/workload falls back to the pod ServiceAccount; fine only if ServiceAccounts are distinct per workload.",
       "count": 1,
       "examples": [
-        "runtime.kubernetes.workloadLabels unset"
+        "default (field)"
       ]
     }
   ],
-  "coverageGaps": [],
+  "coverageGaps": [
+    {
+      "path": "/meshes/legacy/meshexternalservices",
+      "reason": "HTTP 404 — collection not audited; absence of blockers is unproven"
+    }
+  ],
   "manualChecks": [
-    "Gateway API / GAMMA usage migrated off built-in support",
-    "Observability: KRI-based config only; `install observability` command removed",
-    "DNS: CoreDNS removed (legacy Envoy DNS filter use is auto-detected with --inspect-dataplanes)",
-    "Old inspect APIs removed (switch to the new inspect API)",
-    "Pod resources instead of container resources",
-    "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
-    "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
-    "Zone-pinned external services (legacy ExternalService `kuma.io/zone` tag — already a blocker; MeshExternalService has no zone field)"
+    {
+      "title": "Old inspect APIs removed (switch to the new inspect API)",
+      "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",
+      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 — migrate callers to the KRI inspect API"
+    },
+    {
+      "title": "Rebuild custom policy plugins against the 3.0 SDK",
+      "detail": "Any in-house policy plugins must be recompiled against the 3.0 plugin SDK; the policy ABI changed."
+    },
+    {
+      "title": "Migrate Helm values renamed or removed in 3.0",
+      "detail": "Several control-plane Helm values are renamed or dropped. Diff your release against the 3.0 chart before upgrading.",
+      "command": "helm get values kong-mesh -n kong-mesh-system -o yaml \u003e values.bak.yaml\nhelm diff upgrade kong-mesh kong-mesh/kong-mesh \\\n  -f values.bak.yaml --version 3.0.0"
+    },
+    {
+      "title": "Snapshot the control-plane datastore before upgrading",
+      "detail": "Back up Postgres (Universal) or the Kubernetes resources so the migration is reversible."
+    },
+    {
+      "title": "kuma.io/mesh annotation becomes a label",
+      "detail": "On 3.0 the mesh association moves from an annotation to a label on the Pod/namespace. Re-label workloads before upgrading.",
+      "command": "kubectl get ns,pods -A -o json | jq -r '.items[]|select(.metadata.annotations[\"kuma.io/mesh\"])|.metadata.name'"
+    },
+    {
+      "title": "Split Pod-level vs container-level sidecar resources",
+      "detail": "Sidecar resource requests move from Pod annotations to the container spec. Review overrides before upgrading."
+    }
   ]
 }
 </script>
@@ -489,16 +618,27 @@ ul.manual input{margin-top:4px}
 
   var SEV = ['blocker','warning','info'];
   var SEVKEY = {blocker:'blockers', warning:'warnings', info:'info'};
+  var SEVLABEL = {blocker:'Blockers', warning:'Warnings', info:'Info'};
   var HEADINGS = {
     blocker:'Blockers — must resolve before upgrading',
     warning:'Warnings — review before upgrading',
     info:'Informational'
   };
+  var GLYPH = {blockers:'✕', failed:'✕', inconclusive:'!', clean:'✓'};
+
   var query = '';
   var meshFilter = null;
-  var collapsedGroups = {}; // keyed by "<severity>|<group>"; persists across re-renders
+  var sevFilter = null;
+  var collapsedGroups = {};   // keyed "<severity>|<group>"; persists across re-renders
+  var collapsedFindings = {}; // keyed by fid(f); undefined => default for report size
+  // A large report defaults every finding to collapsed so the page opens as a
+  // scannable index (one row per finding) rather than a wall of detail.
+  var bigReport = (data.findings || []).length > 12;
+  var spy = null;
 
   function groupOf(f){ return f.group || f.category; }
+  function fid(f){ return f.severity + '|' + groupOf(f) + '|' + f.title; }
+  function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
 
   // The authoritative mesh set; an example "belongs" to a mesh only if its
   // leading segment matches a real mesh name. This disambiguates resource refs
@@ -537,20 +677,10 @@ ul.manual input{margin-top:4px}
   }
   // Effective count under the active filter. Exact per-mesh count only when the
   // finding is attributable; for a capped finding we show its true total across
-  // all meshes (renderFinding flags that it is not split per mesh) rather than a
-  // misleading per-mesh floor.
+  // all meshes (renderFinding flags that it is not split per mesh).
   function shownCount(f){
     if(meshFilter && attributable(f)) return shownExamples(f).length;
     return f.count;
-  }
-  function setMeshFilter(m){
-    meshFilter = m;
-    document.querySelectorAll('.chip.mesh').forEach(function(c){
-      var on = c.getAttribute('data-mesh') === meshFilter;
-      c.classList.toggle('active', on);
-      c.setAttribute('aria-pressed', String(on));
-    });
-    renderFindings();
   }
 
   function el(tag, attrs, kids){
@@ -571,15 +701,26 @@ ul.manual input{margin-top:4px}
     return n;
   }
 
-  // ---- theme toggle (persisted) ----
+  // ---- theme + density (persisted) ----
   var savedTheme = localStorage.getItem('kuma3pf-theme');
   if(savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+  var savedDensity = localStorage.getItem('kuma3pf-density');
+  if(savedDensity) document.documentElement.setAttribute('data-density', savedDensity);
   function themeBtn(){
     function label(){ return document.documentElement.getAttribute('data-theme') === 'light' ? 'Dark' : 'Light'; }
-    return el('button', {class:'btn', title:'Toggle theme', onclick:function(){
+    return el('button', {class:'btn icon', title:'Toggle light/dark theme', onclick:function(){
       var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', cur);
       localStorage.setItem('kuma3pf-theme', cur);
+      this.textContent = label();
+    }}, label());
+  }
+  function densityBtn(){
+    function label(){ return document.documentElement.getAttribute('data-density') === 'compact' ? 'Cozy' : 'Compact'; }
+    return el('button', {class:'btn icon', title:'Toggle row density', onclick:function(){
+      var cur = document.documentElement.getAttribute('data-density') === 'compact' ? 'cozy' : 'compact';
+      document.documentElement.setAttribute('data-density', cur);
+      localStorage.setItem('kuma3pf-density', cur);
       this.textContent = label();
     }}, label());
   }
@@ -589,114 +730,283 @@ ul.manual input{margin-top:4px}
     var d = new Date(s);
     return isNaN(d) ? s : d.toLocaleString();
   }
+  // Thousands separators so large occurrence counts stay legible at scale.
+  function fmtNum(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
 
-  // ---- header ----
-  var cp = data.controlPlane || {};
-  function renderHeader(){
-    var h = el('header', {class:'rep'});
-    h.appendChild(el('h1', {text:'Kuma 3.0 Upgrade Pre-flight Report'}));
-    var meta = el('div', {class:'meta'});
-    var cpline = (cp.product || 'Kuma') + ' ' + (cp.version || '');
-    if(cp.mode) cpline += ' (mode: ' + cp.mode + ')';
-    meta.appendChild(el('span', {text:'Control plane: ' + cpline.trim()}));
-    if(data.address) meta.appendChild(el('span', {text:'Address: ' + data.address}));
-    if(data.generatedAt) meta.appendChild(el('span', {text:'Generated: ' + fmtTime(data.generatedAt)}));
-    h.appendChild(meta);
-    var meshes = data.meshes || [];
-    if(meshes.length){
-      var chips = el('div', {class:'chips'});
-      chips.appendChild(el('span', {class:'chip', text:'Meshes:'}));
-      meshes.forEach(function(m){
-        chips.appendChild(el('button', {
-          'class':'chip mesh', 'data-mesh':m, type:'button', 'aria-pressed':'false',
-          title:'Show only ' + m + ' findings',
-          onclick:function(){ setMeshFilter(meshFilter === m ? null : m); }
-        }, m));
-      });
-      h.appendChild(chips);
-    }
-    return h;
+  function scrollToId(id){
+    var t = document.getElementById(id);
+    if(t) t.scrollIntoView({block:'start'});
   }
 
-  function renderBanner(){
-    var st = data.status;
-    var s = data.summary || {};
-    var text;
-    if(st === 'failed') text = 'Audit failed — do NOT treat this control plane as upgrade-safe.';
-    else if(st === 'blockers') text = s.blockers + ' blocker(s) must be resolved before upgrading to 3.0.';
-    else if(st === 'inconclusive') text = 'No blockers found, but the audit was inconclusive — this is NOT a clean bill of health.';
-    else text = 'No blocking resources or Mesh settings found. Review warnings, informational notes and manual checks before upgrading.';
-    var b = el('div', {class:'banner ' + st}, text);
-    if(st === 'failed' && data.error) b.classList.add('only');
-    return b;
-  }
-
-  // ---- summary cards ----
-  function renderCards(){
-    var s = data.summary || {};
-    var wrap = el('div', {class:'cards'});
-    SEV.forEach(function(sev){
-      var n = s[SEVKEY[sev]] || 0;
-      var card = el('div', {class:'card ' + sev});
-      card.appendChild(el('div', {class:'n', text:String(n)}));
-      card.appendChild(el('div', {class:'l', text:sev + 's'}));
-      wrap.appendChild(card);
-    });
-    var extras = [
-      ['coverageGaps','Coverage gaps'],
-      ['parseErrors','Unparseable'],
-      ['systemFindings','System-managed']
-    ];
-    extras.forEach(function(e){
-      var n = s[e[0]] || 0;
-      if(!n) return;
-      var card = el('div', {class:'card'});
-      card.appendChild(el('div', {class:'n', text:String(n)}));
-      card.appendChild(el('div', {class:'l', text:e[1]}));
-      wrap.appendChild(card);
-    });
-    return wrap;
-  }
-
-  function renderToolbar(){
-    var bar = el('div', {class:'toolbar'});
-    bar.appendChild(el('input', {class:'search', type:'search', placeholder:'Filter findings…',
-      oninput:function(){ query = this.value.toLowerCase(); renderFindings(); }}));
-    bar.appendChild(el('button', {class:'btn', onclick:function(){
-      query = '';
-      document.querySelector('.search').value = '';
-      setMeshFilter(null);
-    }}, 'Reset'));
-    bar.appendChild(themeBtn());
-    return bar;
-  }
-
+  // ---- which findings are visible under the active filters ----
   function matches(f){
+    if(sevFilter && f.severity !== sevFilter) return false;
     // A mesh filter hides a finding scoped to OTHER meshes — but only when its
     // mesh membership is exhaustive (attributable). A capped finding might have
-    // occurrences in the selected mesh beyond its example sample, so it is never
-    // hidden (shown as spanning all meshes). Control-plane-wide findings (no
-    // mesh) also stay visible since they apply to every mesh's upgrade.
+    // occurrences in the selected mesh beyond its sample, so it is never hidden.
     if(meshFilter && attributable(f) && findingMeshes(f).indexOf(meshFilter) < 0) return false;
     if(!query) return true;
     var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.examples||[]).join(' ')).toLowerCase();
     return hay.indexOf(query) >= 0;
   }
+  function shownFindings(){ return (data.findings || []).filter(matches); }
+
+  // ---- sidebar table-of-contents (rebuilt to reflect active filters) ----
+  var cp = data.controlPlane || {};
+  function buildSidebar(){
+    var sb = el('aside', {class:'sidebar'});
+    sb.appendChild(el('div', {class:'brand'}, [
+      el('span', {class:'mark'}),
+      el('span', null, [document.createTextNode('Pre-flight'),
+        el('div', {class:'sub', text:'Kuma 3.0 upgrade'})])
+    ]));
+    var st = data.status;
+    var vlabel = st === 'blockers' ? 'Not upgrade-ready'
+      : st === 'failed' ? 'Audit failed'
+      : st === 'inconclusive' ? 'Inconclusive'
+      : isSpotless() ? 'Upgrade-ready' : 'No blockers found';
+    sb.appendChild(el('div', {class:'sb-verdict ' + st}, [el('span', {class:'dot'}), vlabel]));
+    sb.appendChild(el('nav', {class:'toc', id:'nav'}));
+    sb.appendChild(el('div', {class:'sb-tools'}, [densityBtn(), themeBtn()]));
+    return sb;
+  }
+
+  function navLink(label, n, target){
+    return el('button', {class:'nav-link', type:'button', onclick:function(){ scrollToId(target); }}, [
+      el('span', {text:label, style:'flex:1'}),
+      el('span', {class:'nav-n sm', text:String(n)})
+    ]);
+  }
+
+  function buildNav(shown){
+    var nav = document.getElementById('nav');
+    if(!nav) return;
+    nav.innerHTML = '';
+    SEV.forEach(function(sev){
+      var fs = shown.filter(function(f){ return f.severity === sev; });
+      if(!fs.length) return;
+      var total = fs.reduce(function(a,f){ return a + shownCount(f); }, 0);
+      nav.appendChild(el('button', {class:'nav-sev', type:'button',
+        onclick:function(){ scrollToId('sec-' + sev); }}, [
+        el('span', {class:'nav-ico ' + sev}),
+        el('span', {class:'nav-lbl', text:SEVLABEL[sev]}),
+        el('span', {class:'nav-n num', text:fmtNum(total)})
+      ]));
+      var order = [], byG = {};
+      fs.forEach(function(f){ var g = groupOf(f); if(!byG[g]){ byG[g] = []; order.push(g); } byG[g].push(f); });
+      order.forEach(function(g){
+        var gt = byG[g].reduce(function(a,f){ return a + shownCount(f); }, 0);
+        nav.appendChild(el('button', {class:'nav-grp', type:'button', 'data-target':'g-' + sev + '-' + slug(g),
+          onclick:function(){ scrollToId('g-' + sev + '-' + slug(g)); }}, [
+          el('span', {class:'nav-grp-lbl', text:g, title:g}),
+          el('span', {class:'nav-n sm num', text:fmtNum(gt)})
+        ]));
+      });
+    });
+    if((data.coverageGaps || []).length) nav.appendChild(navLink('Coverage gaps', (data.coverageGaps||[]).length, 'sec-coverage'));
+    if((data.manualChecks || []).length) nav.appendChild(navLink('Manual checks', (data.manualChecks||[]).length, 'sec-manual'));
+    // setupSpy is deliberately NOT called here: buildNav runs before the group
+    // sections are appended to the DOM, so the observer must be (re)armed by the
+    // caller once the .grpblock elements exist.
+  }
+
+  // Highlight the group nav entry whose section is in view.
+  function setupSpy(){
+    if(!('IntersectionObserver' in window)) return;
+    if(spy) spy.disconnect();
+    var links = {};
+    document.querySelectorAll('.nav-grp').forEach(function(b){ links[b.getAttribute('data-target')] = b; });
+    spy = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        var b = links[en.target.id];
+        if(!b) return;
+        if(en.isIntersecting){
+          document.querySelectorAll('.nav-grp.active').forEach(function(x){ x.classList.remove('active'); });
+          b.classList.add('active');
+        }
+      });
+    }, {rootMargin:'-10% 0px -80% 0px', threshold:0});
+    document.querySelectorAll('.grpblock').forEach(function(s){ spy.observe(s); });
+  }
+
+  // ---- header ----
+  function renderHeader(){
+    var h = el('header', {class:'rep'});
+    h.appendChild(el('div', {class:'htop'}, [
+      el('span', {class:'mark'}),
+      el('h1', {text:'Kuma 3.0 Upgrade Pre-flight Report'})
+    ]));
+    var meta = el('div', {class:'meta'});
+    function part(txt, bold){ meta.appendChild(el('span', {class:(bold ? 'b' : ''), text:txt})); }
+    function sep(){ meta.appendChild(el('span', {class:'sep', text:'·'})); }
+    part((cp.product || 'Kuma') + ' ' + (cp.version || ''), true);
+    if(cp.mode){ sep(); part('mode: ' + cp.mode); }
+    sep(); part((data.meshes || []).length + ' mesh' + ((data.meshes||[]).length === 1 ? '' : 'es'));
+    if(data.address){ sep(); part(data.address); }
+    if(data.generatedAt){ sep(); part(fmtTime(data.generatedAt)); }
+    h.appendChild(meta);
+
+    var meshes = data.meshes || [];
+    if(meshes.length){
+      var chips = el('div', {class:'chips'});
+      chips.appendChild(el('span', {class:'lbl', text:'Meshes'}));
+      var CAP = 12, shown = meshes.slice(0, CAP);
+      shown.forEach(function(m){ chips.appendChild(meshChip(m)); });
+      if(meshes.length > CAP){
+        var moreBtn = el('button', {class:'chip morechip', type:'button',
+          text:'+' + (meshes.length - CAP) + ' more'});
+        moreBtn.addEventListener('click', function(){
+          meshes.slice(CAP).forEach(function(m){ chips.insertBefore(meshChip(m), moreBtn); });
+          chips.removeChild(moreBtn);
+        });
+        chips.appendChild(moreBtn);
+      }
+      h.appendChild(chips);
+    }
+    return h;
+  }
+  function meshChip(m){
+    return el('button', {'class':'chip mesh', 'data-mesh':m, type:'button', 'aria-pressed':'false',
+      title:'Show only ' + m + ' findings',
+      onclick:function(){ setMeshFilter(meshFilter === m ? null : m); }}, m);
+  }
+  function setMeshFilter(m){
+    meshFilter = m;
+    document.querySelectorAll('.chip.mesh').forEach(function(c){
+      var on = c.getAttribute('data-mesh') === meshFilter;
+      c.classList.toggle('active', on);
+      c.setAttribute('aria-pressed', String(on));
+    });
+    renderFindings();
+  }
+
+  function renderBanner(){
+    var st = data.status;
+    var s = data.summary || {};
+    var title, sub;
+    if(st === 'failed'){ title = 'Audit failed'; sub = 'Do NOT treat this control plane as upgrade-safe — re-run after fixing the cause.'; }
+    else if(st === 'blockers'){ title = fmtNum(s.blockers) + ' blocker' + (s.blockers === 1 ? '' : 's') + ' must be resolved before upgrading to 3.0'; sub = 'Each blocker is a removed or relocated API that breaks on 3.0. Work through the sections below.'; }
+    else if(st === 'inconclusive'){ title = 'Inconclusive — not a clean bill of health'; sub = 'No blockers found, but some collections could not be read. Resolve the coverage gaps before trusting this result.'; }
+    else { title = 'No blocking resources or Mesh settings found'; sub = 'Review the warnings, informational notes and manual checks before upgrading.'; }
+    return el('div', {class:'banner ' + st}, [
+      el('div', {class:'glyph', text:GLYPH[st] || '!'}),
+      el('div', {class:'btxt'}, [el('b', {text:title}), el('span', {text:sub})])
+    ]);
+  }
+
+  // ---- overview: stat cards + stacked severity bar ----
+  function renderOverview(){
+    var s = data.summary || {};
+    var wrap = el('div', {class:'overview'});
+    var cards = el('div', {class:'cards'});
+    SEV.forEach(function(sev){
+      var n = s[SEVKEY[sev]] || 0;
+      // n is occurrences (resources affected); types is the distinct, actionable
+      // issue count — both matter at scale ("1,641 resources, 24 issue types").
+      var types = (data.findings || []).filter(function(f){ return f.severity === sev; }).length;
+      var card = el('button', {class:'card ' + sev + (sevFilter === sev ? ' on' : ''), type:'button',
+        'data-sev':sev, 'aria-pressed':String(sevFilter === sev),
+        title:(sevFilter === sev ? 'Clear filter' : 'Show only ' + sev + 's'),
+        onclick:function(){ setSevFilter(sevFilter === sev ? null : sev); }});
+      card.appendChild(el('span', {class:'pin', text:'FILTERED'}));
+      card.appendChild(el('div', {class:'n', text:fmtNum(n)}));
+      card.appendChild(el('div', {class:'l', text:SEVLABEL[sev]}));
+      card.appendChild(el('div', {class:'l2 num', text:types + ' issue type' + (types === 1 ? '' : 's')}));
+      cards.appendChild(card);
+    });
+    [['coverageGaps','Coverage gaps'],['parseErrors','Unparseable'],['systemFindings','System-managed']].forEach(function(e){
+      var n = s[e[0]] || 0;
+      if(!n) return;
+      var card = el('div', {class:'card'});
+      card.appendChild(el('div', {class:'n', text:String(n)}));
+      card.appendChild(el('div', {class:'l', text:e[1]}));
+      cards.appendChild(card);
+    });
+    wrap.appendChild(cards);
+
+    var b = s.blockers || 0, w = s.warnings || 0, i = s.info || 0, tot = b + w + i;
+    var barWrap = el('div', {class:'sevbar-wrap'});
+    var bar = el('div', {class:'sevbar', role:'img',
+      'aria-label':b + ' blockers, ' + w + ' warnings, ' + i + ' info'});
+    if(tot === 0){ bar.appendChild(el('i', {class:'ok', style:'flex:1'})); }
+    else {
+      [['blocker',b],['warning',w],['info',i]].forEach(function(p){
+        if(p[1] > 0) bar.appendChild(el('i', {class:p[0], style:'flex:' + p[1]}));
+      });
+    }
+    barWrap.appendChild(bar);
+    var leg = el('div', {class:'sevleg'});
+    [['blocker','Blockers',b],['warning','Warnings',w],['info','Info',i]].forEach(function(p){
+      leg.appendChild(el('span', null, [el('span', {class:'d ' + p[0]}),
+        el('b', {class:'num', text:fmtNum(p[2])}), document.createTextNode(' ' + p[1])]));
+    });
+    barWrap.appendChild(leg);
+    wrap.appendChild(barWrap);
+    return wrap;
+  }
+  function setSevFilter(sev){
+    sevFilter = sev;
+    document.querySelectorAll('.card[data-sev]').forEach(function(c){
+      var on = c.getAttribute('data-sev') === sevFilter;
+      c.classList.toggle('on', on);
+      c.setAttribute('aria-pressed', String(on));
+    });
+    renderFindings();
+  }
+
+  function renderToolbar(){
+    var bar = el('div', {class:'toolbar'});
+    bar.appendChild(el('input', {class:'search', type:'search', name:'filter', id:'filter-findings',
+      placeholder:'Filter findings by title, detail or example…', 'aria-label':'Filter findings',
+      oninput:function(){ query = this.value.toLowerCase(); renderFindings(); }}));
+    bar.appendChild(el('button', {class:'btn', type:'button', title:'Expand every finding',
+      onclick:function(){ setAllFindings(false); }}, 'Expand all'));
+    bar.appendChild(el('button', {class:'btn', type:'button', title:'Collapse every finding',
+      onclick:function(){ setAllFindings(true); }}, 'Collapse all'));
+    bar.appendChild(el('button', {class:'btn', type:'button', onclick:function(){
+      query = ''; sevFilter = null;
+      var sb = document.querySelector('.search'); if(sb) sb.value = '';
+      document.querySelectorAll('.card[data-sev]').forEach(function(c){ c.classList.remove('on'); c.setAttribute('aria-pressed','false'); });
+      setMeshFilter(null);
+    }}, 'Reset'));
+    return bar;
+  }
+  function setAllFindings(collapsed){
+    (data.findings || []).forEach(function(f){ collapsedFindings[fid(f)] = collapsed; });
+    renderFindings();
+  }
+
+  function findingCollapsed(f){
+    var id = fid(f);
+    return (id in collapsedFindings) ? collapsedFindings[id] : bigReport;
+  }
 
   function renderFinding(f){
-    var card = el('div', {class:'finding ' + f.severity});
+    var id = fid(f);
+    var collapsed = findingCollapsed(f);
+    var wrap = el('div', {class:'finding ' + f.severity + (collapsed ? ' collapsed' : '')});
     var cnt = shownCount(f);
-    // A mesh-scoped but capped finding can't be split per mesh from its sample,
-    // so under a filter it is shown across ALL meshes (its true total) with a
-    // caveat — never hidden and never understated.
     var spanAll = meshFilter && isMeshScoped(f) && isCapped(f);
-    card.appendChild(el('div', {class:'ttl'}, [
-      el('b', {text:f.title}),
-      el('span', {class:'pill', text:cnt + ' found'})
-    ]));
-    card.appendChild(el('div', {class:'detail', text:f.detail}));
+
+    var head = el('button', {class:'f-head', type:'button', 'aria-expanded':String(!collapsed)});
+    head.appendChild(el('span', {class:'f-tick ' + f.severity}));
+    head.appendChild(el('span', {class:'f-title', text:f.title}));
+    var meta = el('span', {class:'f-meta'});
+    var ms = findingMeshes(f);
+    if(ms.length){
+      ms.slice(0,3).forEach(function(m){ meta.appendChild(el('span', {class:'tag', text:m, title:m})); });
+      if(ms.length > 3) meta.appendChild(el('span', {class:'tag', text:'+' + (ms.length - 3)}));
+    } else {
+      meta.appendChild(el('span', {class:'tag cp', text:'control plane'}));
+    }
+    head.appendChild(meta);
+    head.appendChild(el('span', {class:'f-count num', text:fmtNum(cnt), title:cnt + ' occurrence' + (cnt === 1 ? '' : 's')}));
+    head.appendChild(el('span', {class:'f-caret', text:'▸'}));
+
+    var body = el('div', {class:'f-body'});
+    body.appendChild(el('p', {class:'detail', text:f.detail}));
     if(spanAll){
-      card.appendChild(el('div', {class:'detail note',
+      body.appendChild(el('p', {class:'detail note',
         text:'Counted across all meshes — the example sample is capped, so this finding can’t be split per mesh.'}));
     }
     var ex = shownExamples(f);
@@ -707,23 +1017,46 @@ ul.manual input{margin-top:4px}
         box.appendChild(el('span', {class:'e' + (sys ? ' sys' : ''), text:e}));
       });
       if(cnt > ex.length) box.appendChild(el('span', {class:'more', text:'+' + (cnt - ex.length) + ' more'}));
-      card.appendChild(box);
+      body.appendChild(box);
     }
-    return card;
+    // Link to the Kong Mesh page explaining the 3.0 replacement API/feature. It is
+    // a click target (opened on demand), not a loaded resource, so the page stays
+    // fully self-contained and renders offline. The doc value can arrive from an
+    // untrusted --from-json payload, so only ever build an href from an https
+    // developer.konghq.com URL — never an arbitrary scheme (guards against a
+    // javascript: link or an external host); anything else is dropped.
+    if(f.doc && /^https:\/\/developer\.konghq\.com\//.test(f.doc)){
+      body.appendChild(el('a', {'class':'doclink', href:f.doc, target:'_blank', rel:'noopener noreferrer',
+        title:'Open the Kong Mesh migration docs for this item'},
+        [document.createTextNode('Kong Mesh migration docs '), el('span', {class:'arr', text:'↗'})]));
+    }
+    if(collapsed) body.style.display = 'none';
+
+    head.addEventListener('click', function(){
+      var now = !findingCollapsed(f);
+      collapsedFindings[id] = now;
+      body.style.display = now ? 'none' : '';
+      wrap.classList.toggle('collapsed', now);
+      head.setAttribute('aria-expanded', String(!now));
+    });
+    wrap.appendChild(head);
+    wrap.appendChild(body);
+    return wrap;
   }
 
   // renderGroup builds one collapsible group block: a clickable heading (with the
-  // group's finding count) over a body of category subheaders + findings. Collapse
-  // state is keyed by severity+group so it survives filter/search re-renders.
+  // group's finding count) over a body of findings. Collapse state is keyed by
+  // severity+group so it survives filter/search re-renders.
   function renderGroup(sev, group, items){
     var gid = sev + '|' + group;
     var collapsed = !!collapsedGroups[gid];
     var gTotal = items.reduce(function(a,f){ return a + shownCount(f); }, 0);
+    var block = el('div', {class:'grpblock', id:'g-' + sev + '-' + slug(group)});
     var head = el('button', {class:'grp-title' + (collapsed ? ' collapsed' : ''), type:'button',
       'aria-expanded': String(!collapsed), title:(collapsed ? 'Expand ' : 'Collapse ') + group});
     head.appendChild(el('span', {class:'caret', text:'▸'}));
     head.appendChild(el('span', {text:group}));
-    head.appendChild(el('span', {class:'grp-count', text:String(gTotal)}));
+    head.appendChild(el('span', {class:'grp-count num', text:fmtNum(gTotal)}));
     var body = el('div', {class:'grp-body'});
     if(collapsed) body.style.display = 'none';
     head.addEventListener('click', function(){
@@ -734,38 +1067,32 @@ ul.manual input{margin-top:4px}
       head.setAttribute('aria-expanded', String(!now));
       head.setAttribute('title', (now ? 'Expand ' : 'Collapse ') + group);
     });
-    // Show category subheaders only when the group spans more than one category;
-    // for a single-category group the heading already names it (avoids a
-    // redundant "Control plane" + "Control plane configuration" pair).
-    var cats = {}, nCats = 0;
-    items.forEach(function(f){ if(!cats[f.category]){ cats[f.category] = true; nCats++; } });
-    var lastCat = '';
-    items.forEach(function(f){
-      if(nCats > 1 && f.category !== lastCat){
-        body.appendChild(el('div', {class:'cat', text:f.category}));
-      }
-      lastCat = f.category;
-      body.appendChild(renderFinding(f));
-    });
-    var frag = document.createDocumentFragment();
-    frag.appendChild(head);
-    frag.appendChild(body);
-    return frag;
+    items.forEach(function(f){ body.appendChild(renderFinding(f)); });
+    block.appendChild(head);
+    block.appendChild(body);
+    return block;
   }
 
   function renderFindings(){
     var c = document.getElementById('findings');
     if(!c) return;
     c.innerHTML = '';
-    if(meshFilter){
-      c.appendChild(el('div', {class:'meshhint'}, [
-        document.createTextNode('Filtered to mesh '),
-        el('b', {text:meshFilter}),
-        document.createTextNode(' (plus control-plane-wide findings).'),
-        el('button', {type:'button', onclick:function(){ setMeshFilter(null); }}, 'Show all meshes')
-      ]));
+    if(meshFilter || sevFilter){
+      var hint = el('div', {class:'meshhint'});
+      hint.appendChild(document.createTextNode('Filtered to '));
+      if(sevFilter){ hint.appendChild(el('b', {text:sevFilter + 's'})); hint.appendChild(document.createTextNode(meshFilter ? ' in ' : '')); }
+      if(meshFilter){ hint.appendChild(document.createTextNode('mesh ')); hint.appendChild(el('b', {text:meshFilter})); hint.appendChild(document.createTextNode(' (plus control-plane-wide findings)')); }
+      hint.appendChild(document.createTextNode('. '));
+      hint.appendChild(el('button', {type:'button', onclick:function(){
+        sevFilter = null;
+        document.querySelectorAll('.card[data-sev]').forEach(function(x){ x.classList.remove('on'); x.setAttribute('aria-pressed','false'); });
+        setMeshFilter(null);
+      }}, 'Clear filters'));
+      c.appendChild(hint);
     }
-    var shown = (data.findings || []).filter(matches);
+
+    var shown = shownFindings();
+    buildNav(shown);
     if(!shown.length){
       c.appendChild(el('div', {class:'empty', text:'No findings match the current filter.'}));
       return;
@@ -774,16 +1101,13 @@ ul.manual input{margin-top:4px}
       var fs = shown.filter(function(f){ return f.severity === sev; });
       if(!fs.length) return;
       var total = fs.reduce(function(a,f){ return a + shownCount(f); }, 0);
-      // Under a mesh filter, a capped finding contributes its all-mesh total
-      // (it can't be split per mesh), so the section total isn't a clean
-      // per-mesh figure — flag that it includes all-mesh items.
       var spanAny = meshFilter && fs.some(function(f){ return isMeshScoped(f) && isCapped(f); });
-      var sec = el('section', {class:'grp'});
-      sec.appendChild(el('h2', null, [el('span', {class:'sevdot ' + sev}),
-        HEADINGS[sev] + ' (' + total + (spanAny ? ', incl. all-mesh items' : '') + ')']));
-      // Bucket the severity's findings by group, preserving the model's order
-      // (already sorted group-by-group), then render each group as a collapsible
-      // block.
+      var sec = el('section', {class:'grp', id:'sec-' + sev});
+      sec.appendChild(el('div', {class:'sechead'}, [
+        el('span', {class:'sd ' + sev}),
+        document.createTextNode(HEADINGS[sev]),
+        el('span', {class:'n num', text:fmtNum(total) + (spanAny ? ' (incl. all-mesh)' : '')})
+      ]));
       var order = [], byGroup = {};
       fs.forEach(function(f){
         var g = groupOf(f);
@@ -793,21 +1117,67 @@ ul.manual input{margin-top:4px}
       order.forEach(function(g){ sec.appendChild(renderGroup(sev, g, byGroup[g])); });
       c.appendChild(sec);
     });
+    // Arm the scrollspy now that every .grpblock section is in the DOM.
+    setupSpy();
   }
 
   function renderCoverage(){
     var cov = data.coverageGaps || [];
     if(!cov.length) return null;
-    var sec = el('section', {class:'grp'});
-    sec.appendChild(el('h2', null, 'Coverage gaps — collections NOT audited'));
-    sec.appendChild(el('p', {class:'detail', text:'These were not read, so their absence from the blockers above is unproven. Investigate before trusting a clean result.'}));
+    var sec = el('section', {class:'grp', id:'sec-coverage'});
+    sec.appendChild(el('h2', {class:'blockhead', text:'Coverage gaps — collections NOT audited'}));
+    sec.appendChild(el('p', {class:'blocksub', text:'These were not read, so their absence from the blockers above is unproven. Investigate before trusting a clean result.'}));
+    var body = el('div', {class:'grp-body'});
     cov.forEach(function(g){
       var card = el('div', {class:'finding warning'});
-      card.appendChild(el('div', {class:'ttl'}, el('b', null, el('code', {text:g.path}))));
-      card.appendChild(el('div', {class:'detail', text:g.reason}));
-      sec.appendChild(card);
+      var b = el('div', {class:'f-body', style:'border-top:0;margin-top:0;padding-top:13px'});
+      b.appendChild(el('div', null, el('code', {text:g.path})));
+      b.appendChild(el('p', {class:'detail', text:g.reason}));
+      card.appendChild(b);
+      body.appendChild(card);
     });
+    sec.appendChild(body);
     return sec;
+  }
+
+  // copyText copies to the clipboard, falling back to a hidden textarea +
+  // execCommand for file:// (a non-secure context where navigator.clipboard is
+  // unavailable). Returns a promise resolving to whether the copy succeeded.
+  function copyText(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(text).then(function(){ return true; }, function(){ return false; });
+    }
+    return new Promise(function(resolve){
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e){ ok = false; }
+      document.body.removeChild(ta);
+      resolve(ok);
+    });
+  }
+
+  // renderCmd builds a copy-able command block: a code box with a Copy button that
+  // gives transient feedback. Multi-line scripts are wrapped in a <details>
+  // disclosure so a long block stays collapsed by default; one-liners render inline.
+  function renderCmd(command){
+    var box = el('div', {class:'cmdbox'});
+    var btn = el('button', {'class':'copy', type:'button', 'aria-label':'Copy command', text:'Copy'});
+    btn.addEventListener('click', function(){
+      copyText(command).then(function(ok){
+        btn.textContent = ok ? 'Copied' : 'Copy failed';
+        setTimeout(function(){ btn.textContent = 'Copy'; }, 1500);
+      });
+    });
+    box.appendChild(el('pre', {class:'cmd'}, el('code', {text:command})));
+    box.appendChild(btn);
+    if(command.indexOf('\n') < 0) return box;
+    var det = el('details', {class:'cmd-collapsible'});
+    det.appendChild(el('summary', {text:'Show command (' + command.split('\n').length + ' lines)'}));
+    det.appendChild(box);
+    return det;
   }
 
   // ---- manual checklist (progress persisted per report) ----
@@ -818,8 +1188,9 @@ ul.manual input{margin-top:4px}
     var key = 'kuma3pf:manual:' + sig;
     var saved;
     try { saved = JSON.parse(localStorage.getItem(key)) || []; } catch(e){ saved = []; }
-    var sec = el('section', {class:'grp'});
-    sec.appendChild(el('h2', null, 'Manual checks (not detectable via the CP API)'));
+    var sec = el('section', {class:'grp', id:'sec-manual'});
+    sec.appendChild(el('h2', {class:'blockhead', text:'Manual checks (not detectable via the CP API)'}));
+    sec.appendChild(el('p', {class:'blocksub', text:'Items the control-plane API cannot reveal. Work through them by hand before the upgrade.'}));
     var prog = el('p', {class:'prog'});
     sec.appendChild(prog);
     var ul = el('ul', {class:'manual'});
@@ -831,11 +1202,13 @@ ul.manual input{margin-top:4px}
     }
     items.forEach(function(m, i){
       var li = el('li');
-      var cb = el('input', {type:'checkbox', onchange:function(){
+      var cb = el('input', {type:'checkbox', name:'manual-' + i, id:'manual-' + i, onchange:function(){
         li.classList.toggle('done', this.checked); update();
       }});
       if(saved.indexOf(i) >= 0){ cb.checked = true; li.classList.add('done'); }
-      li.appendChild(el('label', null, [cb, el('span', {text:m})]));
+      li.appendChild(el('label', null, [cb, el('span', {text:m.title})]));
+      if(m.detail) li.appendChild(el('div', {class:'detail', text:m.detail}));
+      if(m.command) li.appendChild(renderCmd(m.command));
       ul.appendChild(li);
     });
     prog.textContent = saved.length + ' / ' + items.length + ' done';
@@ -843,23 +1216,63 @@ ul.manual input{margin-top:4px}
     return sec;
   }
 
+  // A spotless run: clean status with nothing flagged and nothing unread. This is
+  // the "migration done" case — a celebration panel replaces the findings UI.
+  function isSpotless(){
+    var s = data.summary || {};
+    return data.status === 'clean' && !(s.blockers || 0) && !(s.warnings || 0)
+      && !(s.info || 0) && !(s.coverageGaps || 0) && !(s.parseErrors || 0);
+  }
+  function renderCelebrate(){
+    var wrap = el('div', {class:'celebrate'});
+    wrap.appendChild(el('div', {class:'cel-badge', text:'✓'}));
+    wrap.appendChild(el('h2', {text:'Upgrade-ready — you’re clear for Kuma 3.0'}));
+    wrap.appendChild(el('p', {text:'No blockers, no warnings, no coverage gaps. Every removed '
+      + 'API, relocated field, Mesh setting and dataplane was audited and came back clean.'}));
+    wrap.appendChild(el('p', {class:'cel-congrats',
+      text:'🎉 Congratulations to the team — the migration work is done.'}));
+    var meta = el('div', {class:'cel-meta'});
+    meta.appendChild(el('span', null, el('b', {text:((cp.product || 'Kuma') + ' ' + (cp.version || '')).trim()})));
+    if(cp.mode) meta.appendChild(el('span', {text:'mode: ' + cp.mode}));
+    var nm = (data.meshes || []).length;
+    meta.appendChild(el('span', null, [el('b', {text:String(nm)}),
+      document.createTextNode(' mesh' + (nm === 1 ? '' : 'es') + ' audited, all clean')]));
+    if(data.generatedAt) meta.appendChild(el('span', {text:'as of ' + fmtTime(data.generatedAt)}));
+    wrap.appendChild(meta);
+    return wrap;
+  }
+  function srcLine(prefix){
+    return el('p', {class:'src'}, [document.createTextNode(prefix), el('code', {text:'docs/deprecated-features.md'})]);
+  }
+
   // ---- compose ----
-  app.appendChild(renderHeader());
-  app.appendChild(renderBanner());
+  app.appendChild(buildSidebar());
+  var content = el('div', {class:'content'});
+  app.appendChild(content);
+  content.appendChild(renderHeader());
 
   if(data.status === 'failed'){
-    if(data.error) app.appendChild(el('div', {class:'err', text:data.error}));
-    app.appendChild(el('p', {class:'src', text:'Re-run after fixing the cause. Source of truth: docs/deprecated-features.md'}));
+    content.appendChild(renderBanner());
+    if(data.error) content.appendChild(el('div', {class:'err', text:data.error}));
+    content.appendChild(srcLine('Re-run after fixing the cause. Source of truth: '));
     return;
   }
 
-  app.appendChild(renderCards());
-  app.appendChild(renderToolbar());
-  app.appendChild(el('div', {id:'findings'}));
+  if(isSpotless()){
+    content.appendChild(renderCelebrate());
+    var spotlessMan = renderManual(); if(spotlessMan) content.appendChild(spotlessMan);
+    content.appendChild(srcLine('Source of truth: '));
+    return;
+  }
+
+  content.appendChild(renderBanner());
+  content.appendChild(renderOverview());
+  content.appendChild(renderToolbar());
+  content.appendChild(el('div', {id:'findings'}));
   renderFindings();
-  var cov = renderCoverage(); if(cov) app.appendChild(cov);
-  var man = renderManual(); if(man) app.appendChild(man);
-  app.appendChild(el('p', {class:'src'}, [document.createTextNode('Source of truth: '), el('code', {text:'docs/deprecated-features.md'})]));
+  var cov = renderCoverage(); if(cov) content.appendChild(cov);
+  var man = renderManual(); if(man) content.appendChild(man);
+  content.appendChild(srcLine('Source of truth: '));
 })();
 </script>
 </body>
