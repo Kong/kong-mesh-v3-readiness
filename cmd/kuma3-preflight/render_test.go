@@ -16,7 +16,7 @@ func sampleReport() *report {
 		systemFindings: 2,
 		manual:         []manualCheck{{Title: "Enable unified naming"}, {Title: "Disable inbound tags"}},
 	}
-	r.add(blocker, "Mesh object settings", "Inline mTLS on Mesh", "Migrate mtls.", "legacy (mtls)")
+	r.addDoc(blocker, "Mesh object settings", "Inline mTLS on Mesh", "Migrate mtls.", docMeshIdentity, "legacy (mtls)")
 	// 12 occurrences > exampleCap(10): exercises the "+N more" truncation.
 	for range 12 {
 		r.add(blocker, "Policy `from` field", "MeshTimeout uses `from`", "Rewrite from.", "default/t")
@@ -28,6 +28,28 @@ func sampleReport() *report {
 	r.add(warning, cpConfigCategory, "Workload labels not configured", "Set workloadLabels.", "runtime.kubernetes.workloadLabels unset")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
+}
+
+// TestAddDocBackfillsDocOnMerge guards that a finding's doc link survives merging
+// regardless of call order: a doc-less occurrence followed by a doc-bearing one
+// backfills the link, and a doc-bearing occurrence is not cleared by a later
+// doc-less one.
+func TestAddDocBackfillsDocOnMerge(t *testing.T) {
+	const url = "https://developer.konghq.com/mesh/policies/meshtrafficpermission/"
+
+	r := &report{}
+	r.add(blocker, "C", "t", "d", "ex1") // doc-less first
+	r.addDoc(blocker, "C", "t", "d", url, "ex2")
+	if got := r.findings[0].doc; got != url {
+		t.Errorf("doc not backfilled on merge: got %q, want %q", got, url)
+	}
+
+	r2 := &report{}
+	r2.addDoc(blocker, "C", "t", "d", url, "ex1") // doc first
+	r2.add(blocker, "C", "t", "d", "ex2")
+	if got := r2.findings[0].doc; got != url {
+		t.Errorf("real doc cleared by a later doc-less merge: got %q, want %q", got, url)
+	}
 }
 
 func TestToModelSummaryAndStatus(t *testing.T) {
@@ -222,16 +244,33 @@ func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	}
 	// json.Marshal escapes <,>,& so the embedded payload cannot break out of the
 	// <script> tag: the only </script> must be the one closing the data block.
-	_, tail, ok := strings.Cut(html, `<script id="report-data" type="application/json">`)
+	before, tail, ok := strings.Cut(html, `<script id="report-data" type="application/json">`)
 	if !ok {
 		t.Fatal("missing data script tag")
 	}
-	data, _, _ := strings.Cut(tail, "</script>")
+	data, after, _ := strings.Cut(tail, "</script>")
 	if strings.Contains(data, "</script>") {
 		t.Error("embedded JSON contains a raw </script> — unsafe injection")
 	}
-	if strings.Contains(html, "http://") || strings.Contains(html, "https://") {
-		t.Error("HTML references an external URL; it must be fully self-contained")
+	// The page must load zero external resources so it renders offline from
+	// file://. The CSS/JS shell (everything outside the embedded JSON data block)
+	// must therefore contain no absolute URL at all — this guards against adding a
+	// CDN/stylesheet/script/font reference to the template. The data block may carry
+	// absolute URLs (CP-derived example refs, plus the doc links), but those are
+	// rendered with textContent or gated hrefs (asserted below), never fetched.
+	shell := before + after
+	if strings.Contains(shell, "http://") || strings.Contains(shell, "https://") {
+		t.Error("HTML shell references an external URL; it must be fully self-contained")
+	}
+	// The renderer must gate doc hrefs to https developer.konghq.com URLs, so a
+	// hostile --from-json `doc` (e.g. a javascript: scheme or an external host) can
+	// never be turned into a clickable link. Lock the guard in by asserting it.
+	if !strings.Contains(html, `/^https:\/\/developer\.konghq\.com\//.test(f.doc)`) {
+		t.Error("doc-link href guard missing — an untrusted doc value could become a clickable href")
+	}
+	// Sanity: the sample's blocker carries a Kong Mesh doc link in the data block.
+	if !strings.Contains(data, "https://developer.konghq.com/mesh/") {
+		t.Error("expected a Kong Mesh doc link in the report data")
 	}
 }
 

@@ -12,30 +12,75 @@ import (
 	"strings"
 )
 
+// docBase is the Kong Mesh developer-docs root. The doc* values below point at
+// the page (or section anchor) explaining the 3.0 replacement API/feature for
+// each finding, surfaced in the report so an operator can jump straight to the
+// migration target. Keep them here (next to the checks) so the link lives with
+// the behavior, per the "audit.go is behavior" rule.
+const docBase = "https://developer.konghq.com"
+
+const (
+	docMeshTrafficPermission = docBase + "/mesh/policies/meshtrafficpermission/"
+	docMeshHTTPRoute         = docBase + "/mesh/policies/meshhttproute/"
+	docMeshAccessLog         = docBase + "/mesh/policies/meshaccesslog/"
+	docMeshTrace             = docBase + "/mesh/policies/meshtrace/"
+	docMeshFaultInjection    = docBase + "/mesh/policies/meshfaultinjection/"
+	docMeshHealthCheck       = docBase + "/mesh/policies/meshhealthcheck/"
+	docMeshCircuitBreaker    = docBase + "/mesh/policies/meshcircuitbreaker/"
+	docMeshRetry             = docBase + "/mesh/policies/meshretry/"
+	docMeshTimeout           = docBase + "/mesh/policies/meshtimeout/"
+	docMeshRateLimit         = docBase + "/mesh/policies/meshratelimit/"
+	docMeshProxyPatch        = docBase + "/mesh/policies/meshproxypatch/"
+	docMeshMetric            = docBase + "/mesh/policies/meshmetric/"
+	docMeshLoadBalancing     = docBase + "/mesh/policies/meshloadbalancingstrategy/"
+	docMeshPassthrough       = docBase + "/mesh/policies/meshpassthrough/"
+	docPolicies              = docBase + "/mesh/policies-introduction/"
+
+	docMeshService          = docBase + "/mesh/meshservice/"
+	docMeshServiceExclusive = docBase + "/mesh/meshservice/#exclusive"
+	docReachableBackends    = docBase + "/mesh/meshservice/#reachablebackends"
+	docMeshExternalService  = docBase + "/mesh/meshexternalservice/"
+	docHostnameGenerator    = docBase + "/mesh/hostnamegenerator/"
+
+	docMeshIdentity     = docBase + "/mesh/issue-identity-with-meshidentity/"
+	docDelegatedGateway = docBase + "/mesh/gateway-delegated/"
+	docZoneIngress      = docBase + "/mesh/zone-ingress/"
+	docZoneEgress       = docBase + "/mesh/zone-egress/"
+	docDNS              = docBase + "/mesh/dns/"
+	docTransparentProxy = docBase + "/mesh/transparent-proxying/"
+	docDataPlaneProxy   = docBase + "/mesh/data-plane-proxy/"
+	docAnnotations      = docBase + "/mesh/annotations/"
+	docOtelCollector    = docBase + "/mesh/deploy-an-opentelemetry-collector/"
+	docUniversal        = docBase + "/mesh/universal/"
+	docKumaCPReference  = docBase + "/mesh/reference/kuma-cp/"
+	docUpgrade          = docBase + "/mesh/upgrade/"
+)
+
 // legacyType is a resource kind removed in Kuma 3.0; any instance is a blocker.
 type legacyType struct {
 	wsPath      string
 	kind        string
 	replacement string
+	doc         string
 }
 
 // legacyMeshScoped lists removed mesh-scoped resources (classic policies + resources).
 var legacyMeshScoped = []legacyType{
-	{"traffic-permissions", "TrafficPermission", "MeshTrafficPermission (rules + spiffeID)"},
-	{"traffic-routes", "TrafficRoute", "MeshHTTPRoute / MeshTCPRoute"},
-	{"traffic-logs", "TrafficLog", "MeshAccessLog"},
-	{"traffic-traces", "TrafficTrace", "MeshTrace"},
-	{"fault-injections", "FaultInjection", "MeshFaultInjection"},
-	{"health-checks", "HealthCheck", "MeshHealthCheck"},
-	{"circuit-breakers", "CircuitBreaker", "MeshCircuitBreaker"},
-	{"retries", "Retry", "MeshRetry"},
-	{"timeouts", "Timeout", "MeshTimeout"},
-	{"rate-limits", "RateLimit", "MeshRateLimit"},
-	{"proxytemplates", "ProxyTemplate", "MeshProxyPatch"},
-	{"virtual-outbounds", "VirtualOutbound", "unified naming + MeshService hostnames"},
-	{"external-services", "ExternalService", "MeshExternalService"},
-	{"meshgateways", "MeshGateway", "delegated gateway (Kong / third-party)"},
-	{"meshgatewayroutes", "MeshGatewayRoute", "delegated gateway (Kong / third-party)"},
+	{"traffic-permissions", "TrafficPermission", "MeshTrafficPermission (rules + spiffeID)", docMeshTrafficPermission},
+	{"traffic-routes", "TrafficRoute", "MeshHTTPRoute / MeshTCPRoute", docMeshHTTPRoute},
+	{"traffic-logs", "TrafficLog", "MeshAccessLog", docMeshAccessLog},
+	{"traffic-traces", "TrafficTrace", "MeshTrace", docMeshTrace},
+	{"fault-injections", "FaultInjection", "MeshFaultInjection", docMeshFaultInjection},
+	{"health-checks", "HealthCheck", "MeshHealthCheck", docMeshHealthCheck},
+	{"circuit-breakers", "CircuitBreaker", "MeshCircuitBreaker", docMeshCircuitBreaker},
+	{"retries", "Retry", "MeshRetry", docMeshRetry},
+	{"timeouts", "Timeout", "MeshTimeout", docMeshTimeout},
+	{"rate-limits", "RateLimit", "MeshRateLimit", docMeshRateLimit},
+	{"proxytemplates", "ProxyTemplate", "MeshProxyPatch", docMeshProxyPatch},
+	{"virtual-outbounds", "VirtualOutbound", "unified naming + MeshService hostnames", docMeshService},
+	{"external-services", "ExternalService", "MeshExternalService", docMeshExternalService},
+	{"meshgateways", "MeshGateway", "delegated gateway (Kong / third-party)", docDelegatedGateway},
+	{"meshgatewayroutes", "MeshGatewayRoute", "delegated gateway (Kong / third-party)", docDelegatedGateway},
 }
 
 // newPolicyPaths are targetRef policies scanned for deprecated field usage.
@@ -239,38 +284,38 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 	ref := func(field string) string { return m.Name + " (" + field + ")" }
 
 	if spec.Mtls != nil && (spec.Mtls.EnabledBackend != "" || len(spec.Mtls.Backends) > 0) {
-		a.rep.add(blocker, "Mesh object settings", "Inline mTLS on Mesh",
-			"Migrate `mesh.mtls` to MeshIdentity + MeshTrust.", ref("mtls"))
+		a.rep.addDoc(blocker, "Mesh object settings", "Inline mTLS on Mesh",
+			"Migrate `mesh.mtls` to MeshIdentity + MeshTrust.", docMeshIdentity, ref("mtls"))
 	}
 	if spec.Networking != nil && spec.Networking.Outbound != nil && spec.Networking.Outbound.Passthrough != nil {
-		a.rep.add(blocker, "Mesh object settings", "Passthrough on Mesh",
-			"`mesh.networking.outbound.passthrough` is removed; use MeshPassthrough.", ref("networking.outbound.passthrough"))
+		a.rep.addDoc(blocker, "Mesh object settings", "Passthrough on Mesh",
+			"`mesh.networking.outbound.passthrough` is removed; use MeshPassthrough.", docMeshPassthrough, ref("networking.outbound.passthrough"))
 	}
 	if spec.Routing != nil {
 		if spec.Routing.ZoneEgress != nil {
-			a.rep.add(blocker, "Mesh object settings", "routing.zoneEgress on Mesh",
-				"`mesh.routing.zoneEgress` is removed.", ref("routing.zoneEgress"))
+			a.rep.addDoc(blocker, "Mesh object settings", "routing.zoneEgress on Mesh",
+				"`mesh.routing.zoneEgress` is removed.", docZoneEgress, ref("routing.zoneEgress"))
 		}
 		if spec.Routing.DefaultForbidMeshExternalServiceAccess != nil {
-			a.rep.add(blocker, "Mesh object settings", "defaultForbidMeshExternalServiceAccess on Mesh",
-				"`mesh.routing.defaultForbidMeshExternalServiceAccess` is removed.", ref("routing.defaultForbidMeshExternalServiceAccess"))
+			a.rep.addDoc(blocker, "Mesh object settings", "defaultForbidMeshExternalServiceAccess on Mesh",
+				"`mesh.routing.defaultForbidMeshExternalServiceAccess` is removed.", docMeshExternalService, ref("routing.defaultForbidMeshExternalServiceAccess"))
 		}
 		if spec.Routing.LocalityAwareLoadBalancing != nil {
-			a.rep.add(blocker, "Mesh object settings", "localityAwareLoadBalancing on Mesh",
-				"Replace with MeshLoadBalancingStrategy.", ref("routing.localityAwareLoadBalancing"))
+			a.rep.addDoc(blocker, "Mesh object settings", "localityAwareLoadBalancing on Mesh",
+				"Replace with MeshLoadBalancingStrategy.", docMeshLoadBalancing, ref("routing.localityAwareLoadBalancing"))
 		}
 	}
 	for _, c := range []struct {
-		present              bool
-		title, detail, field string
+		present                   bool
+		title, detail, doc, field string
 	}{
-		{hasJSON(spec.Metrics), "Inline metrics on Mesh", "Replace `mesh.metrics` with the MeshMetric policy.", "metrics"},
-		{hasJSON(spec.Tracing), "Inline tracing on Mesh", "Replace `mesh.tracing` with the MeshTrace policy.", "tracing"},
-		{hasJSON(spec.Logging), "Inline logging on Mesh", "Replace `mesh.logging` with the MeshAccessLog policy.", "logging"},
-		{hasJSON(spec.Constraints), "Mesh membership constraints", "`mesh.constraints` (membership) is removed.", "constraints"},
+		{hasJSON(spec.Metrics), "Inline metrics on Mesh", "Replace `mesh.metrics` with the MeshMetric policy.", docMeshMetric, "metrics"},
+		{hasJSON(spec.Tracing), "Inline tracing on Mesh", "Replace `mesh.tracing` with the MeshTrace policy.", docMeshTrace, "tracing"},
+		{hasJSON(spec.Logging), "Inline logging on Mesh", "Replace `mesh.logging` with the MeshAccessLog policy.", docMeshAccessLog, "logging"},
+		{hasJSON(spec.Constraints), "Mesh membership constraints", "`mesh.constraints` (membership) is removed.", docKumaCPReference, "constraints"},
 	} {
 		if c.present {
-			a.rep.add(blocker, "Mesh object settings", c.title, c.detail, ref(c.field))
+			a.rep.addDoc(blocker, "Mesh object settings", c.title, c.detail, c.doc, ref(c.field))
 		}
 	}
 	mode := ""
@@ -282,8 +327,8 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 		if shown == "" {
 			shown = "Disabled"
 		}
-		a.rep.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive",
-			"3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: "+shown+").", m.Name)
+		a.rep.addDoc(blocker, "MeshService mode", "meshServices.mode is not Exclusive",
+			"3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: "+shown+").", docMeshServiceExclusive, m.Name)
 	}
 }
 
@@ -295,8 +340,8 @@ func (a *auditor) checkLegacyResources(ctx context.Context) error {
 		}
 		for _, it := range items {
 			before := a.rep.total
-			a.rep.add(blocker, "Removed resources", lt.kind+" (removed in 3.0)",
-				"Replace with "+lt.replacement+".", a.ref(it))
+			a.rep.addDoc(blocker, "Removed resources", lt.kind+" (removed in 3.0)",
+				"Replace with "+lt.replacement+".", lt.doc, a.ref(it))
 			a.countSystem(it, before)
 		}
 	}
@@ -318,23 +363,23 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 				continue
 			}
 			if len(spec.From) > 0 {
-				a.rep.add(blocker, "Policy `from` field", it.Type+" uses `from`",
-					"Rewrite `from` as `rules` (with spiffeID where applicable).", ref)
+				a.rep.addDoc(blocker, "Policy `from` field", it.Type+" uses `from`",
+					"Rewrite `from` as `rules` (with spiffeID where applicable).", docMeshTrafficPermission, ref)
 			}
 			if spec.TargetRef != nil {
 				if k := spec.TargetRef.Kind; k != "" && !allowedTopLevelTargetRefKinds[k] {
-					a.rep.add(blocker, "Top-level targetRef kind", it.Type+" top-level targetRef.kind="+k,
-						"Top-level targetRef must be Mesh or Dataplane; use labels.", ref)
+					a.rep.addDoc(blocker, "Top-level targetRef kind", it.Type+" top-level targetRef.kind="+k,
+						"Top-level targetRef must be Mesh or Dataplane; use labels.", docPolicies, ref)
 				}
 				if len(spec.TargetRef.ProxyTypes) > 0 {
-					a.rep.add(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
-						"`proxyTypes` is removed (gateway support dropped).", ref)
+					a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
+						"`proxyTypes` is removed (gateway support dropped).", docDelegatedGateway, ref)
 				}
 			}
 			for _, to := range spec.To {
 				if k := to.TargetRef.Kind; k != "" && !allowedToTargetRefKinds[k] {
-					a.rep.add(blocker, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
-						"`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.", ref)
+					a.rep.addDoc(blocker, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
+						"`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.", docPolicies, ref)
 				}
 			}
 			a.checkPolicyFields(it, ref)
@@ -393,8 +438,8 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 		}
 		for _, t := range s.To {
 			if t.Default.HealthyPanicThreshold != nil {
-				a.rep.add(blocker, "Relocated policy fields", "MeshHealthCheck uses healthyPanicThreshold",
-					"`healthyPanicThreshold` moves to MeshCircuitBreaker in 3.0.", ref)
+				a.rep.addDoc(blocker, "Relocated policy fields", "MeshHealthCheck uses healthyPanicThreshold",
+					"`healthyPanicThreshold` moves to MeshCircuitBreaker in 3.0.", docMeshCircuitBreaker, ref)
 				break
 			}
 		}
@@ -431,19 +476,19 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 			}
 		}
 		if relocated {
-			a.rep.add(blocker, "Relocated policy fields", "MeshLoadBalancingStrategy nests hashPolicies under loadBalancer",
-				"Move `loadBalancer.{ringHash,maglev}.hashPolicies` up to `to[].default.hashPolicies`.", ref)
+			a.rep.addDoc(blocker, "Relocated policy fields", "MeshLoadBalancingStrategy nests hashPolicies under loadBalancer",
+				"Move `loadBalancer.{ringHash,maglev}.hashPolicies` up to `to[].default.hashPolicies`.", docMeshLoadBalancing, ref)
 		}
 		if sourceIP {
-			a.rep.add(blocker, "Relocated policy fields", "MeshLoadBalancingStrategy uses SourceIP hash policy",
-				"The `SourceIP` hash policy type is deprecated; use `Connection`.", ref)
+			a.rep.addDoc(blocker, "Relocated policy fields", "MeshLoadBalancingStrategy uses SourceIP hash policy",
+				"The `SourceIP` hash policy type is deprecated; use `Connection`.", docMeshLoadBalancing, ref)
 		}
 	}
 }
 
 func (a *auditor) addOtelEndpoint(typ, ref string) {
-	a.rep.add(blocker, "OpenTelemetry endpoint", typ+" uses OpenTelemetry `endpoint`",
-		"The OpenTelemetry `endpoint` field is deprecated; use `backendRef` (MeshOpenTelemetryBackend).", ref)
+	a.rep.addDoc(blocker, "OpenTelemetry endpoint", typ+" uses OpenTelemetry `endpoint`",
+		"The OpenTelemetry `endpoint` field is deprecated; use `backendRef` (MeshOpenTelemetryBackend).", docOtelCollector, ref)
 }
 
 func (a *auditor) checkDataplanes(ctx context.Context) error {
@@ -466,45 +511,48 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 		// Workload for this proxy. On Kubernetes the injector sets it from the pod,
 		// so only flag non-k8s dataplanes that are missing it.
 		if it.Labels["kuma.io/env"] != "kubernetes" && it.Labels["kuma.io/workload"] == "" {
-			a.rep.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label",
-				"On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.", qualified(it))
+			a.rep.addDoc(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label",
+				"On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.", docAnnotations, qualified(it))
 		}
 		// Universal-only: spec.probes is removed in 3.0. On Kubernetes probes are
 		// derived from the pod and need no action, so only flag non-k8s dataplanes.
 		if hasJSON(spec.Probes) && it.Labels["kuma.io/env"] != "kubernetes" {
-			a.rep.add(blocker, "Dataplane probes", "Dataplane has a probes section",
-				"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", qualified(it))
+			a.rep.addDoc(blocker, "Dataplane probes", "Dataplane has a probes section",
+				"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", docDataPlaneProxy, qualified(it))
 		}
 		// A per-proxy metrics backend (on k8s, translated from the deprecated
 		// `prometheus.metrics.kuma.io/*` pod annotations) moves to MeshMetric.
 		if hasJSON(spec.Metrics) {
-			a.rep.add(blocker, "Dataplane metrics", "Dataplane has a per-proxy metrics override",
-				"`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.", qualified(it))
+			a.rep.addDoc(blocker, "Dataplane metrics", "Dataplane has a per-proxy metrics override",
+				"`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.", docMeshMetric, qualified(it))
 		}
 		if spec.Networking == nil {
 			continue
 		}
 		if tp := spec.Networking.TransparentProxying; tp != nil && len(tp.ReachableServices) > 0 {
-			a.rep.add(blocker, "reachableServices", "Dataplane uses reachableServices",
-				"Replace `reachableServices` with `reachableBackends` (MeshService-based).", qualified(it))
+			a.rep.addDoc(blocker, "reachableServices", "Dataplane uses reachableServices",
+				"Replace `reachableServices` with `reachableBackends` (MeshService-based).", docReachableBackends, qualified(it))
 		}
 		if hasJSON(spec.Networking.Gateway) {
-			a.rep.add(blocker, "Gateway in Dataplane", "Dataplane has a gateway section",
-				"The Dataplane `networking.gateway` section is removed; use a delegated gateway.", qualified(it))
+			a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane has a gateway section",
+				"The Dataplane `networking.gateway` section is removed; use a delegated gateway.", docDelegatedGateway, qualified(it))
 		}
 	}
 	return nil
 }
 
 func (a *auditor) checkZoneProxies(ctx context.Context) error {
-	for _, wsPath := range []string{"zoneingresses", "zoneegresses"} {
-		items, err := a.listColl(ctx, "/"+wsPath)
+	for _, zp := range []struct{ wsPath, doc string }{
+		{"zoneingresses", docZoneIngress},
+		{"zoneegresses", docZoneEgress},
+	} {
+		items, err := a.listColl(ctx, "/"+zp.wsPath)
 		if err != nil {
-			return fmt.Errorf("listing %s: %w", wsPath, err)
+			return fmt.Errorf("listing %s: %w", zp.wsPath, err)
 		}
 		for _, it := range items {
-			a.rep.add(blocker, "Zone proxies", wsPath+" present",
-				"Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.", it.Name)
+			a.rep.addDoc(blocker, "Zone proxies", zp.wsPath+" present",
+				"Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.", zp.doc, it.Name)
 		}
 	}
 	return nil
@@ -542,8 +590,8 @@ func (a *auditor) checkMeshTrust(ctx context.Context) error {
 			Origin json.RawMessage `json:"origin"`
 		}
 		if json.Unmarshal(it.specBytes(), &spec) == nil && hasJSON(spec.Origin) {
-			a.rep.add(blocker, "Relocated policy fields", "MeshTrust uses spec.origin",
-				"`spec.origin` is deprecated; it moves to `status.origin` in 3.0.", qualified(it))
+			a.rep.addDoc(blocker, "Relocated policy fields", "MeshTrust uses spec.origin",
+				"`spec.origin` is deprecated; it moves to `status.origin` in 3.0.", docMeshIdentity, qualified(it))
 		}
 	}
 	return nil
@@ -643,9 +691,9 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 // call on any CP's config.
 func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
 	if strings.EqualFold(cfg.Environment, "kubernetes") && strings.EqualFold(cfg.Mode, "global") {
-		a.rep.add(blocker, cpConfigCategory, "Global control plane on Kubernetes",
+		a.rep.addDoc(blocker, cpConfigCategory, "Global control plane on Kubernetes",
 			"Global CP on Kubernetes is dropped as a deployment mode in 3.0; migrate the global CP to Universal.",
-			"mode=global")
+			docUniversal, "mode=global")
 	}
 }
 
@@ -673,44 +721,44 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 
 	// Hard removals — the upgrade breaks while these are in use.
 	if cfg.Experimental.AutoReachableServices {
-		a.rep.add(blocker, cpConfigCategory, "autoReachableServices enabled",
+		a.rep.addDoc(blocker, cpConfigCategory, "autoReachableServices enabled",
 			"`autoReachableServices` is removed entirely in 3.0; stop relying on it before upgrading.",
-			ref("experimental.autoReachableServices=true"))
+			docReachableBackends, ref("experimental.autoReachableServices=true"))
 	}
 	if onK8s && cfg.Runtime.Kubernetes.Injector.Ebpf.Enabled {
-		a.rep.add(blocker, cpConfigCategory, "eBPF transparent proxy enabled",
+		a.rep.addDoc(blocker, cpConfigCategory, "eBPF transparent proxy enabled",
 			"The eBPF transparent proxy is removed in 3.0; switch to the iptables transparent proxy.",
-			ref("runtime.kubernetes.injector.ebpf.enabled=true"))
+			docTransparentProxy, ref("runtime.kubernetes.injector.ebpf.enabled=true"))
 	}
 
 	// Required 3.0 baseline — the upgrade assumes these are already on (they pair
 	// with meshServices.mode: Exclusive), so an estate without them is broken on 3.0.
 	if onK8s && !cfg.Runtime.Kubernetes.Injector.UnifiedResourceNamingEnabled {
-		a.rep.add(blocker, cpConfigCategory, "Unified resource naming not enabled",
+		a.rep.addDoc(blocker, cpConfigCategory, "Unified resource naming not enabled",
 			"3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
-			ref("runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"))
+			docKumaCPReference, ref("runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"))
 	}
 	if !cfg.Experimental.InboundTagsDisabled {
-		a.rep.add(blocker, cpConfigCategory, "Inbound tags still enabled",
+		a.rep.addDoc(blocker, cpConfigCategory, "Inbound tags still enabled",
 			"3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
-			ref("experimental.inboundTagsDisabled=false"))
+			docMeshService, ref("experimental.inboundTagsDisabled=false"))
 	}
 
 	// Settings that become the default in 3.0 — enable and validate before upgrading.
 	if !cfg.Experimental.DeltaXds {
-		a.rep.add(blocker, cpConfigCategory, "Delta xDS not enabled",
+		a.rep.addDoc(blocker, cpConfigCategory, "Delta xDS not enabled",
 			"Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
-			ref("experimental.deltaXds=false"))
+			docKumaCPReference, ref("experimental.deltaXds=false"))
 	}
 	if !cfg.Experimental.KdsEventBasedWatchdog.Enabled {
-		a.rep.add(blocker, cpConfigCategory, "KDS event-based watchdog not enabled",
+		a.rep.addDoc(blocker, cpConfigCategory, "KDS event-based watchdog not enabled",
 			"The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
-			ref("experimental.kdsEventBasedWatchdog.enabled=false"))
+			docKumaCPReference, ref("experimental.kdsEventBasedWatchdog.enabled=false"))
 	}
 	if !cfg.Experimental.SidecarContainers {
-		a.rep.add(blocker, cpConfigCategory, "Native sidecar containers not enabled",
+		a.rep.addDoc(blocker, cpConfigCategory, "Native sidecar containers not enabled",
 			"Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
-			ref("experimental.sidecarContainers=false"))
+			docKumaCPReference, ref("experimental.sidecarContainers=false"))
 	}
 
 	// Workload grouping (metrics/traces dimension): with no workloadLabels set the
@@ -718,9 +766,9 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	// valid but only useful if ServiceAccounts are distinct per workload — a cluster
 	// left on the `default` ServiceAccount collapses every proxy into one workload.
 	if onK8s && len(cfg.Runtime.Kubernetes.WorkloadLabels) == 0 {
-		a.rep.add(warning, cpConfigCategory, "Workload labels not configured",
+		a.rep.addDoc(warning, cpConfigCategory, "Workload labels not configured",
 			"`runtime.kubernetes.workloadLabels` is unset, so the `kuma.io/workload` label (the 3.0 metrics/traces grouping dimension) is derived from each pod's ServiceAccount. Ensure ServiceAccounts are distinct per workload, or set `workloadLabels`, or proxies collapse into a single default workload.",
-			ref("runtime.kubernetes.workloadLabels unset"))
+			docAnnotations, ref("runtime.kubernetes.workloadLabels unset"))
 	}
 }
 
@@ -876,9 +924,9 @@ func (a *auditor) flagIfBehind(version, origin string, latestMin, latestPatch in
 		return
 	}
 	if behind(maj, minor, patch, latestMin, latestPatch) {
-		a.rep.add(blocker, cpVersionCategory,
+		a.rep.addDoc(blocker, cpVersionCategory,
 			fmt.Sprintf("Control plane behind the latest 2.%d patch", upgradeTargetMinor),
-			detail, origin+" ("+version+")")
+			detail, docUpgrade, origin+" ("+version+")")
 	}
 }
 
@@ -961,18 +1009,18 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 		last := subs[len(subs)-1].Version
 		kd := last.KumaDp
 		if kd.KumaCpCompatible != nil && !*kd.KumaCpCompatible {
-			a.rep.add(blocker, "Dataplane version", "Dataplane is version-incompatible with the control plane",
+			a.rep.addDoc(blocker, "Dataplane version", "Dataplane is version-incompatible with the control plane",
 				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
-				qualified(it)+" (kuma-dp "+kd.Version+")")
+				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
 		}
 		// A reported `coredns` dependency means kuma-dp launched the bundled
 		// CoreDNS, i.e. the proxy is on the legacy CoreDNS + Envoy DNS-filter
 		// path that 3.0 removes. This is a free, every-proxy signal from a
 		// payload already fetched here; --inspect-dataplanes deep-confirms it.
 		if v := last.Dependencies["coredns"]; v != "" {
-			a.rep.add(blocker, "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS",
+			a.rep.addDoc(blocker, "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS",
 				"This proxy reports a bundled CoreDNS dependency; 3.0 removes the CoreDNS + Envoy DNS-filter path — upgrade kuma-dp.",
-				qualified(it)+" (coredns "+v+")")
+				docDNS, qualified(it)+" (coredns "+v+")")
 		}
 	}
 	return nil
@@ -1008,9 +1056,9 @@ func (a *auditor) checkDataplaneEnvoyConfig(ctx context.Context) error {
 		}
 		inspected++
 		if bytes.Contains(dump, dnsFilterMarker) {
-			a.rep.add(blocker, "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter",
+			a.rep.addDoc(blocker, "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter",
 				"This proxy's Envoy config still uses the built-in `envoy.filters.udp.dns_filter`; 3.0 drops the Envoy DNS filter for the embedded DNS server — upgrade kuma-dp.",
-				qualified(it))
+				docDNS, qualified(it))
 		}
 	}
 	if inspected < len(items) {
@@ -1040,8 +1088,8 @@ func displayName(it resourceItem) string {
 
 func (a *auditor) checkName(it resourceItem, kind string) {
 	if name := displayName(it); !validRFC1035(name) {
-		a.rep.add(blocker, "Non-RFC-1035 names", kind+" name is not a valid RFC-1035 DNS label",
-			"Rename to a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter); non-conforming names are deprecated in 3.0.", qualified(it))
+		a.rep.addDoc(blocker, "Non-RFC-1035 names", kind+" name is not a valid RFC-1035 DNS label",
+			"Rename to a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter); non-conforming names are deprecated in 3.0.", docHostnameGenerator, qualified(it))
 	}
 }
 

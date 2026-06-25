@@ -7,10 +7,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
+
+// doclessBlockerAdd matches a doc-less `add(blocker, ...)` call, tolerating
+// whitespace around the paren and comma, but NOT `addDoc(blocker, ...)`: in
+// `.addDoc(` the character after `add` is `D`, not `(`, so `\.add\(` can't match.
+var doclessBlockerAdd = regexp.MustCompile(`\.add\(\s*blocker\s*,`)
 
 // update regenerates the *.golden.json reference files instead of asserting:
 //
@@ -74,6 +80,64 @@ func TestGoldenReports(t *testing.T) {
 				t.Errorf("golden mismatch for %q (run -update to accept)\n--- got ---\n%s\n--- want ---\n%s", name, got, want)
 			}
 		})
+	}
+}
+
+// TestBlockerFindingsCarryDocLinks checks the end-to-end propagation path: the
+// blockers the kitchen-sink scenario surfaces carry a Kong Mesh doc link all the
+// way through audit -> model -> JSON. It cannot cover every blocker category (one
+// fixture does not trigger them all) — TestBlockerCallSitesUseAddDoc is the
+// comprehensive guard over the call sites themselves.
+func TestBlockerFindingsCarryDocLinks(t *testing.T) {
+	dir := filepath.Join("testdata", "golden", "kitchen-sink")
+	srv := mockCP(t, dir)
+	c, err := newClient(srv.URL, "", 30*time.Second)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	latest, hasLatest := readScenarioLatest(t, dir)
+	rep, err := audit(context.Background(), c, auditOptions{
+		checkVersionCurrency: hasLatest, latestPatch: latest,
+	})
+	if err != nil {
+		t.Fatalf("audit: %v", err)
+	}
+	blockers := 0
+	for _, f := range rep.toModel("").Findings {
+		if f.Severity != blocker.String() || f.Category == "Unparseable resources" {
+			continue
+		}
+		blockers++
+		switch {
+		case f.Doc == "":
+			t.Errorf("blocker %q (%s) has no doc link", f.Title, f.Category)
+		case !strings.HasPrefix(f.Doc, docBase+"/mesh/"):
+			t.Errorf("blocker %q doc link %q is not a Kong Mesh docs URL", f.Title, f.Doc)
+		}
+	}
+	if blockers == 0 {
+		t.Fatal("kitchen-sink produced no blockers — fixture regressed")
+	}
+}
+
+// TestBlockerCallSitesUseAddDoc enforces statically — over every call site, not
+// just the ones a fixture happens to exercise — that a blocker is recorded via
+// addDoc (which carries a Kong Mesh docs link), never the doc-less add. The one
+// allowed exception is the Unparseable-resources blocker: a parse failure has no
+// 3.0 replacement API to link. A new `add(blocker, ...)` fails this test.
+func TestBlockerCallSitesUseAddDoc(t *testing.T) {
+	src, err := os.ReadFile("audit.go")
+	if err != nil {
+		t.Fatalf("reading audit.go: %v", err)
+	}
+	for i, line := range strings.Split(string(src), "\n") {
+		if !doclessBlockerAdd.MatchString(line) {
+			continue
+		}
+		if strings.Contains(line, `"Unparseable resources"`) {
+			continue // the sole blocker with no replacement API to link
+		}
+		t.Errorf("audit.go:%d records a blocker via the doc-less add(); use addDoc with a docX link:\n\t%s", i+1, strings.TrimSpace(line))
 	}
 }
 

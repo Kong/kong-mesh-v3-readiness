@@ -25,6 +25,7 @@
       "category": "Control plane configuration",
       "title": "Global control plane on Kubernetes",
       "detail": "Global CP on Kubernetes is dropped as a deployment mode in 3.0; migrate the global CP to Universal.",
+      "doc": "https://developer.konghq.com/mesh/universal/",
       "count": 1,
       "examples": [
         "mode=global"

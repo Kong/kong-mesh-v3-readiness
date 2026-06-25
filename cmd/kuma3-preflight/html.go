@@ -98,6 +98,10 @@ section.grp>h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
   padding:1px 9px;font-size:12px;color:var(--muted);white-space:nowrap}
 .finding .detail{color:var(--muted);font-size:14px;margin:6px 0 0}
 .finding .detail.note{color:var(--warning)}
+.finding .doclink{display:inline-block;margin-top:10px;font-size:13px;font-weight:600;
+  text-decoration:none}
+.finding .doclink:hover{text-decoration:underline}
+.finding .doclink .arr{color:var(--muted);font-weight:400}
 .ex{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .ex .e{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
   padding:2px 8px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -373,6 +377,18 @@ const htmlTail = `
       });
       if(cnt > ex.length) box.appendChild(el('span', {class:'more', text:'+' + (cnt - ex.length) + ' more'}));
       card.appendChild(box);
+    }
+    // Link to the Kong Mesh page explaining the 3.0 replacement API/feature. It is
+    // a click target (opened on demand), not a loaded resource, so the page stays
+    // fully self-contained and renders offline. The doc value can arrive from an
+    // untrusted --from-json payload, so only ever build an href from an https
+    // developer.konghq.com URL — never an arbitrary scheme (guards against a
+    // javascript: link or an external host); anything else is dropped.
+    if(f.doc && /^https:\/\/developer\.konghq\.com\//.test(f.doc)){
+      card.appendChild(el('a', {
+        'class':'doclink', href:f.doc, target:'_blank', rel:'noopener noreferrer',
+        title:'Open the Kong Mesh migration docs for this item'
+      }, [document.createTextNode('Kong Mesh docs '), el('span', {class:'arr', text:'↗'})]));
     }
     return card;
   }
