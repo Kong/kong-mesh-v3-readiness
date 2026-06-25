@@ -195,7 +195,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*report, error) {
 	}
 
 	for _, check := range []func(context.Context) error{
-		a.checkLegacyResources, a.checkNewPolicies, a.checkDataplanes,
+		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkNewPolicies, a.checkDataplanes,
 		a.checkZoneProxies, a.checkResourceNames, a.checkMeshTrust,
 		a.checkControlPlaneConfig, a.checkControlPlaneVersions,
 		a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
@@ -342,6 +342,31 @@ func (a *auditor) checkLegacyResources(ctx context.Context) error {
 			before := a.rep.total
 			a.rep.addDoc(blocker, "Removed resources", lt.kind+" (removed in 3.0)",
 				"Replace with "+lt.replacement+".", lt.doc, a.ref(it))
+			a.countSystem(it, before)
+		}
+	}
+	return nil
+}
+
+// checkRemovedEnterprisePolicies flags Kong Mesh (enterprise) policies removed in
+// 3.0 — any instance is a blocker. These are enterprise-only, so an OSS Kuma CP
+// 404s the collection; listIfServed treats that as "not served" (not a coverage
+// gap), unlike checkLegacyResources whose collections every CP serves.
+func (a *auditor) checkRemovedEnterprisePolicies(ctx context.Context) error {
+	for _, rp := range []struct{ wsPath, kind, detail, doc string }{
+		{
+			"meshglobalratelimits", "MeshGlobalRateLimit",
+			"MeshGlobalRateLimit is removed in 3.0 with no direct replacement (global rate limiting is dropped); remove these policies before upgrading.",
+			docPolicies,
+		},
+	} {
+		items, err := a.listIfServed(ctx, a.scopedPath(rp.wsPath))
+		if err != nil {
+			return fmt.Errorf("listing %s: %w", rp.wsPath, err)
+		}
+		for _, it := range items {
+			before := a.rep.total
+			a.rep.addDoc(blocker, "Removed resources", rp.kind+" (removed in 3.0)", rp.detail, rp.doc, a.ref(it))
 			a.countSystem(it, before)
 		}
 	}
