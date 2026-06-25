@@ -39,12 +39,15 @@ for json in "$JSON_DIR"/*.json; do
   # 0 clean, 1 blockers, 2 operational/failed, 3 inconclusive. A successful
   # render of any of those still writes the HTML, so success == file written
   # (with a status code <= 3); anything higher is a real CLI error.
+  # Capture the CLI's output and only surface it on failure, so a normal run
+  # stays quiet but a broken fixture still shows the CLI's own diagnostics.
   set +e
-  "$BIN" --from-json "$json" --format html --output "$out" >/dev/null 2>&1
+  render_output="$("$BIN" --from-json "$json" --format html --output "$out" 2>&1)"
   rc=$?
   set -e
   if [[ ! -s "$out" || "$rc" -gt 3 ]]; then
     echo "error: failed to render $json (exit $rc)" >&2
+    [[ -n "$render_output" ]] && echo "$render_output" >&2
     exit 1
   fi
   printf '  %-30s -> %s\n' "$json" "$out"
