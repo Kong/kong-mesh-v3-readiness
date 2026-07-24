@@ -44,7 +44,7 @@ const (
 
 	docMeshIdentity     = docBase + "/mesh/issue-identity-with-meshidentity/"
 	docDelegatedGateway = docBase + "/mesh/gateway-delegated/"
-	docZoneIngress      = docBase + "/mesh/zone-ingress/"
+	docZoneProxies      = docBase + "/mesh/zone-proxies/"
 	docZoneEgress       = docBase + "/mesh/zone-egress/"
 	docDNS              = docBase + "/mesh/dns/"
 	docTransparentProxy = docBase + "/mesh/transparent-proxying/"
@@ -57,30 +57,51 @@ const (
 )
 
 // legacyType is a resource kind removed in Kuma 3.0; any instance is a blocker.
+// policy marks the classic Kuma 1.x *policy* types (traffic-permissions, retries,
+// …) so they render under the Policies group; the rest are networking/gateway
+// resources that stay under Removed resources (see categoryRemoved).
 type legacyType struct {
 	wsPath      string
 	kind        string
 	replacement string
 	doc         string
+	policy      bool
 }
 
 // legacyMeshScoped lists removed mesh-scoped resources (classic policies + resources).
 var legacyMeshScoped = []legacyType{
-	{"traffic-permissions", "TrafficPermission", "MeshTrafficPermission (rules + spiffeID)", docMeshTrafficPermission},
-	{"traffic-routes", "TrafficRoute", "MeshHTTPRoute / MeshTCPRoute", docMeshHTTPRoute},
-	{"traffic-logs", "TrafficLog", "MeshAccessLog", docMeshAccessLog},
-	{"traffic-traces", "TrafficTrace", "MeshTrace", docMeshTrace},
-	{"fault-injections", "FaultInjection", "MeshFaultInjection", docMeshFaultInjection},
-	{"health-checks", "HealthCheck", "MeshHealthCheck", docMeshHealthCheck},
-	{"circuit-breakers", "CircuitBreaker", "MeshCircuitBreaker", docMeshCircuitBreaker},
-	{"retries", "Retry", "MeshRetry", docMeshRetry},
-	{"timeouts", "Timeout", "MeshTimeout", docMeshTimeout},
-	{"rate-limits", "RateLimit", "MeshRateLimit", docMeshRateLimit},
-	{"proxytemplates", "ProxyTemplate", "MeshProxyPatch", docMeshProxyPatch},
-	{"virtual-outbounds", "VirtualOutbound", "unified naming + MeshService hostnames", docMeshService},
-	{"external-services", "ExternalService", "MeshExternalService", docMeshExternalService},
-	{"meshgateways", "MeshGateway", "delegated gateway (Kong / third-party)", docDelegatedGateway},
-	{"meshgatewayroutes", "MeshGatewayRoute", "delegated gateway (Kong / third-party)", docDelegatedGateway},
+	{"traffic-permissions", "TrafficPermission", "MeshTrafficPermission (rules + spiffeID)", docMeshTrafficPermission, true},
+	{"traffic-routes", "TrafficRoute", "MeshHTTPRoute / MeshTCPRoute", docMeshHTTPRoute, true},
+	{"traffic-logs", "TrafficLog", "MeshAccessLog", docMeshAccessLog, true},
+	{"traffic-traces", "TrafficTrace", "MeshTrace", docMeshTrace, true},
+	{"fault-injections", "FaultInjection", "MeshFaultInjection", docMeshFaultInjection, true},
+	{"health-checks", "HealthCheck", "MeshHealthCheck", docMeshHealthCheck, true},
+	{"circuit-breakers", "CircuitBreaker", "MeshCircuitBreaker", docMeshCircuitBreaker, true},
+	{"retries", "Retry", "MeshRetry", docMeshRetry, true},
+	{"timeouts", "Timeout", "MeshTimeout", docMeshTimeout, true},
+	{"rate-limits", "RateLimit", "MeshRateLimit", docMeshRateLimit, true},
+	{"proxytemplates", "ProxyTemplate", "MeshProxyPatch", docMeshProxyPatch, true},
+	{"virtual-outbounds", "VirtualOutbound", "unified naming + MeshService hostnames", docMeshService, false},
+	{"external-services", "ExternalService", "MeshExternalService", docMeshExternalService, false},
+	{"meshgateways", "MeshGateway", "delegated gateway (Kong / third-party)", docDelegatedGateway, false},
+	{"meshgatewayroutes", "MeshGatewayRoute", "delegated gateway (Kong / third-party)", docDelegatedGateway, false},
+}
+
+// Categories for removed kinds. Removed classic policies render under the Policies
+// group; removed networking/gateway resources under Removed resources.
+const (
+	categoryRemovedPolicy    = "Removed policies"
+	categoryRemovedResources = "Removed resources"
+)
+
+// removedCategory picks the finding category (and thus display group) for a
+// removed kind: classic policies group with the other policy findings, resources
+// stay under Removed resources.
+func removedCategory(policy bool) string {
+	if policy {
+		return categoryRemovedPolicy
+	}
+	return categoryRemovedResources
 }
 
 // newPolicyPaths are targetRef policies scanned for deprecated field usage.
@@ -340,7 +361,7 @@ func (a *auditor) checkLegacyResources(ctx context.Context) error {
 		}
 		for _, it := range items {
 			before := a.rep.total
-			a.rep.addDoc(blocker, "Removed resources", lt.kind+" (removed in 3.0)",
+			a.rep.addDoc(blocker, removedCategory(lt.policy), lt.kind+" (removed in 3.0)",
 				"Replace with "+lt.replacement+".", lt.doc, a.ref(it))
 			a.countSystem(it, before)
 		}
@@ -366,7 +387,7 @@ func (a *auditor) checkRemovedEnterprisePolicies(ctx context.Context) error {
 		}
 		for _, it := range items {
 			before := a.rep.total
-			a.rep.addDoc(blocker, "Removed resources", rp.kind+" (removed in 3.0)", rp.detail, rp.doc, a.ref(it))
+			a.rep.addDoc(blocker, categoryRemovedPolicy, rp.kind+" (removed in 3.0)", rp.detail, rp.doc, a.ref(it))
 			a.countSystem(it, before)
 		}
 	}
@@ -558,26 +579,19 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 			a.rep.addDoc(blocker, "reachableServices", "Dataplane uses reachableServices",
 				"Replace `reachableServices` with `reachableBackends` (MeshService-based).", docReachableBackends, qualified(it))
 		}
-		if hasJSON(spec.Networking.Gateway) {
-			a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane has a gateway section",
-				"The Dataplane `networking.gateway` section is removed; use a delegated gateway.", docDelegatedGateway, qualified(it))
-		}
 	}
 	return nil
 }
 
 func (a *auditor) checkZoneProxies(ctx context.Context) error {
-	for _, zp := range []struct{ wsPath, doc string }{
-		{"zoneingresses", docZoneIngress},
-		{"zoneegresses", docZoneEgress},
-	} {
-		items, err := a.listColl(ctx, "/"+zp.wsPath)
+	for _, wsPath := range []string{"zoneingresses", "zoneegresses"} {
+		items, err := a.listColl(ctx, "/"+wsPath)
 		if err != nil {
-			return fmt.Errorf("listing %s: %w", zp.wsPath, err)
+			return fmt.Errorf("listing %s: %w", wsPath, err)
 		}
 		for _, it := range items {
-			a.rep.addDoc(blocker, "Zone proxies", zp.wsPath+" present",
-				"Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.", zp.doc, it.Name)
+			a.rep.addDoc(blocker, "Zone proxies", wsPath+" present",
+				"Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.", docZoneProxies, it.Name)
 		}
 	}
 	return nil
@@ -646,10 +660,6 @@ type cpConfig struct {
 					Enabled bool `json:"enabled"`
 				} `json:"ebpf"`
 			} `json:"injector"`
-			// WorkloadLabels is the prioritized pod-label list the CP uses to
-			// generate the kuma.io/workload label (the 3.0 metrics/traces grouping
-			// dimension). Empty means it falls back to the pod ServiceAccount name.
-			WorkloadLabels []string `json:"workloadLabels"`
 		} `json:"kubernetes"`
 	} `json:"runtime"`
 }
@@ -784,16 +794,6 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 		a.rep.addDoc(blocker, cpConfigCategory, "Native sidecar containers not enabled",
 			"Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
 			docKumaCPReference, ref("experimental.sidecarContainers=false"))
-	}
-
-	// Workload grouping (metrics/traces dimension): with no workloadLabels set the
-	// CP derives the kuma.io/workload label from each pod's ServiceAccount. That is
-	// valid but only useful if ServiceAccounts are distinct per workload — a cluster
-	// left on the `default` ServiceAccount collapses every proxy into one workload.
-	if onK8s && len(cfg.Runtime.Kubernetes.WorkloadLabels) == 0 {
-		a.rep.addDoc(warning, cpConfigCategory, "Workload labels not configured",
-			"`runtime.kubernetes.workloadLabels` is unset, so the `kuma.io/workload` label (the 3.0 metrics/traces grouping dimension) is derived from each pod's ServiceAccount. Ensure ServiceAccounts are distinct per workload, or set `workloadLabels`, or proxies collapse into a single default workload.",
-			docAnnotations, ref("runtime.kubernetes.workloadLabels unset"))
 	}
 }
 
@@ -1007,8 +1007,20 @@ type dpInsight struct {
 				Dependencies map[string]string `json:"dependencies"`
 			} `json:"version"`
 		} `json:"subscriptions"`
+		// Metadata is the proxy's last-reported xDS node metadata (added to
+		// DataplaneInsight in Kuma 2.10). Features is the capability list kuma-dp
+		// advertises, letting the audit check per-proxy 3.0 readiness without an
+		// Envoy config dump.
+		Metadata struct {
+			Features []string `json:"features"`
+		} `json:"metadata"`
 	} `json:"dataplaneInsight"`
 }
+
+// featureUnifiedNaming is the kuma-dp capability flag for the unified (KRI-based)
+// resource naming model Kuma 3.0 mandates. A connected proxy whose advertised
+// features omit it runs a kuma-dp too old to emit unified names on 3.0.
+const featureUnifiedNaming = "feature-unified-resource-naming"
 
 // checkDataplaneVersions flags data planes the control plane itself reports as
 // version-incompatible (`kumaCpCompatible: false`): they are already outside the
@@ -1046,6 +1058,17 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 			a.rep.addDoc(blocker, "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS",
 				"This proxy reports a bundled CoreDNS dependency; 3.0 removes the CoreDNS + Envoy DNS-filter path — upgrade kuma-dp.",
 				docDNS, qualified(it)+" (coredns "+v+")")
+		}
+		// unified-resource-naming is advertised only when the CP has it enabled and
+		// the proxy has (re)connected since, so a proxy whose feature list omits it
+		// is not yet on unified naming — the per-proxy blast radius of the CP-level
+		// "Unified resource naming not enabled" check, and how stragglers are caught
+		// once the CP flag is on. An empty list (older CP that reported no metadata)
+		// is not conclusive, so it is skipped rather than flagged as a false gap.
+		if feats := ins.DataplaneInsight.Metadata.Features; len(feats) > 0 && !slices.Contains(feats, featureUnifiedNaming) {
+			a.rep.addDoc(blocker, "Dataplane features", "Dataplane is not using unified resource naming",
+				"This proxy does not advertise the `feature-unified-resource-naming` capability, so it is not emitting the unified (KRI-based) resource names Kuma 3.0 requires. Enable `unifiedResourceNamingEnabled` on the control plane (if not already) and restart/re-inject the proxy so it adopts unified naming before upgrading.",
+				docKumaCPReference, qualified(it))
 		}
 	}
 	return nil
@@ -1119,10 +1142,17 @@ func (a *auditor) checkName(it resourceItem, kind string) {
 }
 
 func qualified(it resourceItem) string {
+	name := it.Name
 	if it.Mesh != "" {
-		return it.Mesh + "/" + it.Name
+		name = it.Mesh + "/" + it.Name
 	}
-	return it.Name
+	// On a global CP, resources synced from zones carry kuma.io/zone. Append it as a
+	// parsable suffix so the report can attribute (and filter) the finding by zone.
+	// The mesh stays the leading segment, so mesh attribution is unaffected.
+	if z := it.Labels["kuma.io/zone"]; z != "" {
+		name += " [zone:" + z + "]"
+	}
+	return name
 }
 
 func hasJSON(raw json.RawMessage) bool {
@@ -1173,7 +1203,6 @@ type dataplaneSpec struct {
 	Probes     json.RawMessage `json:"probes"`
 	Metrics    json.RawMessage `json:"metrics"`
 	Networking *struct {
-		Gateway             json.RawMessage `json:"gateway"`
 		TransparentProxying *struct {
 			ReachableServices []string `json:"reachableServices"`
 		} `json:"transparentProxying"`
@@ -1322,60 +1351,6 @@ var kubernetesManualChecks = []manualCheck{
 			"resource. The command below lists offenders; empty output means there is " +
 			"nothing left to fix.",
 		Command: `kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != "")) | join("/")'`,
-	},
-	{
-		Title: "Pod resources instead of container resources",
-		Detail: "On Kubernetes the 3.0 injector sets the sidecar's CPU and memory at the " +
-			"pod level (`spec.resources`) instead of on each injected container. This is a " +
-			"behavior change in the injector, not a setting you flip, and the control-plane " +
-			"API exposes neither pod resource specs nor the cluster's Kubernetes version, so " +
-			"the tool cannot check it for you. Pod-level resources are on by default from " +
-			"Kubernetes 1.34; on 1.32-1.33 (or with the `PodLevelResources` feature gate " +
-			"turned off) the injected proxy ends up with no requests or limits unless you " +
-			"enable the gate or fall back to `ContainerPatch`. The command below reports your " +
-			"API server version and whether action is needed.",
-		Command: `kubectl version -o json | jq -r '(.serverVersion.minor | gsub("[^0-9]";"") | tonumber) as $m | "K8s " + .serverVersion.major + "." + .serverVersion.minor + (if $m >= 34 then ": pod-level resources on by default — no action" else ": enable the PodLevelResources feature gate or use ContainerPatch" end)'`,
-	},
-	{
-		Title: "Gateway API / GAMMA usage migrated off built-in support",
-		Detail: "Kuma 3.0 exits the gateway business: the builtin gateway and the " +
-			"Kubernetes Gateway API / GAMMA translation layer are both removed. Any " +
-			"north-south ingress routed through a `Gateway` (an HTTPRoute attached to a " +
-			"Gateway) and any east-west GAMMA route (an HTTPRoute attached to a Service) " +
-			"that Kuma renders today stops working after the upgrade. These are native " +
-			"`gateway.networking.k8s.io` CRDs owned by upstream controllers, not Kuma " +
-			"resources, so they never appear over the control-plane API — only the " +
-			"`MeshGateway`/`MeshGatewayRoute` they generate get flagged automatically. " +
-			"Kuma claims usage through the GatewayClass controller " +
-			"`gateways.kuma.io/controller`: move north-south ingress onto a delegated " +
-			"gateway (Kong or another third-party) and re-express GAMMA routes as native " +
-			"`MeshHTTPRoute`/`MeshTCPRoute` policies. The command reports whether the " +
-			"Gateway API is installed and, if so, lists the Kuma GatewayClasses, the " +
-			"Gateways bound to them, and any Service-attached HTTPRoutes still in use — " +
-			"no rows means nothing left to migrate; connectivity or RBAC errors surface " +
-			"rather than being mistaken for a clean result.",
-		Command: `(
-  gw=$(kubectl api-resources --api-group=gateway.networking.k8s.io -o name) || exit 1
-  if [ -z "$gw" ]; then
-    echo "Gateway API not installed — no Gateway API / GAMMA usage to migrate"
-    exit 0
-  fi
-  kubectl get gatewayclass,gateway,httproute -A -o json \
-    | jq -rs '
-        (.[0].items // []) as $items
-        | [ $items[]
-            | select(.kind == "GatewayClass" and .spec.controllerName == "gateways.kuma.io/controller")
-            | .metadata.name ] as $kc
-        | $items[]
-        | . as $r
-        | select(
-                (.kind == "GatewayClass" and ($kc | index($r.metadata.name)))
-             or (.kind == "Gateway"      and ($kc | index($r.spec.gatewayClassName)))
-             or (.kind == "HTTPRoute"    and ((.spec.parentRefs // []) | any(.kind == "Service")))
-          )
-        | [.kind, (.metadata.namespace // "-"), .metadata.name]
-        | join("/")'
-)`,
 	},
 }
 

@@ -35,13 +35,6 @@ func TestDataplaneDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			severity: "blocker", category: "reachableServices", title: "Dataplane uses reachableServices",
 		},
 		{
-			name: "gateway section",
-			dp: map[string]any{"networking": map[string]any{
-				"gateway": map[string]any{"type": "BUILTIN", "tags": map[string]any{"kuma.io/service": "gw"}},
-			}},
-			severity: "blocker", category: "Gateway in Dataplane", title: "Dataplane has a gateway section",
-		},
-		{
 			name: "universal probes",
 			dp: map[string]any{
 				"labels": map[string]any{"kuma.io/env": "universal"},

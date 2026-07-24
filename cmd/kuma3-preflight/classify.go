@@ -339,7 +339,10 @@ var fieldFindingToKind = map[string]string{
 // dynamicUsage projects a live-audit finding onto the classifier's (kind, removable)
 // taxonomy so dynamic findings merge with static markers of the same kind.
 func dynamicUsage(f findingModel) (string, bool, string, string) {
-	if f.Category == "Removed resources" {
+	// Both removed-kind categories (classic policies now group under Policies,
+	// networking/gateway resources under Removed resources) carry the kind in the
+	// title, so classify maps them the same way.
+	if f.Category == categoryRemovedResources || f.Category == categoryRemovedPolicy {
 		kind := strings.TrimSuffix(f.Title, " (removed in 3.0)")
 		return kind, true, "Removed resource", replacementFor(kind)
 	}

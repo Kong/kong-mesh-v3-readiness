@@ -28,8 +28,7 @@ const readyConfigJSON = `{
     "injector": {
       "unifiedResourceNamingEnabled": true,
       "ebpf": {"enabled": false}
-    },
-    "workloadLabels": ["app.kubernetes.io/name"]
+    }
   }}
 }`
 

@@ -5,6 +5,7 @@
       "type": "DataplaneOverview",
       "mesh": "default",
       "name": "legacy-dp.kuma-demo",
+      "labels": { "kuma.io/zone": "east" },
       "dataplaneInsight": {
         "subscriptions": [
           {
@@ -15,23 +16,27 @@
               "dependencies": { "coredns": "1.11.1" }
             }
           }
-        ]
+        ],
+        "metadata": { "features": ["feature-bind-outbounds"] }
       }
     },
     {
       "type": "DataplaneOverview",
       "mesh": "default",
       "name": "current-dp.kuma-demo",
+      "labels": { "kuma.io/zone": "west" },
       "dataplaneInsight": {
         "subscriptions": [
           {
             "id": "sub-2",
             "version": {
               "kumaDp": { "version": "2.9.0", "kumaCpCompatible": true },
-              "envoy": { "version": "1.34.0" }
+              "envoy": { "version": "1.34.0" },
+              "dependencies": { "coredns": "1.11.1" }
             }
           }
-        ]
+        ],
+        "metadata": { "features": ["feature-bind-outbounds", "feature-unified-resource-naming"] }
       }
     }
   ],

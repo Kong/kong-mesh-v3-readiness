@@ -174,7 +174,7 @@ func TestIngestReportsMergeAndDelta(t *testing.T) {
 	reports := t.TempDir()
 	// A removed resource attributed by its mesh ("trafficroute" -> static feature).
 	removed := findingModel{
-		Severity: "blocker", Category: "Removed resources",
+		Severity: "blocker", Category: "Removed policies",
 		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []string{"trafficroute/route-all"},
 	}
 	infoFinding := findingModel{Severity: "info", Category: "Dataplane DNS", Title: "Envoy config inspected for a sample of dataplanes", Count: 1}
@@ -427,7 +427,7 @@ func TestIngestReportsSkipsForeignJSON(t *testing.T) {
 	ci := newClassIndex()
 	reports := t.TempDir()
 	writeSnapshot(t, reports, "0001-spec.json", []findingModel{{
-		Severity: "blocker", Category: "Removed resources",
+		Severity: "blocker", Category: "Removed policies",
 		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []string{"tr/route"},
 	}})
 	// A classification report and plain garbage in the same dir must be skipped, not fatal.
