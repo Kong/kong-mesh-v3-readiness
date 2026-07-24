@@ -10,9 +10,9 @@ package main
 // across many meshes must stay scannable. The renderer keeps the DOM bounded
 // (findings are pre-merged with a capped example sample) and adds navigation —
 // a sticky table-of-contents with live counts — plus per-finding progressive
-// disclosure (every detail collapses), a density toggle and expand/collapse-all.
+// disclosure (every detail collapses) and expand/collapse-all.
 const htmlHead = `<!doctype html>
-<html lang="en" data-theme="dark" data-density="cozy">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -44,7 +44,6 @@ html[data-theme="light"]{
   --ok:#1a7f37;--ok-bg:rgba(26,127,55,.09);--ok-bd:rgba(26,127,55,.30);
   --shadow:0 1px 2px rgba(16,24,40,.06),0 10px 24px -14px rgba(16,24,40,.18);
 }
-html[data-density="compact"]{--row:8px;--row-px:12px}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
@@ -75,12 +74,9 @@ button{font:inherit}
 }
 .content{min-width:0;padding:26px 0 110px}
 
-/* ---- brand mark (CSS mesh-node grid, no external asset) ---- */
-.mark{width:22px;height:22px;border-radius:6px;flex:none;
-  background:
-    radial-gradient(circle at center,var(--accent) 1.5px,transparent 1.9px) 0 0/7.3px 7.3px,
-    linear-gradient(135deg,var(--accent-soft),transparent);
-  box-shadow:inset 0 0 0 1px var(--border-2)}
+/* ---- brand mark (inline Kong logo, no external asset) ---- */
+.mark{flex:none;display:flex;align-items:center;color:var(--text)}
+.mark svg{height:22px;width:auto;display:block}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.2px}
 .brand .sub{font-size:11px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.08em}
 
@@ -129,10 +125,11 @@ header.rep h1{font-size:23px;line-height:1.2;margin:0;letter-spacing:-.01em;font
 .chips .lbl{color:var(--faint);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:650;margin-right:2px}
 .chip{background:var(--surface-2);border:1px solid var(--border);border-radius:999px;
   padding:3px 11px;font-size:12px;color:var(--muted)}
-.chip.mesh{color:var(--text);cursor:pointer;font-weight:560;
+.chip.mesh,.chip.zone{color:var(--text);cursor:pointer;font-weight:560;
   transition:border-color .14s,background .14s,color .14s}
-.chip.mesh:hover{border-color:var(--accent);color:var(--text)}
+.chip.mesh:hover,.chip.zone:hover{border-color:var(--accent);color:var(--text)}
 .chip.mesh.active{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:700}
+.chip.zone.active{background:var(--info);border-color:var(--info);color:#04121f;font-weight:700}
 .chip.morechip{cursor:pointer;color:var(--accent);background:none;border-style:dashed}
 
 /* ---- verdict banner ---- */
@@ -252,6 +249,7 @@ section.grp>.sechead .n{margin-left:auto;color:var(--faint);font-weight:700;font
 .f-meta .tag{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
   padding:1px 7px;font-size:11px;color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .f-meta .tag.cp{color:var(--accent);border-color:var(--accent-soft);background:var(--accent-soft)}
+.f-meta .tag.zone{color:var(--info);border-color:var(--info-bd)}
 @media(max-width:680px){.f-meta{display:none}}
 .f-count{font-variant-numeric:tabular-nums;font-weight:720;font-size:13px;color:var(--text);
   background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:1px 10px;flex:none}
@@ -342,6 +340,10 @@ const htmlTail = `
   try { data = JSON.parse(document.getElementById('report-data').textContent); }
   catch(e){ app.textContent = 'Failed to parse report data: ' + e; return; }
 
+  // The tool emits only blocker and info findings; the warning tier is retained so
+  // a warning-carrying report captured by an older build still renders under
+  // --from-json. Warning UI (card, bar segment, legend) is shown only when the
+  // count is non-zero, so a current report surfaces no empty warnings affordance.
   var SEV = ['blocker','warning','info'];
   var SEVKEY = {blocker:'blockers', warning:'warnings', info:'info'};
   var SEVLABEL = {blocker:'Blockers', warning:'Warnings', info:'Info'};
@@ -352,8 +354,16 @@ const htmlTail = `
   };
   var GLYPH = {blockers:'✕', failed:'✕', inconclusive:'!', clean:'✓'};
 
+  // Inline Kong logo (monochrome, inherits currentColor). Embedded as static
+  // markup so the page stays fully self-contained — no external asset. The xmlns
+  // is intentionally omitted: the HTML parser namespaces inline <svg> on its own,
+  // and an http(s) URL here would trip the self-contained-shell test.
+  var KONG_LOGO = '<svg fill="none" viewBox="0 0 126 40" role="img" aria-label="Kong"><g fill="currentColor"><path d="m14.7 32.947-1.1 1.39 2.487 3.872L15.828 40h10.553l.73-1.79-4.244-5.263zM20.47 9.382l-3.816 6.657 18.618 21.948-.53 2.013h8.54l1.546-7.14L24.905 9.379z"></path><path d="m23.006 4.378-1.816 3.33h4.504l7.73 9.164 4.595-3.76v-2.387l-1.596-2.234 1.18-1.223L28.383 0zM9.147 22.928H6.63L0 31.313V40h7.112l1.257-1.627 5.487-7.078h7.937l2.444-3.73-8.606-10.176z"></path></g><path fill="currentColor" fill-rule="evenodd" d="M77.122 27.387h6.192v-9.46h-6.192zm.217 3.784c-1.724 0-2.62-.279-3.357-1.046-1.108-1.11-1.538-2.651-1.538-7.431s.43-6.321 1.538-7.462c.71-.74 1.633-1.02 3.357-1.02h5.758c1.723 0 2.619.28 3.356 1.02 1.109 1.14 1.538 2.651 1.538 7.462s-.43 6.322-1.538 7.43c-.737.772-1.633 1.047-3.356 1.047zM101.997 19.559v11.608h4.709V19.185c0-2.486-.276-3.379-.986-4.055-.647-.646-1.574-.937-3.021-.937l-4.142.012-2.374 2.136v-2.136H91.49v16.958h4.709V17.92h5.79v1.632zM65.077 9.54h5.608l-8.054 10.164 8.393 11.463h-5.947l-6.386-9.004-1.514-.008v9.012h-5.049V9.54h5.049v8.382h1.514zM121.161 14.21v2.135l-2.375-2.136-3.534-.012c-1.692 0-2.685.292-3.455 1.027-1.017 1.042-1.51 3.324-1.51 7.502 0 4.177.402 6.365 1.384 7.38.769.735 1.684 1.062 3.503 1.062h5.975l.008 2.427-8.295.015.008.996 2.142 2.368h6.484c1.723 0 2.709-.307 3.325-.952.769-.799 1.076-1.294 1.076-4.21V14.214h-4.74zm.031 13.158H115v-9.445h6.188v9.445z" clip-rule="evenodd"></path></svg>';
+  function kongMark(){ var s = el('span', {class:'mark'}); s.innerHTML = KONG_LOGO; return s; }
+
   var query = '';
   var meshFilter = null;
+  var zoneFilter = null;
   var sevFilter = null;
   var collapsedGroups = {};   // keyed "<severity>|<group>"; persists across re-renders
   var collapsedFindings = {}; // keyed by fid(f); undefined => default for report size
@@ -389,23 +399,53 @@ const htmlTail = `
     return f._meshes;
   }
   function isMeshScoped(f){ return findingMeshes(f).length > 0; }
-  // The examples are a server-capped sample (exampleCap). When count exceeds the
-  // held examples, the sample is partial: a mesh can have occurrences that fall
-  // outside it, so the per-mesh attribution below cannot be trusted to be
-  // complete. attributable() means "examples are exhaustive, so membership and
-  // per-mesh counts are exact".
+
+  // Zone attribution parallels mesh. A resource example carries its zone as a
+  // "[zone:<name>]" suffix (added by the audit from kuma.io/zone); per-zone CP
+  // config and version findings carry a leading "zone <name>" instead.
+  function zoneOf(example){
+    var m = example.match(/\[zone:([^\]]+)\]/);
+    if(m) return m[1];
+    m = example.match(/^zone ([^\s:]+)/);
+    return m ? m[1] : null;
+  }
+  function findingZones(f){
+    if(!f._zones){
+      var seen = {};
+      (f.examples || []).forEach(function(e){ var z = zoneOf(e); if(z) seen[z] = true; });
+      f._zones = Object.keys(seen);
+    }
+    return f._zones;
+  }
+  function isZoneScoped(f){ return findingZones(f).length > 0; }
+
+  // Derived from the findings — a zone with no findings has nothing to filter.
+  var zoneSet = {};
+  (data.findings || []).forEach(function(f){ findingZones(f).forEach(function(z){ zoneSet[z] = true; }); });
+  var allZones = Object.keys(zoneSet).sort();
+
+  // The examples are a server-capped sample (exampleCap): once count exceeds the
+  // held examples, an occurrence can fall outside it, so per-mesh/zone attribution
+  // is no longer exact. exhaustive() gates the filtering that assumes exactness.
   function isCapped(f){ return f.count > (f.examples || []).length; }
-  function attributable(f){ return isMeshScoped(f) && !isCapped(f); }
+  function exhaustive(f){ return !isCapped(f); }
+  // A capped sample may hide matching occurrences, so only narrow (filter examples
+  // and recount) when the sample is exhaustive and a scoping filter is active.
+  function narrowed(f){
+    return exhaustive(f) && ((meshFilter && isMeshScoped(f)) || (zoneFilter && isZoneScoped(f)));
+  }
+  function exampleInFilters(f, e){
+    if(meshFilter && isMeshScoped(f) && meshOf(e) !== meshFilter) return false;
+    if(zoneFilter && isZoneScoped(f) && zoneOf(e) !== zoneFilter) return false;
+    return true;
+  }
   function shownExamples(f){
     var ex = f.examples || [];
-    if(meshFilter && attributable(f)) return ex.filter(function(e){ return meshOf(e) === meshFilter; });
+    if(narrowed(f)) return ex.filter(function(e){ return exampleInFilters(f, e); });
     return ex;
   }
-  // Effective count under the active filter. Exact per-mesh count only when the
-  // finding is attributable; for a capped finding we show its true total across
-  // all meshes (renderFinding flags that it is not split per mesh).
   function shownCount(f){
-    if(meshFilter && attributable(f)) return shownExamples(f).length;
+    if(narrowed(f)) return shownExamples(f).length;
     return f.count;
   }
 
@@ -427,11 +467,9 @@ const htmlTail = `
     return n;
   }
 
-  // ---- theme + density (persisted) ----
+  // ---- theme (persisted) ----
   var savedTheme = localStorage.getItem('kuma3pf-theme');
   if(savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
-  var savedDensity = localStorage.getItem('kuma3pf-density');
-  if(savedDensity) document.documentElement.setAttribute('data-density', savedDensity);
   function themeBtn(){
     function label(){ return document.documentElement.getAttribute('data-theme') === 'light' ? 'Dark' : 'Light'; }
     return el('button', {class:'btn icon', title:'Toggle light/dark theme', onclick:function(){
@@ -441,16 +479,6 @@ const htmlTail = `
       this.textContent = label();
     }}, label());
   }
-  function densityBtn(){
-    function label(){ return document.documentElement.getAttribute('data-density') === 'compact' ? 'Cozy' : 'Compact'; }
-    return el('button', {class:'btn icon', title:'Toggle row density', onclick:function(){
-      var cur = document.documentElement.getAttribute('data-density') === 'compact' ? 'cozy' : 'compact';
-      document.documentElement.setAttribute('data-density', cur);
-      localStorage.setItem('kuma3pf-density', cur);
-      this.textContent = label();
-    }}, label());
-  }
-
   function fmtTime(s){
     if(!s) return '';
     var d = new Date(s);
@@ -467,10 +495,13 @@ const htmlTail = `
   // ---- which findings are visible under the active filters ----
   function matches(f){
     if(sevFilter && f.severity !== sevFilter) return false;
-    // A mesh filter hides a finding scoped to OTHER meshes — but only when its
-    // mesh membership is exhaustive (attributable). A capped finding might have
-    // occurrences in the selected mesh beyond its sample, so it is never hidden.
-    if(meshFilter && attributable(f) && findingMeshes(f).indexOf(meshFilter) < 0) return false;
+    // A mesh/zone filter hides a finding scoped to OTHER values — but only when its
+    // membership is exhaustive. A capped finding might have occurrences in the
+    // selected mesh/zone beyond its sample, so it is never hidden.
+    if(exhaustive(f)){
+      if(meshFilter && isMeshScoped(f) && findingMeshes(f).indexOf(meshFilter) < 0) return false;
+      if(zoneFilter && isZoneScoped(f) && findingZones(f).indexOf(zoneFilter) < 0) return false;
+    }
     if(!query) return true;
     var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.examples||[]).join(' ')).toLowerCase();
     return hay.indexOf(query) >= 0;
@@ -482,7 +513,7 @@ const htmlTail = `
   function buildSidebar(){
     var sb = el('aside', {class:'sidebar'});
     sb.appendChild(el('div', {class:'brand'}, [
-      el('span', {class:'mark'}),
+      kongMark(),
       el('span', null, [document.createTextNode('Pre-flight'),
         el('div', {class:'sub', text:'Kuma 3.0 upgrade'})])
     ]));
@@ -493,7 +524,7 @@ const htmlTail = `
       : isSpotless() ? 'Upgrade-ready' : 'No blockers found';
     sb.appendChild(el('div', {class:'sb-verdict ' + st}, [el('span', {class:'dot'}), vlabel]));
     sb.appendChild(el('nav', {class:'toc', id:'nav'}));
-    sb.appendChild(el('div', {class:'sb-tools'}, [densityBtn(), themeBtn()]));
+    sb.appendChild(el('div', {class:'sb-tools'}, [themeBtn()]));
     return sb;
   }
 
@@ -559,7 +590,7 @@ const htmlTail = `
   function renderHeader(){
     var h = el('header', {class:'rep'});
     h.appendChild(el('div', {class:'htop'}, [
-      el('span', {class:'mark'}),
+      kongMark(),
       el('h1', {text:'Kuma 3.0 Upgrade Pre-flight Report'})
     ]));
     var meta = el('div', {class:'meta'});
@@ -589,6 +620,14 @@ const htmlTail = `
       }
       h.appendChild(chips);
     }
+
+    // Zones come from the findings (only zones with findings are worth filtering).
+    if(allZones.length){
+      var zchips = el('div', {class:'chips'});
+      zchips.appendChild(el('span', {class:'lbl', text:'Zones'}));
+      allZones.forEach(function(z){ zchips.appendChild(zoneChip(z)); });
+      h.appendChild(zchips);
+    }
     return h;
   }
   function meshChip(m){
@@ -605,6 +644,20 @@ const htmlTail = `
     });
     renderFindings();
   }
+  function zoneChip(z){
+    return el('button', {'class':'chip zone', 'data-zone':z, type:'button', 'aria-pressed':'false',
+      title:'Show only ' + z + ' findings',
+      onclick:function(){ setZoneFilter(zoneFilter === z ? null : z); }}, z);
+  }
+  function setZoneFilter(z){
+    zoneFilter = z;
+    document.querySelectorAll('.chip.zone').forEach(function(c){
+      var on = c.getAttribute('data-zone') === zoneFilter;
+      c.classList.toggle('active', on);
+      c.setAttribute('aria-pressed', String(on));
+    });
+    renderFindings();
+  }
 
   function renderBanner(){
     var st = data.status;
@@ -613,7 +666,7 @@ const htmlTail = `
     if(st === 'failed'){ title = 'Audit failed'; sub = 'Do NOT treat this control plane as upgrade-safe — re-run after fixing the cause.'; }
     else if(st === 'blockers'){ title = fmtNum(s.blockers) + ' blocker' + (s.blockers === 1 ? '' : 's') + ' must be resolved before upgrading to 3.0'; sub = 'Each blocker is a removed or relocated API that breaks on 3.0. Work through the sections below.'; }
     else if(st === 'inconclusive'){ title = 'Inconclusive — not a clean bill of health'; sub = 'No blockers found, but some collections could not be read. Resolve the coverage gaps before trusting this result.'; }
-    else { title = 'No blocking resources or Mesh settings found'; sub = 'Review the warnings, informational notes and manual checks before upgrading.'; }
+    else { title = 'No blocking resources or Mesh settings found'; sub = 'Review the informational notes and manual checks before upgrading.'; }
     return el('div', {class:'banner ' + st}, [
       el('div', {class:'glyph', text:GLYPH[st] || '!'}),
       el('div', {class:'btxt'}, [el('b', {text:title}), el('span', {text:sub})])
@@ -627,6 +680,9 @@ const htmlTail = `
     var cards = el('div', {class:'cards'});
     SEV.forEach(function(sev){
       var n = s[SEVKEY[sev]] || 0;
+      // Warnings are legacy: hide the card unless an older report actually carries
+      // some, so a current report shows no empty warnings affordance.
+      if(sev === 'warning' && !n) return;
       // n is occurrences (resources affected); types is the distinct, actionable
       // issue count — both matter at scale ("1,641 resources, 24 issue types").
       var types = (data.findings || []).filter(function(f){ return f.severity === sev; }).length;
@@ -653,7 +709,7 @@ const htmlTail = `
     var b = s.blockers || 0, w = s.warnings || 0, i = s.info || 0, tot = b + w + i;
     var barWrap = el('div', {class:'sevbar-wrap'});
     var bar = el('div', {class:'sevbar', role:'img',
-      'aria-label':b + ' blockers, ' + w + ' warnings, ' + i + ' info'});
+      'aria-label':b + ' blockers, ' + (w ? w + ' warnings, ' : '') + i + ' info'});
     if(tot === 0){ bar.appendChild(el('i', {class:'ok', style:'flex:1'})); }
     else {
       [['blocker',b],['warning',w],['info',i]].forEach(function(p){
@@ -662,7 +718,9 @@ const htmlTail = `
     }
     barWrap.appendChild(bar);
     var leg = el('div', {class:'sevleg'});
+    // Warning legend entry only when a (legacy) report actually carries warnings.
     [['blocker','Blockers',b],['warning','Warnings',w],['info','Info',i]].forEach(function(p){
+      if(p[0] === 'warning' && !p[2]) return;
       leg.appendChild(el('span', null, [el('span', {class:'d ' + p[0]}),
         el('b', {class:'num', text:fmtNum(p[2])}), document.createTextNode(' ' + p[1])]));
     });
@@ -693,6 +751,7 @@ const htmlTail = `
       query = ''; sevFilter = null;
       var sb = document.querySelector('.search'); if(sb) sb.value = '';
       document.querySelectorAll('.card[data-sev]').forEach(function(c){ c.classList.remove('on'); c.setAttribute('aria-pressed','false'); });
+      setZoneFilter(null);
       setMeshFilter(null);
     }}, 'Reset'));
     return bar;
@@ -712,19 +771,21 @@ const htmlTail = `
     var collapsed = findingCollapsed(f);
     var wrap = el('div', {class:'finding ' + f.severity + (collapsed ? ' collapsed' : '')});
     var cnt = shownCount(f);
-    var spanAll = meshFilter && isMeshScoped(f) && isCapped(f);
+    var spanAll = isCapped(f) && ((meshFilter && isMeshScoped(f)) || (zoneFilter && isZoneScoped(f)));
 
     var head = el('button', {class:'f-head', type:'button', 'aria-expanded':String(!collapsed)});
     head.appendChild(el('span', {class:'f-tick ' + f.severity}));
     head.appendChild(el('span', {class:'f-title', text:f.title}));
     var meta = el('span', {class:'f-meta'});
-    var ms = findingMeshes(f);
+    var ms = findingMeshes(f), zs = findingZones(f);
     if(ms.length){
       ms.slice(0,3).forEach(function(m){ meta.appendChild(el('span', {class:'tag', text:m, title:m})); });
       if(ms.length > 3) meta.appendChild(el('span', {class:'tag', text:'+' + (ms.length - 3)}));
-    } else {
+    } else if(!zs.length){
       meta.appendChild(el('span', {class:'tag cp', text:'control plane'}));
     }
+    zs.slice(0,2).forEach(function(z){ meta.appendChild(el('span', {class:'tag zone', text:'zone: ' + z, title:z})); });
+    if(zs.length > 2) meta.appendChild(el('span', {class:'tag zone', text:'+' + (zs.length - 2)}));
     head.appendChild(meta);
     head.appendChild(el('span', {class:'f-count num', text:fmtNum(cnt), title:cnt + ' occurrence' + (cnt === 1 ? '' : 's')}));
     head.appendChild(el('span', {class:'f-caret', text:'▸'}));
@@ -733,7 +794,7 @@ const htmlTail = `
     body.appendChild(el('p', {class:'detail', text:f.detail}));
     if(spanAll){
       body.appendChild(el('p', {class:'detail note',
-        text:'Counted across all meshes — the example sample is capped, so this finding can’t be split per mesh.'}));
+        text:'Counted across all meshes and zones — the example sample is capped, so this finding can’t be split per mesh or zone.'}));
     }
     var ex = shownExamples(f);
     if(ex.length){
@@ -803,15 +864,19 @@ const htmlTail = `
     var c = document.getElementById('findings');
     if(!c) return;
     c.innerHTML = '';
-    if(meshFilter || sevFilter){
+    if(meshFilter || zoneFilter || sevFilter){
       var hint = el('div', {class:'meshhint'});
       hint.appendChild(document.createTextNode('Filtered to '));
-      if(sevFilter){ hint.appendChild(el('b', {text:sevFilter + 's'})); hint.appendChild(document.createTextNode(meshFilter ? ' in ' : '')); }
-      if(meshFilter){ hint.appendChild(document.createTextNode('mesh ')); hint.appendChild(el('b', {text:meshFilter})); hint.appendChild(document.createTextNode(' (plus control-plane-wide findings)')); }
+      if(sevFilter){ hint.appendChild(el('b', {text:sevFilter + 's'})); hint.appendChild(document.createTextNode((meshFilter || zoneFilter) ? ' in ' : '')); }
+      if(meshFilter){ hint.appendChild(document.createTextNode('mesh ')); hint.appendChild(el('b', {text:meshFilter})); }
+      if(meshFilter && zoneFilter){ hint.appendChild(document.createTextNode(' and ')); }
+      if(zoneFilter){ hint.appendChild(document.createTextNode('zone ')); hint.appendChild(el('b', {text:zoneFilter})); }
+      if(meshFilter || zoneFilter){ hint.appendChild(document.createTextNode(' (plus control-plane-wide findings)')); }
       hint.appendChild(document.createTextNode('. '));
       hint.appendChild(el('button', {type:'button', onclick:function(){
         sevFilter = null;
         document.querySelectorAll('.card[data-sev]').forEach(function(x){ x.classList.remove('on'); x.setAttribute('aria-pressed','false'); });
+        setZoneFilter(null);
         setMeshFilter(null);
       }}, 'Clear filters'));
       c.appendChild(hint);
@@ -827,12 +892,12 @@ const htmlTail = `
       var fs = shown.filter(function(f){ return f.severity === sev; });
       if(!fs.length) return;
       var total = fs.reduce(function(a,f){ return a + shownCount(f); }, 0);
-      var spanAny = meshFilter && fs.some(function(f){ return isMeshScoped(f) && isCapped(f); });
+      var spanAny = fs.some(function(f){ return isCapped(f) && ((meshFilter && isMeshScoped(f)) || (zoneFilter && isZoneScoped(f))); });
       var sec = el('section', {class:'grp', id:'sec-' + sev});
       sec.appendChild(el('div', {class:'sechead'}, [
         el('span', {class:'sd ' + sev}),
         document.createTextNode(HEADINGS[sev]),
-        el('span', {class:'n num', text:fmtNum(total) + (spanAny ? ' (incl. all-mesh)' : '')})
+        el('span', {class:'n num', text:fmtNum(total) + (spanAny ? ' (incl. all-mesh/zone)' : '')})
       ]));
       var order = [], byGroup = {};
       fs.forEach(function(f){
@@ -953,7 +1018,7 @@ const htmlTail = `
     var wrap = el('div', {class:'celebrate'});
     wrap.appendChild(el('div', {class:'cel-badge', text:'✓'}));
     wrap.appendChild(el('h2', {text:'Upgrade-ready — you’re clear for Kuma 3.0'}));
-    wrap.appendChild(el('p', {text:'No blockers, no warnings, no coverage gaps. Every removed '
+    wrap.appendChild(el('p', {text:'No blockers, no coverage gaps. Every removed '
       + 'API, relocated field, Mesh setting and dataplane was audited and came back clean.'}));
     wrap.appendChild(el('p', {class:'cel-congrats',
       text:'🎉 Congratulations to the team — the migration work is done.'}));
