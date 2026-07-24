@@ -172,7 +172,6 @@ func TestIngestReportsMergeAndDelta(t *testing.T) {
 	}
 
 	reports := t.TempDir()
-	// A removed resource attributed by its mesh ("trafficroute" -> static feature).
 	removed := findingModel{
 		Severity: "blocker", Category: "Removed policies",
 		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []string{"trafficroute/route-all"},

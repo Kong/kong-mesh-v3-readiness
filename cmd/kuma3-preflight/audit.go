@@ -59,7 +59,7 @@ const (
 // legacyType is a resource kind removed in Kuma 3.0; any instance is a blocker.
 // policy marks the classic Kuma 1.x *policy* types (traffic-permissions, retries,
 // …) so they render under the Policies group; the rest are networking/gateway
-// resources that stay under Removed resources (see categoryRemoved).
+// resources that stay under Removed resources (see removedCategory).
 type legacyType struct {
 	wsPath      string
 	kind        string
@@ -1017,9 +1017,11 @@ type dpInsight struct {
 	} `json:"dataplaneInsight"`
 }
 
-// featureUnifiedNaming is the kuma-dp capability flag for the unified (KRI-based)
-// resource naming model Kuma 3.0 mandates. A connected proxy whose advertised
-// features omit it runs a kuma-dp too old to emit unified names on 3.0.
+// featureUnifiedNaming is the kuma-dp flag for the unified (KRI-based) resource
+// naming model Kuma 3.0 mandates. kuma-dp advertises it only when the CP has
+// unified naming enabled and the proxy has (re)connected since, so a connected
+// proxy whose advertised features omit it is not emitting unified names — the CP
+// flag is off, or on but the proxy has not reconnected yet.
 const featureUnifiedNaming = "feature-unified-resource-naming"
 
 // checkDataplaneVersions flags data planes the control plane itself reports as
