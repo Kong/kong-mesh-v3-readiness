@@ -16,43 +16,13 @@
   ],
   "summary": {
     "blockers": 0,
-    "warnings": 10,
+    "warnings": 0,
     "info": 1,
     "coverageGaps": 3,
     "parseErrors": 2,
     "systemFindings": 1
   },
   "findings": [
-    {
-      "severity": "warning",
-      "group": "Data plane & workloads",
-      "category": "Workload grouping",
-      "title": "workloadLabels unset (k8s)",
-      "detail": "kuma.io/workload falls back to the pod ServiceAccount; fine only if ServiceAccounts are distinct per workload.",
-      "count": 3,
-      "examples": [
-        "default (field)",
-        "payments (field)",
-        "checkout (field)"
-      ]
-    },
-    {
-      "severity": "warning",
-      "group": "Data plane & workloads",
-      "category": "Dataplane DNS",
-      "title": "Custom DNS settings on Dataplane",
-      "detail": "Per-Dataplane DNS overrides should be reviewed against the 3.0 MeshService DNS model.",
-      "count": 7,
-      "examples": [
-        "default/dp-1",
-        "payments/dp-2",
-        "checkout/dp-3",
-        "default/dp-4",
-        "payments/dp-5",
-        "checkout/dp-6",
-        "default/dp-7"
-      ]
-    },
     {
       "severity": "info",
       "group": "Data plane & workloads",
@@ -68,22 +38,22 @@
   "coverageGaps": [
     {
       "path": "/meshes/payments/meshhttproutes",
-      "reason": "HTTP 403 \u2014 RBAC denied; collection not audited, absence of blockers is unproven"
+      "reason": "HTTP 403 — RBAC denied; collection not audited, absence of blockers is unproven"
     },
     {
       "path": "/meshes/checkout/meshtimeouts",
-      "reason": "HTTP 500 \u2014 control plane error; collection not audited"
+      "reason": "HTTP 500 — control plane error; collection not audited"
     },
     {
       "path": "/meshes/default/meshtraces",
-      "reason": "HTTP 404 \u2014 collection not audited"
+      "reason": "HTTP 404 — collection not audited"
     }
   ],
   "manualChecks": [
     {
       "title": "Old inspect APIs removed (switch to the new inspect API)",
       "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",
-      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 \u2014 migrate callers to the KRI inspect API"
+      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 — migrate callers to the KRI inspect API"
     },
     {
       "title": "Rebuild custom policy plugins against the 3.0 SDK",
