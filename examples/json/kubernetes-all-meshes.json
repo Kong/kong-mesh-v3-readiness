@@ -16,7 +16,7 @@
   ],
   "summary": {
     "blockers": 41,
-    "warnings": 1,
+    "warnings": 0,
     "info": 0,
     "coverageGaps": 1,
     "parseErrors": 0,
@@ -239,30 +239,19 @@
         "legacy/dp-4"
       ],
       "doc": "https://developer.konghq.com/mesh/dataplane/"
-    },
-    {
-      "severity": "warning",
-      "group": "Data plane & workloads",
-      "category": "Workload grouping",
-      "title": "workloadLabels unset (k8s)",
-      "detail": "kuma.io/workload falls back to the pod ServiceAccount; fine only if ServiceAccounts are distinct per workload.",
-      "count": 1,
-      "examples": [
-        "default (field)"
-      ]
     }
   ],
   "coverageGaps": [
     {
       "path": "/meshes/legacy/meshexternalservices",
-      "reason": "HTTP 404 \u2014 collection not audited; absence of blockers is unproven"
+      "reason": "HTTP 404 — collection not audited; absence of blockers is unproven"
     }
   ],
   "manualChecks": [
     {
       "title": "Old inspect APIs removed (switch to the new inspect API)",
       "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",
-      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 \u2014 migrate callers to the KRI inspect API"
+      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 — migrate callers to the KRI inspect API"
     },
     {
       "title": "Rebuild custom policy plugins against the 3.0 SDK",

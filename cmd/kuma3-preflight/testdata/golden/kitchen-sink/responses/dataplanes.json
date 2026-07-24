@@ -5,7 +5,7 @@
       "type": "Dataplane",
       "mesh": "default",
       "name": "dp-1",
-      "labels": { "kuma.io/env": "universal" },
+      "labels": { "kuma.io/env": "universal", "kuma.io/zone": "east" },
       "networking": {
         "transparentProxying": { "reachableServices": [ "svc-a", "svc-b" ] }
       },

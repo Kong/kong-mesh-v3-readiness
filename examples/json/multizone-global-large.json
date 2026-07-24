@@ -25,7 +25,7 @@
   ],
   "summary": {
     "blockers": 1577,
-    "warnings": 12,
+    "warnings": 0,
     "info": 1,
     "coverageGaps": 2,
     "parseErrors": 3,
@@ -214,16 +214,16 @@
       "detail": "A `to[].targetRef.kind` removed in 3.0 (subset/selector or MeshGateway); migrate the policy.",
       "count": 112,
       "examples": [
-        "default/policy-1",
-        "payments/policy-2",
-        "checkout/policy-3",
-        "inventory/policy-4",
-        "shipping/policy-5",
-        "auth/policy-6",
-        "search/policy-7",
-        "recommendations/policy-8",
-        "notifications/policy-9",
-        "billing/policy-10"
+        "default/policy-1 [zone:east]",
+        "payments/policy-2 [zone:west]",
+        "checkout/policy-3 [zone:central]",
+        "inventory/policy-4 [zone:east]",
+        "shipping/policy-5 [zone:west]",
+        "auth/policy-6 [zone:central]",
+        "search/policy-7 [zone:east]",
+        "recommendations/policy-8 [zone:west]",
+        "notifications/policy-9 [zone:central]",
+        "billing/policy-10 [zone:east]"
       ],
       "doc": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -235,16 +235,16 @@
       "detail": "A policy spec field moved location in 3.0; update the manifest.",
       "count": 187,
       "examples": [
-        "default/policy-1",
-        "payments/policy-2",
-        "checkout/policy-3",
-        "inventory/policy-4",
-        "shipping/policy-5",
-        "auth/policy-6",
-        "search/policy-7",
-        "recommendations/policy-8",
-        "notifications/policy-9",
-        "billing/policy-10"
+        "default/policy-1 [zone:east]",
+        "payments/policy-2 [zone:west]",
+        "checkout/policy-3 [zone:central]",
+        "inventory/policy-4 [zone:east]",
+        "shipping/policy-5 [zone:west]",
+        "auth/policy-6 [zone:central]",
+        "search/policy-7 [zone:east]",
+        "recommendations/policy-8 [zone:west]",
+        "notifications/policy-9 [zone:central]",
+        "billing/policy-10 [zone:east]"
       ],
       "doc": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -256,16 +256,16 @@
       "detail": "The policy `from` array is removed in 3.0; express inbound rules differently.",
       "count": 73,
       "examples": [
-        "default/policy-1",
-        "payments/policy-2",
-        "checkout/policy-3",
-        "inventory/policy-4",
-        "shipping/policy-5",
-        "auth/policy-6",
-        "search/policy-7",
-        "recommendations/policy-8",
-        "notifications/policy-9",
-        "billing/policy-10"
+        "default/policy-1 [zone:east]",
+        "payments/policy-2 [zone:west]",
+        "checkout/policy-3 [zone:central]",
+        "inventory/policy-4 [zone:east]",
+        "shipping/policy-5 [zone:west]",
+        "auth/policy-6 [zone:central]",
+        "search/policy-7 [zone:east]",
+        "recommendations/policy-8 [zone:west]",
+        "notifications/policy-9 [zone:central]",
+        "billing/policy-10 [zone:east]"
       ],
       "doc": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -277,16 +277,16 @@
       "detail": "`targetRef.proxyTypes` is removed in 3.0.",
       "count": 31,
       "examples": [
-        "default/policy-1",
-        "payments/policy-2",
-        "checkout/policy-3",
-        "inventory/policy-4",
-        "shipping/policy-5",
-        "auth/policy-6",
-        "search/policy-7",
-        "recommendations/policy-8",
-        "notifications/policy-9",
-        "billing/policy-10"
+        "default/policy-1 [zone:east]",
+        "payments/policy-2 [zone:west]",
+        "checkout/policy-3 [zone:central]",
+        "inventory/policy-4 [zone:east]",
+        "shipping/policy-5 [zone:west]",
+        "auth/policy-6 [zone:central]",
+        "search/policy-7 [zone:east]",
+        "recommendations/policy-8 [zone:west]",
+        "notifications/policy-9 [zone:central]",
+        "billing/policy-10 [zone:east]"
       ],
       "doc": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -298,16 +298,16 @@
       "detail": "MeshTrace OpenTelemetry `endpoint` format changes in 3.0.",
       "count": 12,
       "examples": [
-        "default/policy-1",
-        "payments/policy-2",
-        "checkout/policy-3",
-        "inventory/policy-4",
-        "shipping/policy-5",
-        "auth/policy-6",
-        "search/policy-7",
-        "recommendations/policy-8",
-        "notifications/policy-9",
-        "billing/policy-10"
+        "default/policy-1 [zone:east]",
+        "payments/policy-2 [zone:west]",
+        "checkout/policy-3 [zone:central]",
+        "inventory/policy-4 [zone:east]",
+        "shipping/policy-5 [zone:west]",
+        "auth/policy-6 [zone:central]",
+        "search/policy-7 [zone:east]",
+        "recommendations/policy-8 [zone:west]",
+        "notifications/policy-9 [zone:central]",
+        "billing/policy-10 [zone:east]"
       ],
       "doc": "https://developer.konghq.com/mesh/policies/meshtrace/"
     },
@@ -319,16 +319,16 @@
       "detail": "A mesh-scoped resource type removed in 3.0 is still present.",
       "count": 44,
       "examples": [
-        "default/trafficroute-1",
-        "payments/trafficroute-2",
-        "checkout/trafficroute-3",
-        "inventory/trafficroute-4",
-        "shipping/trafficroute-5",
-        "auth/trafficroute-6",
-        "search/trafficroute-7",
-        "recommendations/trafficroute-8",
-        "notifications/trafficroute-9",
-        "billing/trafficroute-10"
+        "default/trafficroute-1 [zone:east]",
+        "payments/trafficroute-2 [zone:west]",
+        "checkout/trafficroute-3 [zone:central]",
+        "inventory/trafficroute-4 [zone:east]",
+        "shipping/trafficroute-5 [zone:west]",
+        "auth/trafficroute-6 [zone:central]",
+        "search/trafficroute-7 [zone:east]",
+        "recommendations/trafficroute-8 [zone:west]",
+        "notifications/trafficroute-9 [zone:central]",
+        "billing/trafficroute-10 [zone:east]"
       ],
       "doc": "https://developer.konghq.com/mesh/migration-to-3.0/"
     },
@@ -340,16 +340,16 @@
       "detail": "Builtin gateway config in the Dataplane resource is removed in 3.0; use MeshGateway.",
       "count": 302,
       "examples": [
-        "default/gw-1",
-        "payments/gw-2",
-        "checkout/gw-3",
-        "inventory/gw-4",
-        "shipping/gw-5",
-        "auth/gw-6",
-        "search/gw-7",
-        "recommendations/gw-8",
-        "notifications/gw-9",
-        "billing/gw-10"
+        "default/gw-1 [zone:east]",
+        "payments/gw-2 [zone:west]",
+        "checkout/gw-3 [zone:central]",
+        "inventory/gw-4 [zone:east]",
+        "shipping/gw-5 [zone:west]",
+        "auth/gw-6 [zone:central]",
+        "search/gw-7 [zone:east]",
+        "recommendations/gw-8 [zone:west]",
+        "notifications/gw-9 [zone:central]",
+        "billing/gw-10 [zone:east]"
       ],
       "doc": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -361,16 +361,16 @@
       "detail": "`networking.transparentProxying.reachableServices` (tag form) is removed in 3.0.",
       "count": 537,
       "examples": [
-        "default/dp-1",
-        "payments/dp-2",
-        "checkout/dp-3",
-        "inventory/dp-4",
-        "shipping/dp-5",
-        "auth/dp-6",
-        "search/dp-7",
-        "recommendations/dp-8",
-        "notifications/dp-9",
-        "billing/dp-10"
+        "default/dp-1 [zone:east]",
+        "payments/dp-2 [zone:west]",
+        "checkout/dp-3 [zone:central]",
+        "inventory/dp-4 [zone:east]",
+        "shipping/dp-5 [zone:west]",
+        "auth/dp-6 [zone:central]",
+        "search/dp-7 [zone:east]",
+        "recommendations/dp-8 [zone:west]",
+        "notifications/dp-9 [zone:central]",
+        "billing/dp-10 [zone:east]"
       ],
       "doc": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -382,16 +382,16 @@
       "detail": "Dataplane proxy version is incompatible with the 3.0 control plane.",
       "count": 201,
       "examples": [
-        "default/dp-1",
-        "payments/dp-2",
-        "checkout/dp-3",
-        "inventory/dp-4",
-        "shipping/dp-5",
-        "auth/dp-6",
-        "search/dp-7",
-        "recommendations/dp-8",
-        "notifications/dp-9",
-        "billing/dp-10"
+        "default/dp-1 [zone:east]",
+        "payments/dp-2 [zone:west]",
+        "checkout/dp-3 [zone:central]",
+        "inventory/dp-4 [zone:east]",
+        "shipping/dp-5 [zone:west]",
+        "auth/dp-6 [zone:central]",
+        "search/dp-7 [zone:east]",
+        "recommendations/dp-8 [zone:west]",
+        "notifications/dp-9 [zone:central]",
+        "billing/dp-10 [zone:east]"
       ],
       "doc": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -403,30 +403,10 @@
       "detail": "Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy in 3.0.",
       "count": 2,
       "examples": [
-        "kuma-system/zoneingress-1",
-        "kuma-system/zoneegress-1"
+        "kuma-system/zoneingress-1 [zone:east]",
+        "kuma-system/zoneegress-1 [zone:west]"
       ],
       "doc": "https://developer.konghq.com/mesh/production/cp-deployment/zone-proxy/"
-    },
-    {
-      "severity": "warning",
-      "group": "Data plane & workloads",
-      "category": "Workload grouping",
-      "title": "workloadLabels unset (k8s)",
-      "detail": "kuma.io/workload falls back to the pod ServiceAccount; fine only if ServiceAccounts are distinct per workload.",
-      "count": 12,
-      "examples": [
-        "default (field)",
-        "payments (field)",
-        "checkout (field)",
-        "inventory (field)",
-        "shipping (field)",
-        "auth (field)",
-        "search (field)",
-        "recommendations (field)",
-        "notifications (field)",
-        "billing (field)"
-      ]
     },
     {
       "severity": "info",
@@ -436,25 +416,25 @@
       "detail": "Inspection sampled a subset of dataplanes for per-proxy checks.",
       "count": 1,
       "examples": [
-        "sampled 50/1684"
+        "sampled 50/1684 [zone:east]"
       ]
     }
   ],
   "coverageGaps": [
     {
       "path": "/meshes/legacy/meshfaultinjections",
-      "reason": "HTTP 404 \u2014 collection not audited; absence of blockers is unproven"
+      "reason": "HTTP 404 — collection not audited; absence of blockers is unproven"
     },
     {
       "path": "/meshes/payments/meshtimeouts",
-      "reason": "HTTP 500 \u2014 collection not audited"
+      "reason": "HTTP 500 — collection not audited"
     }
   ],
   "manualChecks": [
     {
       "title": "Old inspect APIs removed (switch to the new inspect API)",
       "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",
-      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 \u2014 migrate callers to the KRI inspect API"
+      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 — migrate callers to the KRI inspect API"
     },
     {
       "title": "Rebuild custom policy plugins against the 3.0 SDK",

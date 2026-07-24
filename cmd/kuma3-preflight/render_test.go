@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// sampleReport builds a report exercising both severities, the example cap, a
-// coverage gap, parse errors and system findings.
+// sampleReport builds a report exercising the blocker and info severities, the
+// example cap, a coverage gap, parse errors and system findings.
 func sampleReport() *report {
 	r := &report{
 		cp:             cpIndex{Product: "Kuma", Version: "2.9.0", Mode: "zone"},
@@ -25,7 +25,6 @@ func sampleReport() *report {
 	r.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label", "Add label.", "default/dp-1")
 	r.add(blocker, "Zone proxies", "zoneingresses present", "Migrate to the unified Zone Proxy.", "zi-1")
 	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", "1/2")
-	r.add(warning, cpConfigCategory, "Workload labels not configured", "Set workloadLabels.", "runtime.kubernetes.workloadLabels unset")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
 }
@@ -60,8 +59,8 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Summary.Blockers != 16 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies)
 		t.Errorf("blockers = %d, want 16", m.Summary.Blockers)
 	}
-	if m.Summary.Warnings != 1 { // Workload labels not configured
-		t.Errorf("warnings = %d, want 1", m.Summary.Warnings)
+	if m.Summary.Warnings != 0 { // the tool no longer emits warning-severity findings
+		t.Errorf("warnings = %d, want 0", m.Summary.Warnings)
 	}
 	if m.Summary.Info != 1 { // Dataplane DNS sampling coverage
 		t.Errorf("info = %d, want 1", m.Summary.Info)
@@ -108,7 +107,6 @@ func TestToModelGroups(t *testing.T) {
 		"MeshTimeout uses `from`":                            groupPolicies,
 		"zoneingresses present":                              groupOther,
 		"Universal Dataplane missing kuma.io/workload label": groupDataPlane,
-		"Workload labels not configured":                     groupControlPlane,
 	}
 	for _, f := range m.Findings {
 		if g, ok := want[f.Title]; ok && f.Group != g {
@@ -274,9 +272,8 @@ func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	}
 }
 
-// The k8s cards (kuma.io/mesh annotation→label, pod-vs-container resources) are
-// Kubernetes-object concerns the CP API cannot reveal, so they are shown only when
-// the audit observed Kubernetes.
+// The k8s cards (kuma.io/mesh annotation→label) are Kubernetes-object concerns the
+// CP API cannot reveal, so they are shown only when the audit observed Kubernetes.
 func TestBuildManualChecksK8sGating(t *testing.T) {
 	base := buildManualChecks(false)
 	withK8s := buildManualChecks(true)
@@ -284,7 +281,7 @@ func TestBuildManualChecksK8sGating(t *testing.T) {
 		t.Fatalf("k8s run should add the k8s cards: base=%d k8s=%d added=%d",
 			len(base), len(withK8s), len(kubernetesManualChecks))
 	}
-	k8sTitles := []string{"kuma.io/mesh", "Pod resources"}
+	k8sTitles := []string{"kuma.io/mesh"}
 	for _, m := range base {
 		for _, kt := range k8sTitles {
 			if strings.Contains(m.Title, kt) {
