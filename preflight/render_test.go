@@ -52,8 +52,8 @@ func TestAddDocBackfillsDocOnMerge(t *testing.T) {
 
 func TestToModelSummaryAndStatus(t *testing.T) {
 	m := sampleReport().toModel("2026-06-17T10:00:00Z")
-	if m.Status != StatusBlockers {
-		t.Fatalf("status = %q, want %q", m.Status, StatusBlockers)
+	if m.Status != StatusInconclusive {
+		t.Fatalf("status = %q, want %q", m.Status, StatusInconclusive)
 	}
 	if m.Summary.Blockers != 16 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies)
 		t.Errorf("blockers = %d, want 16", m.Summary.Blockers)

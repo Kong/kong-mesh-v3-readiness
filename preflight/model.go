@@ -43,7 +43,8 @@ type Report struct {
 	Schema      string `json:"schema" jsonschema:"pattern=^kuma3-preflight/v[0-9]+$"`
 	Tool        string `json:"tool" jsonschema:"enum=kuma3-preflight"`
 	GeneratedAt string `json:"generatedAt,omitempty" jsonschema:"format=date-time"`
-	// Status: blockers outranks inconclusive, so a coverage gap never softens a failing audit.
+	// Status reflects report trustworthiness first: an incomplete audit is
+	// inconclusive even when it still found blockers elsewhere.
 	Status  string `json:"status" jsonschema:"enum=clean,enum=blockers,enum=inconclusive,enum=failed"`
 	Address string `json:"address,omitempty"`
 	// Error never echoes a raw HTTP response body or bearer token.
@@ -249,15 +250,16 @@ func (s severity) String() string {
 	}
 }
 
-// status classifies the run; blockers take precedence over inconclusive so a
-// failing audit is never softened by a coverage gap. Warnings are advisory and do
-// not gate: a run with only warnings (no blockers, fully observed) is still clean.
+// status classifies the run; incompleteness outranks blockers because a partial
+// report is not fully trustworthy even when it retained real findings. Warnings
+// are advisory and do not gate: a run with only warnings (no blockers, fully
+// observed) is still clean.
 func (r *collector) status() string {
 	switch {
-	case r.count(blocker) > 0:
-		return StatusBlockers
 	case r.incomplete():
 		return StatusInconclusive
+	case r.count(blocker) > 0:
+		return StatusBlockers
 	default:
 		return StatusClean
 	}

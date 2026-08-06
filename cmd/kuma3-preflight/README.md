@@ -39,7 +39,7 @@ go run ./cmd/kuma3-preflight --output report.html
 | `--source-dir` | _(none)_ | With `--classify`: root of an e2e test tree to scan statically (e.g. a Kuma `test/e2e_env/<env>` dir) |
 | `--reports-dir` | _(none)_ | With `--classify`: directory of per-spec preflight JSON snapshots captured during an e2e run, folded into the classification |
 
-Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse — the result is not a proven clean bill of health). In `--classify` mode the exit code is `0` on success or `2` on error.
+Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse — the result is a partial report, not a proven clean bill of health, even if it retained blockers). In `--classify` mode the exit code is `0` on success or `2` on error.
 
 ## Classify e2e tests (`--classify`)
 

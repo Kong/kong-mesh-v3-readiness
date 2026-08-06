@@ -280,8 +280,8 @@ components:
           pattern: ^kuma3-preflight/v[0-9]+$
           type: string
         status:
-          description: 'Status: blockers outranks inconclusive, so a coverage gap never
-            softens a failing audit.'
+          description: 'Status reflects report trustworthiness first: an incomplete
+            audit is inconclusive even when it still found blockers elsewhere.'
           enum:
           - clean
           - blockers

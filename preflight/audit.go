@@ -248,7 +248,8 @@ func (a *auditor) scopedPath(wsPath string) string {
 func (a *auditor) listColl(ctx context.Context, path string) ([]resourceItem, error) {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
-		return nil, err
+		a.rep.addGap(path, "collection read failed — NOT audited: "+err.Error())
+		return nil, nil
 	}
 	if !found {
 		a.rep.addGap(path, "endpoint returned 404 — NOT audited")
@@ -262,8 +263,12 @@ func (a *auditor) listColl(ctx context.Context, path string) ([]resourceItem, er
 // 404 is "not applicable", not a coverage gap (cf. listColl).
 func (a *auditor) listIfServed(ctx context.Context, path string) ([]resourceItem, error) {
 	items, found, err := a.c.list(ctx, path)
-	if err != nil || !found {
-		return nil, err
+	if err != nil {
+		a.rep.addGap(path, "collection read failed — NOT audited: "+err.Error())
+		return nil, nil
+	}
+	if !found {
+		return nil, nil
 	}
 	return items, nil
 }

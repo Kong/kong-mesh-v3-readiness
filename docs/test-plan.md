@@ -215,7 +215,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-26: Exit-code matrix
 **Setup:** Drive each terminal state: clean Exclusive mesh; a mesh with a blocker; an unreachable CP; a 404'd collection; an unparseable resource.
 **Steps:** Run each; record `$?`.
-**Expected:** `0` clean · `1` blockers · `2` operational error (unreachable / bad flag / write failure) · `3` inconclusive (coverage gap OR unparseable). Blockers (1) take precedence over inconclusive (3).
+**Expected:** `0` clean · `1` blockers · `2` operational error (unreachable / bad flag / write failure) · `3` inconclusive (coverage gap OR unparseable). Inconclusive (3) takes precedence over blockers (1) because a partial audit is not fully trustworthy.
 **Oracle:** FAIL if any state maps to the wrong code — especially a 404'd collection or unparseable resource yielding `0`, which a CI `$?` gate would read as success.
 **Source:** merge; Kaner — exit-code trust for automation.
 
