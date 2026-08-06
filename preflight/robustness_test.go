@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -149,6 +150,32 @@ func TestGlobalZonesInsightsForbiddenDegradesToGap(t *testing.T) {
 	}
 	if rep.status() != StatusInconclusive {
 		t.Errorf("status = %q, want %q", rep.status(), StatusInconclusive)
+	}
+}
+
+// TestGlobalTimeoutDuringCollectionAborts: caller-level timeouts are operational
+// failures. They should not be fanned out into one coverage gap per remaining
+// collection after audit scope has already been established.
+func TestGlobalTimeoutDuringCollectionAborts(t *testing.T) {
+	srv := cpServer(t, map[string]http.HandlerFunc{
+		"/meshes": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Disabled"}}],"next":null}`))
+		},
+		"/traffic-permissions": func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(200 * time.Millisecond)
+			writeJSON(w, []byte(`{"total":0,"items":[],"next":null}`))
+		},
+	})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+
+	_, err = audit(ctx, c, auditOptions{})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("audit error = %v, want context deadline exceeded", err)
 	}
 }
 

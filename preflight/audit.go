@@ -226,7 +226,13 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		a.checkControlPlaneConfig, a.checkControlPlaneVersions,
 		a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
 	} {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err := check(ctx); err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 	}
@@ -245,32 +251,36 @@ func (a *auditor) scopedPath(wsPath string) string {
 
 // listColl lists a collection and records a coverage gap (instead of silently
 // treating it as empty) when the endpoint is not reachable.
-func (a *auditor) listColl(ctx context.Context, path string) ([]resourceItem, error) {
+func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
-		a.rep.addGap(path, "collection read failed — NOT audited: "+err.Error())
-		return nil, nil
+		if ctx.Err() == nil {
+			a.rep.addGap(path, "collection read failed — NOT audited: "+err.Error())
+		}
+		return nil
 	}
 	if !found {
 		a.rep.addGap(path, "endpoint returned 404 — NOT audited")
-		return nil, nil
+		return nil
 	}
-	return items, nil
+	return items
 }
 
 // listIfServed lists a collection, returning nil when the endpoint is
 // unregistered (404) — for resource types newer than the CP may serve, where a
 // 404 is "not applicable", not a coverage gap (cf. listColl).
-func (a *auditor) listIfServed(ctx context.Context, path string) ([]resourceItem, error) {
+func (a *auditor) listIfServed(ctx context.Context, path string) []resourceItem {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
-		a.rep.addGap(path, "collection read failed — NOT audited: "+err.Error())
-		return nil, nil
+		if ctx.Err() == nil {
+			a.rep.addGap(path, "collection read failed — NOT audited: "+err.Error())
+		}
+		return nil
 	}
 	if !found {
-		return nil, nil
+		return nil
 	}
-	return items, nil
+	return items
 }
 
 // unmarshalSpec decodes the resource spec into v, recording a parse error +
@@ -365,10 +375,7 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 
 func (a *auditor) checkLegacyResources(ctx context.Context) error {
 	for _, lt := range legacyMeshScoped {
-		items, err := a.listColl(ctx, a.scopedPath(lt.wsPath))
-		if err != nil {
-			return fmt.Errorf("listing %s: %w", lt.wsPath, err)
-		}
+		items := a.listColl(ctx, a.scopedPath(lt.wsPath))
 		for _, it := range items {
 			before := a.rep.total
 			a.rep.addDoc(blocker, removedCategory(lt.policy), lt.kind+" (removed in 3.0)",
@@ -391,10 +398,7 @@ func (a *auditor) checkRemovedEnterprisePolicies(ctx context.Context) error {
 			docPolicies,
 		},
 	} {
-		items, err := a.listIfServed(ctx, a.scopedPath(rp.wsPath))
-		if err != nil {
-			return fmt.Errorf("listing %s: %w", rp.wsPath, err)
-		}
+		items := a.listIfServed(ctx, a.scopedPath(rp.wsPath))
 		for _, it := range items {
 			before := a.rep.total
 			a.rep.addDoc(blocker, categoryRemovedPolicy, rp.kind+" (removed in 3.0)", rp.detail, rp.doc, a.ref(it))
@@ -406,10 +410,7 @@ func (a *auditor) checkRemovedEnterprisePolicies(ctx context.Context) error {
 
 func (a *auditor) checkNewPolicies(ctx context.Context) error {
 	for _, wsPath := range newPolicyPaths {
-		items, err := a.listColl(ctx, a.scopedPath(wsPath))
-		if err != nil {
-			return fmt.Errorf("listing %s: %w", wsPath, err)
-		}
+		items := a.listColl(ctx, a.scopedPath(wsPath))
 		for _, it := range items {
 			before := a.rep.total
 			ref := a.ref(it)
@@ -548,10 +549,7 @@ func (a *auditor) addOtelEndpoint(typ, ref string) {
 }
 
 func (a *auditor) checkDataplanes(ctx context.Context) error {
-	items, err := a.listColl(ctx, a.scopedPath("dataplanes"))
-	if err != nil {
-		return fmt.Errorf("listing dataplanes: %w", err)
-	}
+	items := a.listColl(ctx, a.scopedPath("dataplanes"))
 	for _, it := range items {
 		var spec dataplaneSpec
 		if !a.unmarshalSpec(it, &spec, qualified(it)) {
@@ -595,10 +593,7 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 
 func (a *auditor) checkZoneProxies(ctx context.Context) error {
 	for _, wsPath := range []string{"zoneingresses", "zoneegresses"} {
-		items, err := a.listColl(ctx, "/"+wsPath)
-		if err != nil {
-			return fmt.Errorf("listing %s: %w", wsPath, err)
-		}
+		items := a.listColl(ctx, "/"+wsPath)
 		for _, it := range items {
 			a.rep.addDoc(blocker, "Zone proxies", wsPath+" present",
 				"Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.", docZoneProxies, it.Name)
@@ -616,10 +611,7 @@ func (a *auditor) checkResourceNames(ctx context.Context) error {
 		{"meshexternalservices", "MeshExternalService"},
 		{"meshmultizoneservices", "MeshMultiZoneService"},
 	} {
-		items, err := a.listIfServed(ctx, a.scopedPath(rc.wsPath))
-		if err != nil {
-			return fmt.Errorf("listing %s: %w", rc.wsPath, err)
-		}
+		items := a.listIfServed(ctx, a.scopedPath(rc.wsPath))
 		for _, it := range items {
 			a.checkName(it, rc.kind)
 		}
@@ -630,10 +622,7 @@ func (a *auditor) checkResourceNames(ctx context.Context) error {
 // checkMeshTrust flags MeshTrust resources still carrying the deprecated
 // spec.origin (moved to status.origin in 3.0).
 func (a *auditor) checkMeshTrust(ctx context.Context) error {
-	items, err := a.listIfServed(ctx, a.scopedPath("meshtrusts"))
-	if err != nil {
-		return fmt.Errorf("listing meshtrusts: %w", err)
-	}
+	items := a.listIfServed(ctx, a.scopedPath("meshtrusts"))
 	for _, it := range items {
 		var spec struct {
 			Origin json.RawMessage `json:"origin"`
@@ -1050,10 +1039,7 @@ const featureUnifiedNaming = "feature-unified-resource-naming"
 // Sourced from /dataplanes+insights (the data behind the GUI dashboard), so no
 // version parsing is reimplemented here — the CP's verdict is authoritative.
 func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
-	items, err := a.listColl(ctx, a.scopedPath("dataplanes+insights"))
-	if err != nil {
-		return fmt.Errorf("listing dataplane insights: %w", err)
-	}
+	items := a.listColl(ctx, a.scopedPath("dataplanes+insights"))
 	for _, it := range items {
 		var ins dpInsight
 		// Insights are not policy specs; a decode failure is skipped, not counted
@@ -1109,10 +1095,7 @@ func (a *auditor) checkDataplaneEnvoyConfig(ctx context.Context) error {
 	if a.inspectDataplanes <= 0 {
 		return nil
 	}
-	items, err := a.listColl(ctx, a.scopedPath("dataplanes"))
-	if err != nil {
-		return fmt.Errorf("listing dataplanes for inspection: %w", err)
-	}
+	items := a.listColl(ctx, a.scopedPath("dataplanes"))
 	inspected := 0
 	for i, it := range items {
 		if i >= a.inspectDataplanes {
