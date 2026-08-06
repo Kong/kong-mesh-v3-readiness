@@ -122,12 +122,28 @@ func TestAuditContactsOnlyControlPlane(t *testing.T) {
 // TestAuditRequestHeadersSentToControlPlane proves Audit forwards static request
 // headers to control-plane requests while still honoring the caller's transport.
 func TestAuditRequestHeadersSentToControlPlane(t *testing.T) {
-	var gotAccept []string
-	var gotTrace []string
+	type seenRequest struct {
+		path   string
+		accept []string
+		trace  []string
+	}
+
+	var seen []seenRequest
 	hc := &http.Client{
 		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			gotAccept = append([]string(nil), req.Header.Values("Accept")...)
-			gotTrace = append([]string(nil), req.Header.Values("X-Trace-Id")...)
+			gotAccept := append([]string(nil), req.Header.Values("Accept")...)
+			gotTrace := append([]string(nil), req.Header.Values("X-Trace-Id")...)
+			if !slices.Equal(gotAccept, []string{"application/custom+json"}) {
+				return nil, fmt.Errorf("%s Accept = %v, want only the custom value", req.URL.Path, gotAccept)
+			}
+			if !slices.Equal(gotTrace, []string{"trace-123"}) {
+				return nil, fmt.Errorf("%s X-Trace-Id = %v, want custom header on every request", req.URL.Path, gotTrace)
+			}
+			seen = append(seen, seenRequest{
+				path:   req.URL.Path,
+				accept: gotAccept,
+				trace:  gotTrace,
+			})
 			return http.DefaultTransport.RoundTrip(req)
 		}),
 	}
@@ -149,11 +165,16 @@ func TestAuditRequestHeadersSentToControlPlane(t *testing.T) {
 	if rep.Status != preflight.StatusClean {
 		t.Errorf("status = %q, want %q", rep.Status, preflight.StatusClean)
 	}
-	if !slices.Equal(gotAccept, []string{"application/custom+json"}) {
-		t.Errorf("Accept = %v, want only the custom value", gotAccept)
+	if len(seen) < 2 {
+		t.Fatalf("saw %d requests, want multiple control-plane requests validated", len(seen))
 	}
-	if !slices.Equal(gotTrace, []string{"trace-123"}) {
-		t.Errorf("X-Trace-Id = %v, want custom header on the request", gotTrace)
+	for _, req := range seen {
+		if !slices.Equal(req.accept, []string{"application/custom+json"}) {
+			t.Errorf("%s Accept = %v, want only the custom value", req.path, req.accept)
+		}
+		if !slices.Equal(req.trace, []string{"trace-123"}) {
+			t.Errorf("%s X-Trace-Id = %v, want custom header on every request", req.path, req.trace)
+		}
 	}
 }
 
