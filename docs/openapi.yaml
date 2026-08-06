@@ -1,0 +1,371 @@
+openapi: 3.1.0
+info:
+  title: kuma3-preflight report schema
+  version: "1.0.0"
+  description: |
+    Schema for the JSON documents emitted by the `kuma3-preflight` CLI
+    (`github.com/Kong/kong-mesh-v3-readiness`, `cmd/kuma3-preflight`).
+
+    `kuma3-preflight` is a CLI, not an HTTP service — this document has no `paths`.
+    It exists only so the two JSON contracts below can be browsed/validated with
+    standard OpenAPI/JSON-Schema tooling (Redoc, openapi-generator, ajv). Point such
+    tooling at a real file — `--output report.json`, or `--classify ... --format json
+    --output classification.json` — and validate it against the matching schema.
+
+    Two independent, versioned contracts are shipped:
+    - `Report` — the CP-audit report (default command; `schema` = `kuma3-preflight/vN`).
+    - `Classification` — the `--classify` output (`schema` = `kuma3-preflight-classification/v1`).
+    Each is a stable contract: `--from-json` reloads `Report` verbatim, so JSON,
+    HTML (and, for classification, Markdown) render from the exact same object.
+
+    Generated from the `reportmodel` Go package by `tools/openapigen` — do not edit by
+    hand; run `go generate ./...` from the repo root after changing a reportmodel type.
+  license:
+    name: Apache-2.0
+externalDocs:
+  description: Repository README and architecture notes
+  url: https://github.com/Kong/kong-mesh-v3-readiness
+paths: {}
+
+components:
+  schemas:
+    ClassSummary:
+      additionalProperties: false
+      description: ClassSummary is the headline counts shown above a classification report.
+      properties:
+        deprecatedUsages:
+          minimum: 0
+          type: integer
+        features:
+          minimum: 0
+          type: integer
+        globalMigrations:
+          minimum: 0
+          type: integer
+        remove:
+          minimum: 0
+          type: integer
+        rewrite:
+          minimum: 0
+          type: integer
+      required:
+      - features
+      - remove
+      - rewrite
+      - deprecatedUsages
+      - globalMigrations
+      type: object
+    Classification:
+      additionalProperties: false
+      description: Classification is the canonical, serializable form of a --classify
+        run.
+      properties:
+        features:
+          items:
+            $ref: '#/components/schemas/Feature'
+          type: array
+        generatedAt:
+          format: date-time
+          type: string
+        global:
+          description: |-
+            Global lifts non-removable deprecations recurring across enough suites into
+            one cross-cutting fix, out of each Feature's Usages.
+          items:
+            $ref: '#/components/schemas/GlobalMigration'
+          type: array
+        reportsDir:
+          type: string
+        schema:
+          enum:
+          - kuma3-preflight-classification/v1
+          type: string
+        sourceDir:
+          type: string
+        summary:
+          $ref: '#/components/schemas/ClassSummary'
+        tool:
+          enum:
+          - kuma3-preflight
+          type: string
+      required:
+      - schema
+      - tool
+      - summary
+      - global
+      - features
+      type: object
+    ControlPlane:
+      additionalProperties: false
+      description: ControlPlane identifies the audited control plane.
+      properties:
+        mode:
+          enum:
+          - ""
+          - standalone
+          - zone
+          - global
+          type: string
+        product:
+          type: string
+        version:
+          type: string
+      required:
+      - product
+      - version
+      type: object
+    CoverageGap:
+      additionalProperties: false
+      description: CoverageGap is a collection that could not be audited — for example
+        a 404 on a resource list.
+      properties:
+        path:
+          type: string
+        reason:
+          type: string
+      required:
+      - path
+      - reason
+      type: object
+    Feature:
+      additionalProperties: false
+      description: Feature is one e2e suite's deprecation classification.
+      properties:
+        name:
+          type: string
+        recommendation:
+          enum:
+          - REMOVE/REPLACE
+          - REWRITE
+          type: string
+        usages:
+          items:
+            $ref: '#/components/schemas/Usage'
+          type: array
+      required:
+      - name
+      - recommendation
+      - usages
+      type: object
+    Finding:
+      additionalProperties: false
+      description: Finding is one deprecation/blocker/advisory item, merged by (Severity,
+        Category, Title).
+      properties:
+        category:
+          type: string
+        count:
+          minimum: 1
+          type: integer
+        detail:
+          type: string
+        doc:
+          format: uri
+          type: string
+        examples:
+          items:
+            type: string
+          maxItems: 10
+          type: array
+        group:
+          enum:
+          - Control plane
+          - Mesh object
+          - Policies
+          - Removed resources
+          - Data plane & workloads
+          - Other
+          type: string
+        severity:
+          description: Severity "warning" only appears in pre-re-grade payloads; no current
+            check emits one.
+          enum:
+          - blocker
+          - warning
+          - info
+          type: string
+        title:
+          type: string
+      required:
+      - severity
+      - group
+      - category
+      - title
+      - detail
+      - count
+      - examples
+      type: object
+    GlobalMigration:
+      additionalProperties: false
+      description: 'GlobalMigration is a cross-cutting deprecation: a non-removable field/policy/
+        mesh setting recurring across many suites, fixed once centrally rather than per
+        suite.'
+      properties:
+        category:
+          type: string
+        count:
+          minimum: 0
+          type: integer
+        kind:
+          type: string
+        removable:
+          description: Removable is always false here — removed resources stay per-suite
+            removal work.
+          type: boolean
+        replacement:
+          type: string
+        suites:
+          minimum: 3
+          type: integer
+      required:
+      - kind
+      - category
+      - replacement
+      - removable
+      - suites
+      - count
+      type: object
+    ManualCheck:
+      additionalProperties: false
+      description: ManualCheck is one upgrade item the CP API cannot surface.
+      properties:
+        command:
+          type: string
+        detail:
+          type: string
+        title:
+          type: string
+      required:
+      - title
+      type: object
+    Report:
+      additionalProperties: false
+      description: Report is the canonical, serializable form of a CP-audit report.
+      properties:
+        address:
+          type: string
+        controlPlane:
+          $ref: '#/components/schemas/ControlPlane'
+        coverageGaps:
+          description: Coverage gaps make the run inconclusive, never clean.
+          items:
+            $ref: '#/components/schemas/CoverageGap'
+          type: array
+        error:
+          description: Error never echoes a raw HTTP response body or bearer token.
+          type: string
+        findings:
+          items:
+            $ref: '#/components/schemas/Finding'
+          type: array
+        generatedAt:
+          format: date-time
+          type: string
+        manualChecks:
+          items:
+            $ref: '#/components/schemas/ManualCheck'
+          type: array
+        meshes:
+          items:
+            type: string
+          type: array
+        schema:
+          description: Schema is "kuma3-preflight/vN"; --from-json accepts any prior vN
+            by prefix.
+          pattern: ^kuma3-preflight/v[0-9]+$
+          type: string
+        status:
+          description: 'Status: blockers outranks inconclusive, so a coverage gap never
+            softens a failing audit.'
+          enum:
+          - clean
+          - blockers
+          - inconclusive
+          - failed
+          type: string
+        summary:
+          $ref: '#/components/schemas/Summary'
+        tool:
+          enum:
+          - kuma3-preflight
+          type: string
+      required:
+      - schema
+      - tool
+      - status
+      - controlPlane
+      - meshes
+      - summary
+      - findings
+      - coverageGaps
+      - manualChecks
+      type: object
+    Summary:
+      additionalProperties: false
+      description: Summary is the finding-count rollup shown at the top of a report.
+      properties:
+        blockers:
+          minimum: 0
+          type: integer
+        coverageGaps:
+          minimum: 0
+          type: integer
+        info:
+          minimum: 0
+          type: integer
+        parseErrors:
+          minimum: 0
+          type: integer
+        systemFindings:
+          minimum: 0
+          type: integer
+        warnings:
+          description: Warnings stays for --from-json backward compatibility; no check
+            emits one.
+          minimum: 0
+          type: integer
+      required:
+      - blockers
+      - warnings
+      - info
+      - coverageGaps
+      - parseErrors
+      - systemFindings
+      type: object
+    Usage:
+      additionalProperties: false
+      description: Usage is one deprecated-feature usage within a Feature.
+      properties:
+        category:
+          type: string
+        count:
+          minimum: 0
+          type: integer
+        examples:
+          items:
+            type: string
+          type: array
+        global:
+          description: |-
+            Global marks a usage whose Kind was lifted into Classification.Global; the
+            per-suite view omits these to avoid repeating the same fix in every suite.
+          type: boolean
+        kind:
+          type: string
+        removable:
+          type: boolean
+        replacement:
+          type: string
+        sources:
+          items:
+            type: string
+          type: array
+      required:
+      - kind
+      - category
+      - replacement
+      - removable
+      - count
+      - sources
+      - examples
+      type: object

@@ -2,6 +2,7 @@
 /bin/
 /dist/
 /kuma3-preflight
+/tools/openapigen/openapigen
 
 # Reports produced by the tool
 *.md.out
