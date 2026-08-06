@@ -271,6 +271,23 @@ func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	}
 }
 
+func TestRenderHTMLInconclusiveBannerMentionsRetainedBlockers(t *testing.T) {
+	m := sampleReport().toModel("2026-06-17T10:00:00Z")
+	if m.Status != StatusInconclusive || m.Summary.Blockers == 0 {
+		t.Fatalf("sample report should exercise an inconclusive report with blockers: status=%q blockers=%d", m.Status, m.Summary.Blockers)
+	}
+	html, err := m.RenderHTML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(html, "No blockers found, but some collections could not be read") {
+		t.Error("inconclusive banner can still claim no blockers were found")
+	}
+	if !strings.Contains(html, "retained blocker") {
+		t.Error("inconclusive banner does not mention retained blockers")
+	}
+}
+
 // The k8s cards (kuma.io/mesh annotation→label) are Kubernetes-object concerns the
 // CP API cannot reveal, so they are shown only when the audit observed Kubernetes.
 func TestBuildManualChecksK8sGating(t *testing.T) {
