@@ -58,7 +58,7 @@ func auditResponses(t *testing.T, responses map[string]string) Report {
 	}))
 	t.Cleanup(srv.Close)
 
-	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second}, nil)
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}

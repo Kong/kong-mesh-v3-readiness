@@ -47,7 +47,7 @@ func TestNonKumaEndpointReportsFriendlyError(t *testing.T) {
 		_, _ = w.Write([]byte("<html><body>login</body></html>"))
 	}))
 	t.Cleanup(srv.Close)
-	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestIndexBodyTimeoutPropagates(t *testing.T) {
 		<-r.Context().Done()
 	}))
 	t.Cleanup(srv.Close)
-	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 250 * time.Millisecond})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 250 * time.Millisecond}, nil)
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestConfigForbiddenDegradesToGap(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":403}`))
 		},
 	})
-	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestGlobalZonesInsightsForbiddenDegradesToGap(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":403}`))
 		},
 	})
-	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,157 @@ func TestAuditContactsOnlyControlPlane(t *testing.T) {
 	}
 }
 
+// TestAuditRequestHeadersSentToControlPlane proves Audit forwards static request
+// headers to control-plane requests while still honoring the caller's transport.
+func TestAuditRequestHeadersSentToControlPlane(t *testing.T) {
+	type seenRequest struct {
+		path   string
+		accept []string
+		trace  []string
+	}
+
+	var seen []seenRequest
+	hc := &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			gotAccept := append([]string(nil), req.Header.Values("Accept")...)
+			gotTrace := append([]string(nil), req.Header.Values("X-Trace-Id")...)
+			if !slices.Equal(gotAccept, []string{"application/custom+json"}) {
+				return nil, fmt.Errorf("%s Accept = %v, want only the custom value", req.URL.Path, gotAccept)
+			}
+			if !slices.Equal(gotTrace, []string{"trace-123"}) {
+				return nil, fmt.Errorf("%s X-Trace-Id = %v, want custom header on every request", req.URL.Path, gotTrace)
+			}
+			seen = append(seen, seenRequest{
+				path:   req.URL.Path,
+				accept: gotAccept,
+				trace:  gotTrace,
+			})
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+	srv := mockCleanCP(t)
+	headers := http.Header{
+		"Accept":     {"application/custom+json"},
+		"X-Trace-Id": {"trace-123"},
+	}
+
+	rep, err := preflight.Audit(context.Background(), preflight.Options{
+		Address:        srv.URL,
+		LatestPatch:    "2.14.0",
+		HTTPClient:     hc,
+		RequestHeaders: headers,
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if rep.Status != preflight.StatusClean {
+		t.Errorf("status = %q, want %q", rep.Status, preflight.StatusClean)
+	}
+	if len(seen) < 2 {
+		t.Fatalf("saw %d requests, want multiple control-plane requests validated", len(seen))
+	}
+	for _, req := range seen {
+		if !slices.Equal(req.accept, []string{"application/custom+json"}) {
+			t.Errorf("%s Accept = %v, want only the custom value", req.path, req.accept)
+		}
+		if !slices.Equal(req.trace, []string{"trace-123"}) {
+			t.Errorf("%s X-Trace-Id = %v, want custom header on every request", req.path, req.trace)
+		}
+	}
+}
+
+func TestAuditRequestHeadersClonedBeforeUse(t *testing.T) {
+	headers := http.Header{
+		"X-Trace-Id": {"trace-123"},
+	}
+	seen := map[string]struct {
+		trace    []string
+		injected string
+	}{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen[r.URL.Path] = struct {
+			trace    []string
+			injected string
+		}{
+			trace:    append([]string(nil), r.Header.Values("X-Trace-Id")...),
+			injected: r.Header.Get("X-Injected"),
+		}
+		if r.URL.Path == "/" {
+			headers["X-Trace-Id"][0] = "mutated-slice"
+			headers.Set("X-Injected", "mutated-map")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/":
+			_, _ = io.WriteString(w, `{"product":"Kuma","version":"2.14.0","mode":"zone"}`)
+		case "/config":
+			_, _ = io.WriteString(w, cleanConfigJSON)
+		case "/meshes":
+			_, _ = io.WriteString(w, `{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`)
+		default:
+			_, _ = io.WriteString(w, `{"total":0,"items":[],"next":null}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	rep, err := preflight.Audit(context.Background(), preflight.Options{
+		Address:        srv.URL,
+		LatestPatch:    "2.14.0",
+		RequestHeaders: headers,
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if rep.Status != preflight.StatusClean {
+		t.Errorf("status = %q, want %q", rep.Status, preflight.StatusClean)
+	}
+	for path, got := range seen {
+		if !slices.Equal(got.trace, []string{"trace-123"}) {
+			t.Errorf("%s X-Trace-Id = %v, want cloned original value", path, got.trace)
+		}
+		if got.injected != "" {
+			t.Errorf("%s X-Injected = %q, want caller's later map mutation ignored", path, got.injected)
+		}
+	}
+	if _, ok := seen["/config"]; !ok {
+		t.Fatal("Audit did not request /config after mutating caller headers")
+	}
+}
+
+func TestAuditTokenOverridesCustomAuthorization(t *testing.T) {
+	var gotAuthorization string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/":
+			_, _ = io.WriteString(w, `{"product":"Kuma","version":"2.14.0","mode":"zone"}`)
+		case "/config":
+			_, _ = io.WriteString(w, cleanConfigJSON)
+		case "/meshes":
+			_, _ = io.WriteString(w, `{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`)
+		default:
+			_, _ = io.WriteString(w, `{"total":0,"items":[],"next":null}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := preflight.Audit(context.Background(), preflight.Options{
+		Address: srv.URL,
+		Token:   "from-token",
+		RequestHeaders: http.Header{
+			"Authorization": {"Bearer from-header"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if gotAuthorization != "Bearer from-token" {
+		t.Errorf("Authorization = %q, want token to override the custom header", gotAuthorization)
+	}
+}
+
 // TestAuditWritesNothingToStdio guards that the library never prints: Audit must
 // be silent so an importing program's own stdout/stderr are never polluted.
 func TestAuditWritesNothingToStdio(t *testing.T) {
@@ -162,4 +314,10 @@ func captureFD(t *testing.T, target **os.File) func() string {
 		_ = r.Close()
 		return got
 	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

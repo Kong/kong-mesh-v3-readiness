@@ -43,6 +43,10 @@ type Options struct {
 	// HTTPClient is used to reach the control plane. A nil value builds a
 	// default client with a 60s timeout.
 	HTTPClient *http.Client
+	// RequestHeaders are added to every control-plane audit request sent to
+	// Address. These headers are cloned before use, built-in defaults fill only
+	// missing values, and Token still overrides Authorization when non-empty.
+	RequestHeaders http.Header
 }
 
 // Audit runs a full readiness audit against the control plane described by opts
@@ -59,7 +63,7 @@ func Audit(ctx context.Context, opts Options) (Report, error) {
 	if hc == nil {
 		hc = &http.Client{Timeout: defaultTimeout}
 	}
-	c, err := newClientWithHTTP(opts.Address, opts.Token, hc)
+	c, err := newClientWithHTTP(opts.Address, opts.Token, hc, opts.RequestHeaders)
 	if err != nil {
 		return Report{}, err
 	}
