@@ -223,7 +223,12 @@ func loadModel(path string) (preflight.Report, error) {
 	if path == "-" {
 		data, err = io.ReadAll(io.LimitReader(os.Stdin, maxReportBytes))
 	} else {
-		data, err = os.ReadFile(path)
+		var f *os.File
+		if f, err = os.Open(path); err != nil {
+			return preflight.Report{}, err
+		}
+		defer f.Close()
+		data, err = io.ReadAll(io.LimitReader(f, maxReportBytes))
 	}
 	if err != nil {
 		return preflight.Report{}, err
