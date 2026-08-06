@@ -1,9 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"sort"
+
+	"github.com/Kong/kong-mesh-v3-readiness/reportmodel"
 )
 
 // Schema/tool identifiers stamped into every JSON report so a consumer (or the
@@ -21,88 +22,27 @@ const (
 	statusFailed       = "failed"
 )
 
-// reportModel is the canonical, serializable form of a CP-audit report. Both
-// output formats (json, html) are rendered from this single structure, and
-// --from-json loads it back, so they can never drift apart. (Markdown is produced
-// only by --classify, from classificationModel.)
-type reportModel struct {
-	Schema       string          `json:"schema"`
-	Tool         string          `json:"tool"`
-	GeneratedAt  string          `json:"generatedAt,omitempty"`
-	Status       string          `json:"status"`
-	Address      string          `json:"address,omitempty"`
-	Error        string          `json:"error,omitempty"`
-	ControlPlane controlPlane    `json:"controlPlane"`
-	Meshes       []string        `json:"meshes"`
-	Summary      summary         `json:"summary"`
-	Findings     []findingModel  `json:"findings"`
-	Coverage     []coverageModel `json:"coverageGaps"`
-	Manual       []manualCheck   `json:"manualChecks"`
-}
+// reportModel is the canonical, serializable form of a CP-audit report — an
+// alias for reportmodel.Report so every existing call site in this package
+// keeps working unchanged. Both output formats (json, html) are rendered from
+// this single structure, and --from-json loads it back, so they can never
+// drift apart. (Markdown is produced only by --classify, from classificationModel.)
+type reportModel = reportmodel.Report
 
-type controlPlane struct {
-	Product string `json:"product"`
-	Version string `json:"version"`
-	Mode    string `json:"mode,omitempty"`
-}
+type controlPlane = reportmodel.ControlPlane
 
-type summary struct {
-	Blockers       int `json:"blockers"`
-	Warnings       int `json:"warnings"`
-	Info           int `json:"info"`
-	CoverageGaps   int `json:"coverageGaps"`
-	ParseErrors    int `json:"parseErrors"`
-	SystemFindings int `json:"systemFindings"`
-}
+type summary = reportmodel.Summary
 
-type findingModel struct {
-	Severity string `json:"severity"`
-	Group    string `json:"group"`
-	Category string `json:"category"`
-	Title    string `json:"title"`
-	Detail   string `json:"detail"`
-	// Doc links to the Kong Mesh page explaining the 3.0 replacement API/feature.
-	// Optional: omitted for findings with no replacement to point at.
-	Doc      string   `json:"doc,omitempty"`
-	Count    int      `json:"count"`
-	Examples []string `json:"examples"`
-}
+type findingModel = reportmodel.Finding
 
-type coverageModel struct {
-	Path   string `json:"path"`
-	Reason string `json:"reason"`
-}
+type coverageModel = reportmodel.CoverageGap
 
 // manualCheck is one upgrade item the CP API cannot surface, rendered as a card in
 // the manual checklist. Title is always set; Detail and Command enrich a card with
-// an explanation and a copy-paste validation command when one exists.
-type manualCheck struct {
-	Title   string `json:"title"`
-	Detail  string `json:"detail,omitempty"`
-	Command string `json:"command,omitempty"`
-}
-
-// UnmarshalJSON accepts either the v3 object form or the v2 form, where each
-// manual check was a bare string. A legacy string maps to Title, so --from-json
-// still renders reports captured before the schema bump (the v2 schema value
-// passes loadModel's prefix check).
-func (m *manualCheck) UnmarshalJSON(b []byte) error {
-	if t := bytes.TrimSpace(b); len(t) > 0 && t[0] == '"' {
-		var title string
-		if err := json.Unmarshal(b, &title); err != nil {
-			return err
-		}
-		m.Title = title
-		return nil
-	}
-	type alias manualCheck // avoid recursing into this method
-	var a alias
-	if err := json.Unmarshal(b, &a); err != nil {
-		return err
-	}
-	*m = manualCheck(a)
-	return nil
-}
+// an explanation and a copy-paste validation command when one exists. Its
+// UnmarshalJSON (accepting both the v3 object form and the legacy v2 bare-string
+// form) lives on reportmodel.ManualCheck.
+type manualCheck = reportmodel.ManualCheck
 
 // Finding groups organize the rendered report into top-level sections. Every
 // category maps to exactly one group; an unmapped category falls into groupOther

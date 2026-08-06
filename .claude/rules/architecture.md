@@ -1,11 +1,14 @@
 # Architecture invariants — do not break
 
 - **One model, N renderers.** Everything renders from a single model — the CP audit from
-  `reportModel` (`model.go`) into JSON + HTML; `--classify` from `classificationModel`
-  (`classify_model.go`) into Markdown + JSON + HTML. Within each, the formats must never
-  disagree (Markdown is classify-only — a CP audit emits JSON or HTML, default HTML).
+  `reportModel` (`model.go`; the type itself is `reportmodel.Report`, aliased in `model.go`)
+  into JSON + HTML; `--classify` from `classificationModel` (`classify_model.go`; aliases
+  `reportmodel.Classification`) into Markdown + JSON + HTML. Within each, the formats must
+  never disagree (Markdown is classify-only — a CP audit emits JSON or HTML, default HTML).
   `--from-json` reloads `reportModel` and re-renders, so the JSON shape is a stable contract.
-  Bump `reportSchema` (`model.go`) on incompatible changes.
+  Bump `reportSchema` (`model.go`) on incompatible changes. The `reportmodel/` package (its own
+  importable package, see repo-root `CLAUDE.md`) exists so `tools/openapigen` can reflect these
+  types into `docs/openapi.yaml` — it owns only struct shapes, never audit/render logic.
 - **Exit codes gate CI** (set in `main.run`): `0` clean · `1` blockers · `2` operational
   error · `3` inconclusive. Keep `exitForStatus`, `report.status()`, and these in sync.
 - **Never emit a misleading clean report.** A 404 on a collection is a *coverage gap*
@@ -32,9 +35,9 @@
   count, examples[] }`. `add()` (`report.go:50`) merges duplicates, appends example refs up
   to `exampleCap` (10). Rendered as one bullet per `(severity, category, title)` with merged
   count + capped example list.
-- `findingModel` (`model.go:58`) is the serialized form; JSON top-level contract is
-  `reportModel` (`model.go`): `schema`, `tool`, `status`, `controlPlane`, `summary`,
-  `findings[]`, `coverageGaps[]`, `manualChecks[]`.
+- `findingModel` (alias for `reportmodel.Finding`, `reportmodel/report.go`) is the serialized
+  form; JSON top-level contract is `reportModel` (`reportmodel.Report`): `schema`, `tool`,
+  `status`, `controlPlane`, `summary`, `findings[]`, `coverageGaps[]`, `manualChecks[]`.
 
 ## Extensibility
 
