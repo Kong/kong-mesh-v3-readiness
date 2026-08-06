@@ -118,7 +118,7 @@ func run() error {
 
 	const outPath = "docs/openapi.yaml"
 	if err := os.WriteFile(outPath, []byte(header+"\n"+components), 0o644); err != nil {
-		return err
+		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 	fmt.Println("wrote", outPath)
 	return nil
