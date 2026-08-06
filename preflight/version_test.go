@@ -1,65 +1,12 @@
-package main
+package preflight
 
 import (
 	"context"
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
 )
-
-func TestParseSemver(t *testing.T) {
-	cases := []struct {
-		in              string
-		maj, min, patch int
-		ok              bool
-	}{
-		{"2.14.0", 2, 14, 0, true},
-		{"2.9.0", 2, 9, 0, true},
-		{"v2.14.1", 2, 14, 1, true},
-		{"2.14.7-rc1", 2, 14, 7, true},
-		{"2.14.0+build.5", 2, 14, 0, true},
-		{"3.0.0", 3, 0, 0, true},
-		{"2.14", 0, 0, 0, false},
-		{"dev", 0, 0, 0, false},
-		{"x.y.z", 0, 0, 0, false},
-		{"", 0, 0, 0, false},
-	}
-	for _, c := range cases {
-		maj, minor, patch, ok := parseSemver(c.in)
-		if ok != c.ok || (ok && (maj != c.maj || minor != c.min || patch != c.patch)) {
-			t.Errorf("parseSemver(%q) = (%d,%d,%d,%v), want (%d,%d,%d,%v)",
-				c.in, maj, minor, patch, ok, c.maj, c.min, c.patch, c.ok)
-		}
-	}
-}
-
-func TestBehind(t *testing.T) {
-	// latest = 2.14.5
-	const lMin, lPatch = 14, 5
-	cases := []struct {
-		maj, min, patch int
-		want            bool
-	}{
-		{2, 14, 4, true},  // older patch
-		{2, 14, 5, false}, // current
-		{2, 14, 6, false}, // ahead patch
-		{2, 13, 9, true},  // older minor
-		{2, 11, 0, true},  // much older minor
-		{2, 15, 0, false}, // newer minor
-		{3, 0, 0, false},  // 3.x is beyond the 2.x upgrade source
-		{1, 8, 0, true},   // 1.x must reach 2.14 first
-		{0, 0, 0, true},   // pre-2.x / dev build is not a valid upgrade source
-	}
-	for _, c := range cases {
-		if got := behind(c.maj, c.min, c.patch, lMin, lPatch); got != c.want {
-			t.Errorf("behind(%d.%d.%d, latest 2.%d.%d) = %v, want %v",
-				c.maj, c.min, c.patch, lMin, lPatch, got, c.want)
-		}
-	}
-}
 
 func TestLatestZoneVersion(t *testing.T) {
 	mk := func(vs ...string) zoneOverview {
@@ -85,116 +32,11 @@ func TestLatestZoneVersion(t *testing.T) {
 	}
 }
 
-func TestFetchLatestPatch(t *testing.T) {
-	orig := githubReleasesURL
-	t.Cleanup(func() { githubReleasesURL = orig })
-
-	t.Run("picks highest 2.14.x, ignoring prerelease/draft/other lines", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = io.WriteString(w, `[
-				{"tag_name":"3.0.0","draft":false,"prerelease":false},
-				{"tag_name":"2.14.99","draft":true,"prerelease":false},
-				{"tag_name":"2.14.9","draft":false,"prerelease":true},
-				{"tag_name":"2.14.7","draft":false,"prerelease":false},
-				{"tag_name":"2.14.3","draft":false,"prerelease":false},
-				{"tag_name":"2.13.8","draft":false,"prerelease":false}
-			]`)
-		}))
-		t.Cleanup(srv.Close)
-		githubReleasesURL = srv.URL
-
-		got, err := fetchLatestPatch(context.Background(), srv.Client())
-		if err != nil {
-			t.Fatalf("fetchLatestPatch: %v", err)
-		}
-		if got != "2.14.7" {
-			t.Errorf("got %q, want 2.14.7", got)
-		}
-	})
-
-	t.Run("no matching minor is an error", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = io.WriteString(w, `[{"tag_name":"2.13.8","draft":false,"prerelease":false}]`)
-		}))
-		t.Cleanup(srv.Close)
-		githubReleasesURL = srv.URL
-		if _, err := fetchLatestPatch(context.Background(), srv.Client()); err == nil {
-			t.Errorf("want error when no 2.14.x release exists")
-		}
-	})
-
-	t.Run("non-200 is an error", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusForbidden)
-		}))
-		t.Cleanup(srv.Close)
-		githubReleasesURL = srv.URL
-		if _, err := fetchLatestPatch(context.Background(), srv.Client()); err == nil {
-			t.Errorf("want error on non-200 response")
-		}
-	})
-
-	t.Run("cap reached with more pages is an error, not a stale best", func(t *testing.T) {
-		var srv *httptest.Server
-		srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			// Always advertise a next page → traversal never naturally ends, so the
-			// page cap is hit. A 2.14.x is present, but we must not return it as
-			// authoritative since unread pages might hold a higher patch.
-			w.Header().Set("Link", `<`+srv.URL+`?page=next>; rel="next"`)
-			_, _ = io.WriteString(w, `[{"tag_name":"2.14.1","draft":false,"prerelease":false}]`)
-		}))
-		t.Cleanup(srv.Close)
-		githubReleasesURL = srv.URL
-		if _, err := fetchLatestPatch(context.Background(), srv.Client()); err == nil {
-			t.Errorf("hitting the page cap mid-traversal must be an error, not a (stale) best")
-		}
-	})
-
-	t.Run("follows pagination to find a patch on a later page", func(t *testing.T) {
-		var srv *httptest.Server
-		srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Page 1 has only an older line; the true latest 2.14.x is on page 2,
-			// reached via the Link header.
-			if r.URL.Query().Get("page") == "2" {
-				_, _ = io.WriteString(w, `[{"tag_name":"2.14.5","draft":false,"prerelease":false}]`)
-				return
-			}
-			w.Header().Set("Link", `<`+srv.URL+`?page=2>; rel="next"`)
-			_, _ = io.WriteString(w, `[{"tag_name":"2.13.8","draft":false,"prerelease":false}]`)
-		}))
-		t.Cleanup(srv.Close)
-		githubReleasesURL = srv.URL
-		got, err := fetchLatestPatch(context.Background(), srv.Client())
-		if err != nil {
-			t.Fatalf("fetchLatestPatch: %v", err)
-		}
-		if got != "2.14.5" {
-			t.Errorf("got %q, want 2.14.5 (from page 2)", got)
-		}
-	})
-}
-
-func TestNextReleaseLink(t *testing.T) {
-	cases := map[string]string{
-		`<https://api.github.com/x?page=2>; rel="next", <https://api.github.com/x?page=9>; rel="last"`: "https://api.github.com/x?page=2",
-		`<https://api.github.com/x?page=9>; rel="last"`:                                                "",
-		``:        "",
-		`garbage`: "",
-		// Reject a non-http scheme even if labeled rel="next".
-		`<ftp://evil/x>; rel="next"`: "",
-	}
-	for in, want := range cases {
-		if got := nextReleaseLink(in); got != want {
-			t.Errorf("nextReleaseLink(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 // auditVersion audits a stub CP with the version-currency check enabled.
-func auditVersion(t *testing.T, latest string, handlers map[string]http.HandlerFunc) *report {
+func auditVersion(t *testing.T, latest string, handlers map[string]http.HandlerFunc) *collector {
 	t.Helper()
 	srv := cpServer(t, handlers)
-	c, err := newClient(srv.URL, "", 10*time.Second)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -205,16 +47,16 @@ func auditVersion(t *testing.T, latest string, handlers map[string]http.HandlerF
 	return rep
 }
 
-func versionFinding(r *report) (finding, bool) {
+func versionFinding(r *collector) (rawFinding, bool) {
 	for _, f := range r.findings {
 		if f.category == cpVersionCategory {
 			return f, true
 		}
 	}
-	return finding{}, false
+	return rawFinding{}, false
 }
 
-func hasExample(f finding, want string) bool {
+func hasExample(f rawFinding, want string) bool {
 	return slices.Contains(f.examples, want)
 }
 
@@ -350,7 +192,7 @@ func TestVersionCurrencyUnknownIsGap(t *testing.T) {
 
 func TestVersionCheckOffByDefault(t *testing.T) {
 	srv := cpServer(t, nil)
-	c, err := newClient(srv.URL, "", 10*time.Second)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -367,7 +209,7 @@ func TestVersionCheckOffByDefault(t *testing.T) {
 }
 
 func TestFlagIfBehindUnparseableIsGap(t *testing.T) {
-	a := &auditor{rep: &report{}}
+	a := &auditor{rep: &collector{}}
 	a.flagIfBehind("unknown", "control plane", 14, 0, "detail")
 	if len(a.rep.findings) != 0 {
 		t.Errorf("unparseable version produced a finding, want a gap only")

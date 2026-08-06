@@ -1,40 +1,43 @@
 # Adding / changing a deprecation check
 
-Checks live in `audit.go`. Add the check **and a test**; docs
+Checks live in `preflight/audit.go`. Add the check **and a test**; docs
 (`docs/deprecated-features.md`) and `examples/` can be updated separately.
 
 Pick the site by check shape:
 
 - **Removed mesh-scoped resource (always a blocker):** append to `legacyMeshScoped`
-  (shape `{wsPath, kind, replacement, doc, policy}`); `checkLegacyResources` lists +
-  flags it automatically. Set `policy: true` for a classic Kuma 1.x *policy* type so it
-  renders under the Policies group (`categoryRemovedPolicy`); leave it false for a
-  networking/gateway resource, which stays under Removed resources.
-- **New targetRef policy to scan:** add its workspace path to `newPolicyPaths` (`audit.go:39`).
+  (shape `{wsPath, kind, replacement, doc, policy}` — exported to importers as
+  `preflight.RemovedKinds()`); `checkLegacyResources` lists + flags it automatically. Set
+  `policy: true` for a classic Kuma 1.x *policy* type so it renders under the Policies group
+  (`categoryRemovedPolicy`); leave it false for a networking/gateway resource, which stays
+  under Removed resources.
+- **New targetRef policy to scan:** add its workspace path to `newPolicyPaths` in
+  `preflight/audit.go`.
 - **Deprecated/relocated field in a policy spec:** add/extend a `case` in `checkPolicyFields`
-  (`audit.go:273`, switch on `it.Type`). Unmarshal only the fields you inspect into a local
-  anonymous struct; on unmarshal error `return` (already counted as a parse error upstream).
-  Field deprecations are **blockers**. The tool emits two severities in practice —
+  (`preflight/audit.go`, switch on `it.Type`). Unmarshal only the fields you inspect into a
+  local anonymous struct; on unmarshal error `return` (already counted as a parse error
+  upstream). Field deprecations are **blockers**. The tool emits two severities in practice —
   `blocker` (gates CI) and `info` (non-actionable counts). The `warning` tier still
-  exists in the model for backward-compatible `--from-json` parsing but no check
+  exists in the model for backward-compatible `ParseReport` parsing but no check
   produces one; prefer `blocker` for anything actionable.
-- **Mesh object setting:** extend `checkMeshSettings` (`audit.go:157`, decode into `meshSpec`).
+- **Mesh object setting:** extend `checkMeshSettings` (`preflight/audit.go`, decode into
+  `meshSpec`).
 - **Dataplane / zone-proxy / resource-name check:** extend the matching `check*` method.
 
-Record findings with `a.rep.add(sev, category, title, detail, exampleRef)` (`report.go:50`) —
-identical `(severity, category, title)` tuples merge and accumulate example refs (capped at
-`exampleCap` = 10, `audit.go:52`). Use `a.ref(it)` for the example ref so CP-managed
-(`policy-role: system`) resources are tagged and counted; use `qualified(it)` only where
-system-tagging doesn't apply.
+Record findings with `a.rep.add(sev, category, title, detail, exampleRef)`
+(`preflight/report.go`) — identical `(severity, category, title)` tuples merge and
+accumulate example refs (capped at `preflight.ExampleCap` = 10). Use `a.ref(it)` for the
+example ref so CP-managed (`policy-role: system`) resources are tagged and counted; use
+`qualified(it)` only where system-tagging doesn't apply.
 
-Then add a case to `sampleReport()` (`render_test.go:11`) / golden assertions. To cover
-the check end-to-end (CP API → JSON), add a fixture under
-`testdata/golden/kitchen-sink/responses/<wsPath>.json` that triggers it (or a new scenario
-dir) and run `go test -run TestGoldenReports -update` to refresh the reference JSON — the
-mock CP defaults any unlisted collection to an empty list, and `404.txt` forces coverage
-gaps. Review the golden diff before committing.
+Then add a case to `sampleReport()` (`preflight/render_test.go`) / golden assertions. To
+cover the check end-to-end (CP API → JSON), add a fixture under
+`preflight/testdata/golden/kitchen-sink/responses/<wsPath>.json` that triggers it (or a new
+scenario dir) and run `go test ./preflight/... -run TestGoldenReports -update` to refresh
+the reference JSON — the mock CP defaults any unlisted collection to an empty list, and
+`404.txt` forces coverage gaps. Review the golden diff before committing.
 
-New manual (non-CP-detectable) items go in the `manualChecks` slice in `audit.go`.
+New manual (non-CP-detectable) items go in the `manualChecks` slice in `preflight/audit.go`.
 
 ## Severity — choose deliberately
 

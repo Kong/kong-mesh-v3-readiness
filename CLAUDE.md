@@ -8,23 +8,30 @@ keep it focused on the preflight CLI + its docs.
 
 ## Layout
 
-- `cmd/kuma3-preflight/` — the entire CLI (one `package main`):
-  - `main.go` flags / `--from-json` / exit codes / atomic write · `client.go` HTTP client
-  - `audit.go` **all audit logic + deprecation check definitions** · `report.go` finding types
-  - `model.go` renderers for `reportModel` (alias for `reportmodel.Report`) · `html.go` embedded HTML
-  - `render_test.go` unit/render tests · `golden_test.go` mock-CP golden tests
-    (fixtures + reference JSON under `testdata/golden/<scenario>/`)
-- `reportmodel/` — the JSON contract types (`Report`, `Classification` + nested types) as an
-  importable package, so they can be reflected from outside `package main`. `cmd/kuma3-preflight`
-  aliases every type back to its old unexported name (`type reportModel = reportmodel.Report`,
-  etc.) so all existing call sites are unchanged — this package owns only the struct shapes, not
-  the audit/render logic.
+- `preflight/` — the importable audit engine (`package preflight`,
+  `github.com/Kong/kong-mesh-v3-readiness/preflight`):
+  - `preflight.go` public entrypoint (`Audit`, `Options`, `Report`, `RemovedKinds`)
+  - `client.go` HTTP client · `audit.go` **all audit logic + deprecation check definitions**
+  - `report.go` internal finding accumulator · `model.go` `Report` model + JSON/HTML renderers
+  - `html.go` embedded HTML · `semver.go` version parsing/comparison
+  - `render_test.go`/`golden_test.go`/etc. white-box tests (package `preflight`);
+    `api_test.go` black-box tests of the public surface (package `preflight_test`)
+  - `testdata/golden/<scenario>/` golden fixtures + reference JSON
+- `cmd/kuma3-preflight/` — the CLI (`package main`), a thin wrapper around `preflight`:
+  - `main.go` flags / `--from-json` / exit codes / atomic write
+  - `release.go` GitHub latest-patch lookup (CLI-only network call; never in `preflight`)
+  - `classify.go`/`classify_model.go` the `--classify` e2e-test scanner (its own Markdown model)
+- `reportmodel/` — the `--classify` JSON contract (`Classification` + nested types), plus
+  **compatibility aliases** for the CP-audit types (`type Report = preflight.Report`, etc.)
+  so code written against the older import path keeps compiling. `preflight` owns those
+  structs — it defines `RenderJSON`/`RenderHTML` on `Report` — so new code imports
+  `preflight` directly. This package holds struct shapes only, never audit/render logic.
 - `tools/openapigen/` — a separate Go module (own `go.mod`, `replace`d back to the main module)
-  that reflects `reportmodel` types into `docs/openapi.yaml` via `invopop/jsonschema` +
-  `sigs.k8s.io/yaml`. Isolated so its dependencies never touch the main module's `go.mod` (kept
-  stdlib-only). Regenerate with `go generate ./...` from the repo root after changing a
-  `reportmodel` type; doc comments on `reportmodel` types/fields become JSON Schema
-  `description`s, `jsonschema:"..."` struct tags drive enums/formats/limits.
+  that reflects `preflight.Report` and `reportmodel.Classification` into `docs/openapi.yaml`
+  via `invopop/jsonschema` + `sigs.k8s.io/yaml`. Isolated so its dependencies never touch the
+  main module's `go.mod` (kept stdlib-only). Regenerate with `go generate ./...` from the repo
+  root after changing either contract type; doc comments on those types/fields become JSON
+  Schema `description`s, `jsonschema:"..."` struct tags drive enums/formats/limits.
 - `docs/` — `deprecated-features.md` (3.0 deprecations the checks track), `test-plan.md`,
   `test-setup.md` (k3d + Universal CP), `test-results.md`, `openapi.yaml` (generated, see above)
 - `examples/` real captured reports · `bin/` build output (gitignored) · `mise.toml` tool pins
@@ -50,17 +57,17 @@ port-forward first: `kubectl -n kuma-system port-forward svc/kuma-control-plane 
 Run via `mise` (pins the toolchain). All must pass before a change is done:
 
 ```bash
-go test ./...              # all tests pass
-golangci-lint run          # 0 issues (pinned 2.12.2; config .golangci.yml, modeled on Kuma's)
-nilaway ./...               # 0 nil-panic findings (Uber NilAway, pinned via mise.toml)
-go vet ./...               # clean
-gofmt -l cmd/ reportmodel/ # prints nothing (no unformatted files; .golangci.yml also enforces gofumpt+gci)
+go test ./...        # all tests pass
+golangci-lint run    # 0 issues (pinned 2.12.2; config .golangci.yml, modeled on Kuma's)
+nilaway ./...         # 0 nil-panic findings (Uber NilAway, pinned via mise.toml)
+go vet ./...         # clean
+gofmt -l .           # prints nothing (no unformatted files; .golangci.yml also enforces gofumpt+gci)
 ```
 
-These all run against the main module (`cmd/kuma3-preflight` + `reportmodel`) via the module's
-`go.mod`. `tools/openapigen` is a separate module (its own `go.mod`) and isn't covered by any of
-the above — it has no dependency-graph impact on the shipped binary, so check it independently
-(`cd tools/openapigen && go build ./... && go vet ./...`) after touching it.
+These all run against the main module (`preflight` + `cmd/kuma3-preflight` + `reportmodel`) via
+the module's `go.mod`. `tools/openapigen` is a separate module (its own `go.mod`) and isn't
+covered by any of the above — it has no dependency-graph impact on the shipped binary, so check
+it independently (`cd tools/openapigen && go build ./... && go vet ./...`) after touching it.
 
 `mise run check` runs them all. Fix root causes — never suppress a linter finding with an
 ignore/skip directive. NilAway false positives (its known limits: the `net/http` `err`/`resp`
@@ -75,7 +82,8 @@ explicit nil-guard or a small restructure, never a suppression.
   file-based golden tests (`golden_test.go`) that audit a mock CP (`httptest`)
   and diff the rendered JSON against `testdata/golden/<scenario>/report.golden.json`
   (regenerate with `-update`).
-- **Dependencies: none** for the main module — `cmd/kuma3-preflight` + `reportmodel` (stdlib-only;
+- **Dependencies: none** for the main module — `preflight` + `cmd/kuma3-preflight` +
+  `reportmodel` (stdlib-only;
   README advertises this). Adding a third-party dep to the main module is allowed when it clearly
   earns its place — then update the README's stdlib-only claim, run `go mod tidy`, prefer the
   smallest option. `tools/openapigen` is the one exception: its own `go.mod` carries

@@ -1,10 +1,11 @@
-// Command openapigen regenerates docs/openapi.yaml from the reportmodel
-// package: it reflects reportmodel.Report and reportmodel.Classification into
+// Command openapigen regenerates docs/openapi.yaml from the two Go types that
+// define the emitted JSON contracts: preflight.Report (aliased as
+// reportmodel.Report) and reportmodel.Classification. It reflects both into
 // JSON Schema (via invopop/jsonschema, picking up field doc comments and
 // jsonschema struct tags), merges the results into one components.schemas
 // map, and writes it under the hand-authored info/externalDocs/paths preamble
-// below. Run via `go generate ./...` from the repo root after changing a
-// reportmodel type.
+// below. Run via `go generate ./...` from the repo root after changing either
+// type.
 package main
 
 import (
@@ -43,8 +44,9 @@ info:
     Each is a stable contract: ` + "`--from-json`" + ` reloads ` + "`Report`" + ` verbatim, so JSON,
     HTML (and, for classification, Markdown) render from the exact same object.
 
-    Generated from the ` + "`reportmodel`" + ` Go package by ` + "`tools/openapigen`" + ` — do not edit by
-    hand; run ` + "`go generate ./...`" + ` from the repo root after changing a reportmodel type.
+    Generated from the ` + "`preflight`" + ` and ` + "`reportmodel`" + ` Go packages by
+    ` + "`tools/openapigen`" + ` — do not edit by hand; run ` + "`go generate ./...`" + ` from the
+    repo root after changing a contract type.
   license:
     name: Apache-2.0
 externalDocs:
@@ -98,16 +100,19 @@ func componentsYAML(defs jsonschema.Definitions) (string, error) {
 
 // run must execute with cwd == the main module's root: AddGoComments derives
 // a type's fully-qualified package path by joining its base argument to the
-// path argument's directory components, so path has to be the module-root-
-// relative package dir ("reportmodel"), not an absolute one.
+// path argument's directory components, so path has to be a module-root-
+// relative package dir ("preflight"), not an absolute one. Both dirs are read:
+// the audit-report structs live in preflight, Classification in reportmodel.
 func run() error {
 	if err := os.Chdir(repoRoot()); err != nil {
 		return fmt.Errorf("chdir to repo root: %w", err)
 	}
 
 	r := &jsonschema.Reflector{}
-	if err := r.AddGoComments(repoModulePath, "reportmodel"); err != nil {
-		return fmt.Errorf("read reportmodel doc comments: %w", err)
+	for _, pkgDir := range []string{"preflight", "reportmodel"} {
+		if err := r.AddGoComments(repoModulePath, pkgDir); err != nil {
+			return fmt.Errorf("read %s doc comments: %w", pkgDir, err)
+		}
 	}
 
 	defs := reflectAll(r)

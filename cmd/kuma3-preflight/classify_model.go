@@ -1,18 +1,20 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/Kong/kong-mesh-v3-readiness/preflight"
 	"github.com/Kong/kong-mesh-v3-readiness/reportmodel"
 )
 
 // classificationModel is the canonical, serializable form of a classification
 // run — an alias for reportmodel.Classification so every existing call site in
-// this package keeps working unchanged. As with reportModel, every format
+// this package keeps working unchanged. As with preflight.Report, every format
 // renders from this one structure and the JSON shape is the stable contract.
 type classificationModel = reportmodel.Classification
 
@@ -96,7 +98,7 @@ func recRank(rec string) int {
 // removable (resources first) then kind; sources and examples sorted/deterministic.
 func (ci *classIndex) toModel(sourceDir, reportsDir, generatedAt string) classificationModel {
 	m := classificationModel{
-		Schema: classificationSchema, Tool: toolName, GeneratedAt: generatedAt,
+		Schema: classificationSchema, Tool: preflight.ToolName, GeneratedAt: generatedAt,
 		SourceDir: sourceDir, ReportsDir: reportsDir, Features: []featureModel{},
 	}
 	for _, name := range ci.featureNames() {
@@ -175,7 +177,18 @@ func renderClassification(format string, m classificationModel) (string, error) 
 }
 
 func renderClassificationJSON(m classificationModel) (string, error) {
-	return marshalIndentJSON(m)
+	return indentJSON(m)
+}
+
+// indentJSON renders v as 2-space-indented JSON with a trailing newline — the
+// on-disk/stdout shape used by the --classify JSON renderer, mirroring the
+// preflight package's own (unexported) marshalIndentJSON helper.
+func indentJSON(v any) (string, error) {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b) + "\n", nil
 }
 
 func or(s, fallback string) string {

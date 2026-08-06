@@ -1,4 +1,4 @@
-package main
+package preflight
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func TestGoldenReports(t *testing.T) {
 			dir := filepath.Join(root, name)
 			srv := mockCP(t, dir)
 
-			c, err := newClient(srv.URL, "", 30*time.Second)
+			c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second})
 			if err != nil {
 				t.Fatalf("newClient: %v", err)
 			}
@@ -60,7 +60,7 @@ func TestGoldenReports(t *testing.T) {
 				t.Fatalf("audit: %v", err)
 			}
 			// Empty generatedAt keeps the output deterministic (omitempty drops it).
-			got, err := renderJSON(rep.toModel(""))
+			got, err := rep.toModel("").RenderJSON()
 			if err != nil {
 				t.Fatalf("renderJSON: %v", err)
 			}
@@ -91,7 +91,7 @@ func TestGoldenReports(t *testing.T) {
 func TestBlockerFindingsCarryDocLinks(t *testing.T) {
 	dir := filepath.Join("testdata", "golden", "kitchen-sink")
 	srv := mockCP(t, dir)
-	c, err := newClient(srv.URL, "", 30*time.Second)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}

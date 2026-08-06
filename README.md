@@ -40,6 +40,44 @@ Exit codes: `0` clean · `1` blockers found · `2` operational error · `3` inco
 endpoint is skipped (the run is inconclusive, exit 3), so pass a token to audit control-plane
 settings. See the example report gallery in [`examples/`](examples/).
 
+## Use it as a Go library
+
+The audit engine behind the CLI is importable directly, so another Go program can run the
+same audit without shelling out:
+
+```bash
+go get github.com/Kong/kong-mesh-v3-readiness/preflight
+```
+
+```go
+import "github.com/Kong/kong-mesh-v3-readiness/preflight"
+
+rep, err := preflight.Audit(ctx, preflight.Options{
+	Address: "http://localhost:5681",
+	// Latest 2.14 patch to check CP/zone version currency against. Resolving it is
+	// the caller's job — leave it empty and that one check becomes a coverage gap,
+	// which makes the whole report inconclusive.
+	LatestPatch: "2.14.7",
+})
+if err != nil {
+	// hard failure: invalid Options.Address, unreachable CP, or a non-Kuma endpoint
+}
+out, err := rep.RenderJSON() // or rep.RenderHTML()
+```
+
+`preflight.Audit` performs no I/O beyond requests to `Options.Address` — it never prints,
+logs, or calls `os.Exit`. That is why `Options.LatestPatch` is an input: the CLI reads the
+`kumahq/kuma` GitHub releases API for it, and an importer must supply the value the same way
+(hardcoded, from its own cache, or from that API) to get a conclusive report. See the
+[`preflight`](preflight) package doc for the full API, including
+`preflight.UpgradeTargetMinor` for the 2.x minor the check is scoped to and
+`preflight.RemovedKinds()` for introspecting the removed-resource catalog.
+
+The report types are also re-exported as aliases from
+[`reportmodel`](reportmodel) (which additionally owns the `--classify`
+`Classification` contract), so code written against that import path still compiles.
+Both contracts are published as JSON Schema in [`docs/openapi.yaml`](docs/openapi.yaml).
+
 ## More
 
 - **[Full flag reference + the checks it runs](cmd/kuma3-preflight/README.md)**

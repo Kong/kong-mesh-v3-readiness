@@ -1,4 +1,4 @@
-package main
+package preflight
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func cpServer(t *testing.T, handlers map[string]http.HandlerFunc) *httptest.Serv
 	return srv
 }
 
-func gapForPath(r *report, path string) (coverageGap, bool) {
+func gapForPath(r *collector, path string) (coverageGap, bool) {
 	for _, g := range r.coverage {
 		if g.path == path {
 			return g, true
@@ -47,7 +47,7 @@ func TestNonKumaEndpointReportsFriendlyError(t *testing.T) {
 		_, _ = w.Write([]byte("<html><body>login</body></html>"))
 	}))
 	t.Cleanup(srv.Close)
-	c, err := newClient(srv.URL, "", 10*time.Second)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestIndexBodyTimeoutPropagates(t *testing.T) {
 		<-r.Context().Done()
 	}))
 	t.Cleanup(srv.Close)
-	c, err := newClient(srv.URL, "", 250*time.Millisecond)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 250 * time.Millisecond})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestConfigForbiddenDegradesToGap(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":403}`))
 		},
 	})
-	c, err := newClient(srv.URL, "", 10*time.Second)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -114,8 +114,8 @@ func TestConfigForbiddenDegradesToGap(t *testing.T) {
 	if !strings.Contains(g.reason, "--token") {
 		t.Errorf("/config gap reason should mention --token, got %q", g.reason)
 	}
-	if rep.status() != statusInconclusive {
-		t.Errorf("status = %q, want %q", rep.status(), statusInconclusive)
+	if rep.status() != StatusInconclusive {
+		t.Errorf("status = %q, want %q", rep.status(), StatusInconclusive)
 	}
 }
 
@@ -132,7 +132,7 @@ func TestGlobalZonesInsightsForbiddenDegradesToGap(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":403}`))
 		},
 	})
-	c, err := newClient(srv.URL, "", 10*time.Second)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestGlobalZonesInsightsForbiddenDegradesToGap(t *testing.T) {
 	if _, ok := gapForPath(rep, "/zones+insights"); !ok {
 		t.Fatalf("no /zones+insights coverage gap recorded; gaps=%v", rep.coverage)
 	}
-	if rep.status() != statusInconclusive {
-		t.Errorf("status = %q, want %q", rep.status(), statusInconclusive)
+	if rep.status() != StatusInconclusive {
+		t.Errorf("status = %q, want %q", rep.status(), StatusInconclusive)
 	}
 }

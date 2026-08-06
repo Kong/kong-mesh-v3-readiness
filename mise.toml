@@ -9,7 +9,7 @@ GOFLAGS = "-mod=mod"
 
 [tasks.build]
 description = "Build the kuma3-preflight CLI into bin/"
-sources = ["cmd/**/*.go", "reportmodel/**/*.go", "go.mod"]
+sources = ["cmd/**/*.go", "preflight/**/*.go", "reportmodel/**/*.go", "go.mod"]
 outputs = ["bin/kuma3-preflight"]
 run = "go build -o bin/kuma3-preflight ./cmd/kuma3-preflight"
 
@@ -31,12 +31,12 @@ run = "go vet ./..."
 
 [tasks.fmt]
 description = "Format Go sources in place"
-run = "gofmt -w cmd/ reportmodel/"
+run = "gofmt -w ."
 
 [tasks.fmt-check]
 description = "Fail if any Go source is unformatted"
 run = '''
-unformatted=$(gofmt -l cmd/ reportmodel/)
+unformatted=$(gofmt -l .)
 if [ -n "$unformatted" ]; then
   echo "unformatted files:" >&2
   echo "$unformatted" >&2
@@ -47,13 +47,13 @@ fi
 [tasks.examples]
 description = "Regenerate examples/html/*.html from the examples/json/*.json fixtures"
 depends = ["build"]
-sources = ["cmd/kuma3-preflight/html.go", "examples/json/*.json", "bin/kuma3-preflight"]
+sources = ["preflight/html.go", "examples/json/*.json", "bin/kuma3-preflight"]
 outputs = ["examples/html/*.html"]
 run = "examples/regen.sh --no-build"
 
 [tasks.openapi]
-description = "Regenerate docs/openapi.yaml from reportmodel (tools/openapigen is its own module)"
-sources = ["reportmodel/**/*.go", "tools/openapigen/**/*.go"]
+description = "Regenerate docs/openapi.yaml from the report/classification types (tools/openapigen is its own module)"
+sources = ["preflight/model.go", "reportmodel/**/*.go", "tools/openapigen/**/*.go"]
 outputs = ["docs/openapi.yaml"]
 run = "go generate ./..."
 

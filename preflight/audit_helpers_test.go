@@ -1,4 +1,4 @@
-package main
+package preflight
 
 import (
 	"context"
@@ -38,7 +38,7 @@ const readyConfigJSON = `{
 // endpoints it cares about. The report is rendered to JSON and parsed back, so
 // assertions run against the actual serialized JSON contract rather than the
 // in-memory report.
-func auditResponses(t *testing.T, responses map[string]string) reportModel {
+func auditResponses(t *testing.T, responses map[string]string) Report {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -58,7 +58,7 @@ func auditResponses(t *testing.T, responses map[string]string) reportModel {
 	}))
 	t.Cleanup(srv.Close)
 
-	c, err := newClient(srv.URL, "", 30*time.Second)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -66,11 +66,11 @@ func auditResponses(t *testing.T, responses map[string]string) reportModel {
 	if err != nil {
 		t.Fatalf("audit: %v", err)
 	}
-	out, err := renderJSON(rep.toModel(""))
+	out, err := rep.toModel("").RenderJSON()
 	if err != nil {
 		t.Fatalf("renderJSON: %v", err)
 	}
-	var m reportModel
+	var m Report
 	if err := json.Unmarshal([]byte(out), &m); err != nil {
 		t.Fatalf("unmarshal rendered JSON: %v", err)
 	}
@@ -87,11 +87,11 @@ func listBody(t *testing.T, items ...map[string]any) string {
 	return string(b)
 }
 
-func findFinding(m reportModel, severity, category, title string) (findingModel, bool) {
+func findFinding(m Report, severity, category, title string) (Finding, bool) {
 	for _, f := range m.Findings {
 		if f.Severity == severity && f.Category == category && f.Title == title {
 			return f, true
 		}
 	}
-	return findingModel{}, false
+	return Finding{}, false
 }

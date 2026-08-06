@@ -6,14 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
-)
 
-// upgradeTargetMinor is the 2.x minor line a CP must be on (at its latest patch)
-// before upgrading to 3.0: 2.14 is the final 2.x release, so it is the only
-// supported upgrade source. Bump this when a newer final 2.x line ships.
-const upgradeTargetMinor = 14
+	"github.com/Kong/kong-mesh-v3-readiness/preflight"
+)
 
 // githubReleasesURL is the source for the latest 2.x patch. Kong Mesh tracks Kuma
 // patch numbers, so the same source serves both products. It is a var so tests can
@@ -26,12 +22,14 @@ var githubReleasesURL = "https://api.github.com/repos/kumahq/kuma/releases?per_p
 // returning a stale patch (or missing the line entirely).
 const maxReleasePages = 20
 
-// fetchLatestPatch returns the highest published patch on the upgradeTargetMinor
+// fetchLatestPatch returns the highest published patch on the preflight.UpgradeTargetMinor
 // line from the GitHub releases API (e.g. "2.14.7"), following pagination so the
 // result is not truncated to the newest page. Drafts and pre-releases are ignored.
 // Response bodies are never echoed into errors (consistent with the CP client) and
 // are size-capped. A best-effort call: the caller treats any error as "unknown
-// latest" (a coverage gap), never a hard failure.
+// latest" (a coverage gap), never a hard failure. This is a CLI-only concern (checking
+// the latest upstream release) — it must not become a network call inside the
+// preflight library, so it stays in cmd/kuma3-preflight.
 func fetchLatestPatch(ctx context.Context, hc *http.Client) (string, error) {
 	best := -1
 	next := githubReleasesURL
@@ -49,16 +47,17 @@ func fetchLatestPatch(ctx context.Context, hc *http.Client) (string, error) {
 	// latest patch — return an error (the caller degrades to a coverage gap) rather
 	// than a possibly-stale best that would read as authoritative.
 	if next != "" {
-		return "", fmt.Errorf("release list exceeded %d pages; latest 2.%d.x not determined", maxReleasePages, upgradeTargetMinor)
+		return "", fmt.Errorf("release list exceeded %d pages; latest 2.%d.x not determined", maxReleasePages, preflight.UpgradeTargetMinor)
 	}
 	if best < 0 {
-		return "", fmt.Errorf("no 2.%d.x release found", upgradeTargetMinor)
+		return "", fmt.Errorf("no 2.%d.x release found", preflight.UpgradeTargetMinor)
 	}
-	return fmt.Sprintf("2.%d.%d", upgradeTargetMinor, best), nil
+	return fmt.Sprintf("2.%d.%d", preflight.UpgradeTargetMinor, best), nil
 }
 
 // fetchReleasePage fetches one releases page and returns the highest matching
-// patch on the upgradeTargetMinor line (-1 if none) and the rel="next" URL ("" if last).
+// patch on the preflight.UpgradeTargetMinor line (-1 if none) and the rel="next" URL
+// ("" if last).
 func fetchReleasePage(ctx context.Context, hc *http.Client, url string) (int, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
@@ -66,7 +65,7 @@ func fetchReleasePage(ctx context.Context, hc *http.Client, url string) (int, st
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	// GitHub rejects requests without a User-Agent.
-	req.Header.Set("User-Agent", toolName)
+	req.Header.Set("User-Agent", preflight.ToolName)
 	resp, err := hc.Do(req)
 	if err != nil {
 		return 0, "", fmt.Errorf("fetching GitHub releases: %w", err)
@@ -83,7 +82,7 @@ func fetchReleasePage(ctx context.Context, hc *http.Client, url string) (int, st
 		Draft      bool   `json:"draft"`
 		Prerelease bool   `json:"prerelease"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes)).Decode(&rels); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxReportBytes)).Decode(&rels); err != nil {
 		return 0, "", fmt.Errorf("decoding GitHub releases: %w", err)
 	}
 	best := -1
@@ -91,8 +90,8 @@ func fetchReleasePage(ctx context.Context, hc *http.Client, url string) (int, st
 		if r.Draft || r.Prerelease {
 			continue
 		}
-		maj, minor, patch, ok := parseSemver(r.TagName)
-		if !ok || maj != 2 || minor != upgradeTargetMinor {
+		maj, minor, patch, ok := preflight.ParseSemver(r.TagName)
+		if !ok || maj != 2 || minor != preflight.UpgradeTargetMinor {
 			continue
 		}
 		if patch > best {
@@ -129,48 +128,4 @@ func nextReleaseLink(link string) string {
 		}
 	}
 	return ""
-}
-
-// parseSemver extracts major.minor.patch from a version/tag string, tolerating a
-// leading "v" and any pre-release/build suffix (e.g. "v2.14.1-rc1" -> 2,14,1). It
-// returns ok=false when the first three dot-separated components are not numeric.
-func parseSemver(s string) (int, int, int, bool) {
-	s = strings.TrimPrefix(strings.TrimSpace(s), "v")
-	if i := strings.IndexAny(s, "-+"); i >= 0 {
-		s = s[:i]
-	}
-	parts := strings.Split(s, ".")
-	if len(parts) < 3 {
-		return 0, 0, 0, false
-	}
-	maj, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	minor, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	patch, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	return maj, minor, patch, true
-}
-
-// behind reports whether a running version is older than the latest target patch
-// and therefore not a supported 3.0 upgrade source. Anything below 2.x (a 1.x or
-// 0.x build) must reach 2.x first, so it is "behind"; 3.0+ is beyond the 2.x
-// upgrade source and is not flagged.
-func behind(maj, minor, patch, latestMin, latestPatch int) bool {
-	if maj < 2 {
-		return true
-	}
-	if maj > 2 {
-		return false
-	}
-	if minor != latestMin {
-		return minor < latestMin
-	}
-	return patch < latestPatch
 }

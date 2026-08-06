@@ -51,7 +51,7 @@ jobs:
       - name: examples up-to-date
         # Re-render examples/html/*.html from the committed JSON fixtures and fail
         # if anything changed — the checked-in pages must match the current
-        # template (cmd/kuma3-preflight/html.go). Fix: `mise run examples`, commit.
+        # template (preflight/html.go). Fix: `mise run examples`, commit.
         run: |
           examples/regen.sh
           # --porcelain catches both modified tracked pages and new untracked

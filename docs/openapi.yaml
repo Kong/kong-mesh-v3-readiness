@@ -18,8 +18,9 @@ info:
     Each is a stable contract: `--from-json` reloads `Report` verbatim, so JSON,
     HTML (and, for classification, Markdown) render from the exact same object.
 
-    Generated from the `reportmodel` Go package by `tools/openapigen` — do not edit by
-    hand; run `go generate ./...` from the repo root after changing a reportmodel type.
+    Generated from the `preflight` and `reportmodel` Go packages by
+    `tools/openapigen` — do not edit by hand; run `go generate ./...` from the
+    repo root after changing a contract type.
   license:
     name: Apache-2.0
 externalDocs:
@@ -116,8 +117,8 @@ components:
       type: object
     CoverageGap:
       additionalProperties: false
-      description: CoverageGap is a collection that could not be audited — for example
-        a 404 on a resource list.
+      description: CoverageGap records a collection that could not be audited — a 404
+        or a transport error — so the report distinguishes "absent" from "not observed".
       properties:
         path:
           type: string
@@ -149,8 +150,8 @@ components:
       type: object
     Finding:
       additionalProperties: false
-      description: Finding is one deprecation/blocker/advisory item, merged by (Severity,
-        Category, Title).
+      description: Finding is one (severity, category, title) grouped occurrence in the
+        report.
       properties:
         category:
           type: string
@@ -160,6 +161,9 @@ components:
         detail:
           type: string
         doc:
+          description: |-
+            Doc links to the Kong Mesh page explaining the 3.0 replacement API/feature.
+            Optional: omitted for findings with no replacement to point at.
           format: uri
           type: string
         examples:
@@ -227,7 +231,8 @@ components:
       type: object
     ManualCheck:
       additionalProperties: false
-      description: ManualCheck is one upgrade item the CP API cannot surface.
+      description: ManualCheck is one upgrade item the CP API cannot surface, rendered
+        as a card in the manual checklist.
       properties:
         command:
           type: string
@@ -270,7 +275,7 @@ components:
             type: string
           type: array
         schema:
-          description: Schema is "kuma3-preflight/vN"; --from-json accepts any prior vN
+          description: Schema is "kuma3-preflight/vN"; ParseReport accepts any prior vN
             by prefix.
           pattern: ^kuma3-preflight/v[0-9]+$
           type: string
@@ -302,7 +307,7 @@ components:
       type: object
     Summary:
       additionalProperties: false
-      description: Summary is the finding-count rollup shown at the top of a report.
+      description: Summary tallies findings by severity plus coverage/parse-error counts.
       properties:
         blockers:
           minimum: 0
@@ -320,7 +325,7 @@ components:
           minimum: 0
           type: integer
         warnings:
-          description: Warnings stays for --from-json backward compatibility; no check
+          description: Warnings stays for ParseReport backward compatibility; no check
             emits one.
           minimum: 0
           type: integer

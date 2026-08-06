@@ -1,23 +1,22 @@
-package main
+package preflight
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
 
 // sampleReport builds a report exercising the blocker and info severities, the
 // example cap, a coverage gap, parse errors and system findings.
-func sampleReport() *report {
-	r := &report{
+func sampleReport() *collector {
+	r := &collector{
 		cp:             cpIndex{Product: "Kuma", Version: "2.9.0", Mode: "zone"},
 		meshes:         []string{"default", "legacy"},
 		parseErrors:    1,
 		systemFindings: 2,
-		manual:         []manualCheck{{Title: "Enable unified naming"}, {Title: "Disable inbound tags"}},
+		manual:         []ManualCheck{{Title: "Enable unified naming"}, {Title: "Disable inbound tags"}},
 	}
 	r.addDoc(blocker, "Mesh object settings", "Inline mTLS on Mesh", "Migrate mtls.", docMeshIdentity, "legacy (mtls)")
-	// 12 occurrences > exampleCap(10): exercises the "+N more" truncation.
+	// 12 occurrences > ExampleCap(10): exercises the "+N more" truncation.
 	for range 12 {
 		r.add(blocker, "Policy `from` field", "MeshTimeout uses `from`", "Rewrite from.", "default/t")
 	}
@@ -36,14 +35,14 @@ func sampleReport() *report {
 func TestAddDocBackfillsDocOnMerge(t *testing.T) {
 	const url = "https://developer.konghq.com/mesh/policies/meshtrafficpermission/"
 
-	r := &report{}
+	r := &collector{}
 	r.add(blocker, "C", "t", "d", "ex1") // doc-less first
 	r.addDoc(blocker, "C", "t", "d", url, "ex2")
 	if got := r.findings[0].doc; got != url {
 		t.Errorf("doc not backfilled on merge: got %q, want %q", got, url)
 	}
 
-	r2 := &report{}
+	r2 := &collector{}
 	r2.addDoc(blocker, "C", "t", "d", url, "ex1") // doc first
 	r2.add(blocker, "C", "t", "d", "ex2")
 	if got := r2.findings[0].doc; got != url {
@@ -53,8 +52,8 @@ func TestAddDocBackfillsDocOnMerge(t *testing.T) {
 
 func TestToModelSummaryAndStatus(t *testing.T) {
 	m := sampleReport().toModel("2026-06-17T10:00:00Z")
-	if m.Status != statusBlockers {
-		t.Fatalf("status = %q, want %q", m.Status, statusBlockers)
+	if m.Status != StatusBlockers {
+		t.Fatalf("status = %q, want %q", m.Status, StatusBlockers)
 	}
 	if m.Summary.Blockers != 16 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies)
 		t.Errorf("blockers = %d, want 16", m.Summary.Blockers)
@@ -151,10 +150,10 @@ func TestAllowedToTargetRefKinds(t *testing.T) {
 // findings group-contiguous in canonical order so the HTML renderer (which buckets
 // by group) shows each group exactly once.
 func TestNormalizeModelOldPayload(t *testing.T) {
-	m := reportModel{
-		Schema: reportSchema, Tool: toolName, Status: statusBlockers,
-		Meshes: []string{}, Coverage: []coverageModel{}, Manual: []manualCheck{},
-		Findings: []findingModel{ // category-sorted, no Group → Data plane interleaves Mesh object
+	m := Report{
+		Schema: SchemaVersion, Tool: ToolName, Status: StatusBlockers,
+		Meshes: []string{}, Coverage: []CoverageGap{}, Manual: []ManualCheck{},
+		Findings: []Finding{ // category-sorted, no Group → Data plane interleaves Mesh object
 			{Severity: "blocker", Category: "Dataplane probes", Title: "p", Detail: "d", Count: 1, Examples: []string{"x/p"}},
 			{Severity: "blocker", Category: "Mesh object settings", Title: "m", Detail: "d", Count: 1, Examples: []string{"y (mtls)"}},
 			{Severity: "blocker", Category: "reachableServices", Title: "r", Detail: "d", Count: 1, Examples: []string{"z/r"}},
@@ -191,15 +190,15 @@ func TestNormalizeModelOldPayload(t *testing.T) {
 
 func TestRenderJSONRoundTrips(t *testing.T) {
 	m := sampleReport().toModel("2026-06-17T10:00:00Z")
-	out, err := renderJSON(m)
+	out, err := m.RenderJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := loadModelBytes([]byte(out))
+	loaded, err := ParseReport([]byte(out))
 	if err != nil {
 		t.Fatalf("reloading rendered JSON: %v", err)
 	}
-	again, err := renderJSON(loaded)
+	again, err := loaded.RenderJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +207,7 @@ func TestRenderJSONRoundTrips(t *testing.T) {
 	}
 }
 
-// A v2 report carried manualChecks as plain strings. The tolerant manualCheck
+// A v2 report carried manualChecks as plain strings. The tolerant ManualCheck
 // unmarshaler must still load it (mapping each string to Title) so --from-json
 // renders reports captured before the v3 schema bump.
 func TestLoadV2ManualChecksStrings(t *testing.T) {
@@ -216,7 +215,7 @@ func TestLoadV2ManualChecksStrings(t *testing.T) {
 		`"controlPlane":{"product":"Kuma","version":"2.9.0"},"meshes":[],` +
 		`"summary":{},"findings":[],"coverageGaps":[],` +
 		`"manualChecks":["Rotate legacy keys","Migrate gateways"]}`
-	m, err := loadModelBytes([]byte(v2))
+	m, err := ParseReport([]byte(v2))
 	if err != nil {
 		t.Fatalf("v2 report failed to load: %v", err)
 	}
@@ -226,14 +225,14 @@ func TestLoadV2ManualChecksStrings(t *testing.T) {
 	if m.Manual[0].Title != "Rotate legacy keys" || m.Manual[0].Detail != "" || m.Manual[0].Command != "" {
 		t.Errorf("v2 string did not map to a Title-only card: %+v", m.Manual[0])
 	}
-	if _, err := renderJSON(m); err != nil {
+	if _, err := m.RenderJSON(); err != nil {
 		t.Fatalf("rendering loaded v2 model: %v", err)
 	}
 }
 
 func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	m := sampleReport().toModel("2026-06-17T10:00:00Z")
-	html, err := renderHTML(m)
+	html, err := m.RenderHTML()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,9 +306,9 @@ func TestBuildManualChecksK8sGating(t *testing.T) {
 // A manual card with a command renders a copy-able code block, including the
 // file:// clipboard fallback, and embeds the command in the report payload.
 func TestManualCommandCardRendersCopyableBlock(t *testing.T) {
-	r := &report{cp: cpIndex{Product: "Kuma", Version: "2.9.0"}, k8sObserved: true}
+	r := &collector{cp: cpIndex{Product: "Kuma", Version: "2.9.0"}, k8sObserved: true}
 	r.manual = buildManualChecks(r.k8sObserved)
-	html, err := renderHTML(r.toModel(""))
+	html, err := r.toModel("").RenderHTML()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,55 +330,13 @@ func TestManualCommandCardRendersCopyableBlock(t *testing.T) {
 	}
 }
 
-func TestClassifyFormat(t *testing.T) {
-	// --classify keeps Markdown as its default and supported format.
-	cases := map[string]string{"": "markdown", "md": "markdown", "MARKDOWN": "markdown", "json": "json", "HTML": "html", "htm": "html"}
-	for in, want := range cases {
-		got, err := classifyFormat(in)
-		if err != nil || got != want {
-			t.Errorf("classifyFormat(%q) = %q,%v; want %q", in, got, err, want)
-		}
-	}
-	if _, err := classifyFormat("pdf"); err == nil {
-		t.Error("classifyFormat(pdf) should error")
-	}
-}
-
-func TestAuditFormat(t *testing.T) {
-	// A CP audit defaults to HTML and does not produce Markdown.
-	cases := map[string]string{"": "html", "HTML": "html", "htm": "html", "json": "json"}
-	for in, want := range cases {
-		got, err := auditFormat(in)
-		if err != nil || got != want {
-			t.Errorf("auditFormat(%q) = %q,%v; want %q", in, got, err, want)
-		}
-	}
-	for _, bad := range []string{"markdown", "md", "pdf"} {
-		if _, err := auditFormat(bad); err == nil {
-			t.Errorf("auditFormat(%q) should error (markdown is classify-only)", bad)
-		}
-	}
-}
-
-func TestFailureModel(t *testing.T) {
-	m := failureModel("http://cp:5681", errExample{}, "")
-	if m.Status != statusFailed || m.Error == "" {
-		t.Errorf("failure model = %+v", m)
-	}
-	if exitForStatus(m.Status) != 2 {
-		t.Error("failed status must map to exit 2")
+func TestFailureReport(t *testing.T) {
+	m := FailureReport("http://cp:5681", errExample{}, "")
+	if m.Status != StatusFailed || m.Error == "" {
+		t.Errorf("failure report = %+v", m)
 	}
 }
 
 type errExample struct{}
 
 func (errExample) Error() string { return "boom" }
-
-// loadModelBytes mirrors loadModel for an in-memory payload (no file I/O).
-func loadModelBytes(b []byte) (reportModel, error) {
-	var m reportModel
-	if err := json.Unmarshal(b, &m); err != nil {
-		return reportModel{}, err
-	}
-	return m, nil
-}

@@ -4,7 +4,7 @@
 # examples/json/<name>.json fixture.
 #
 # The JSON fixtures are the source of truth; this script only re-renders them
-# through the embedded HTML template (cmd/kuma3-preflight/html.go), so the
+# through the embedded HTML template (preflight/html.go), so the
 # checked-in HTML can never drift from the template. Run it after changing the
 # template or a fixture.
 #

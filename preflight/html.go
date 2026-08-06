@@ -1,4 +1,4 @@
-package main
+package preflight
 
 // htmlHead and htmlTail bracket the embedded report JSON. The page is fully
 // self-contained (inline CSS + vanilla JS, no network requests) so it renders

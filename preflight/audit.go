@@ -1,4 +1,4 @@
-package main
+package preflight
 
 import (
 	"bytes"
@@ -127,7 +127,7 @@ var allowedToTargetRefKinds = map[string]bool{
 	"MeshMultiZoneService": true, "MeshHTTPRoute": true,
 }
 
-const exampleCap = 10
+const ExampleCap = 10
 
 // policyRoleLabel marks CP-managed default policies. They use deprecated
 // constructs (from, to: Mesh, proxyTypes) and must be updated before upgrading to
@@ -157,7 +157,7 @@ type auditor struct {
 	inspectDataplanes    int
 	checkVersionCurrency bool
 	latestPatch          string
-	rep                  *report
+	rep                  *collector
 
 	// /zones+insights is read by both the config and version fan-outs on a global;
 	// memoize the (single) fetch so one global audit makes one round-trip for it.
@@ -178,7 +178,7 @@ func (a *auditor) zoneInsights(ctx context.Context) ([]resourceItem, bool, error
 	return a.zonesItems, a.zonesFound, a.zonesErr
 }
 
-func audit(ctx context.Context, c *client, opts auditOptions) (*report, error) {
+func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error) {
 	idx, err := c.index(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to control plane: %w", err)
@@ -192,7 +192,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*report, error) {
 	a := &auditor{
 		c: c, meshFilter: opts.meshFilter, inspectDataplanes: opts.inspectDataplanes,
 		checkVersionCurrency: opts.checkVersionCurrency, latestPatch: opts.latestPatch,
-		rep: &report{cp: idx},
+		rep: &collector{cp: idx},
 	}
 
 	meshes, found, err := c.list(ctx, "/meshes")
@@ -291,7 +291,7 @@ func (a *auditor) ref(it resourceItem) string {
 // countSystem records a CP-managed (policy-role: system) resource in the system
 // tally exactly once, and only when it produced at least one finding while being
 // processed (total grew past totalBefore). This keeps the "N CP-managed resources"
-// summary aligned with the findings the operator must act on, not every system
+// Summary aligned with the findings the operator must act on, not every system
 // resource scanned.
 func (a *auditor) countSystem(it resourceItem, totalBefore int) {
 	if isSystem(it) && a.rep.total > totalBefore {
@@ -906,10 +906,10 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 	}
 	if a.latestPatch == "" {
 		a.rep.addGap("github.com/kumahq/kuma/releases",
-			fmt.Sprintf("could not determine the latest 2.%d patch — control-plane version currency NOT audited (pass --latest-version to set it explicitly)", upgradeTargetMinor))
+			fmt.Sprintf("could not determine the latest 2.%d patch — control-plane version currency NOT audited (pass --latest-version to set it explicitly)", UpgradeTargetMinor))
 		return nil
 	}
-	latestMaj, latestMin, latestPatch, ok := parseSemver(a.latestPatch)
+	latestMaj, latestMin, latestPatch, ok := ParseSemver(a.latestPatch)
 	if !ok {
 		a.rep.addGap("--latest-version",
 			"latest version "+a.latestPatch+" is not valid semver — version currency NOT audited")
@@ -918,12 +918,12 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 	// The check is scoped to the 2.<target> line; a baseline outside it (a stray
 	// --latest-version) would make every comparison nonsensical — a gap, not a
 	// contradictory finding.
-	if latestMaj != 2 || latestMin != upgradeTargetMinor {
+	if latestMaj != 2 || latestMin != UpgradeTargetMinor {
 		a.rep.addGap("--latest-version",
-			fmt.Sprintf("latest version %s is not a 2.%d patch — version currency NOT audited", a.latestPatch, upgradeTargetMinor))
+			fmt.Sprintf("latest version %s is not a 2.%d patch — version currency NOT audited", a.latestPatch, UpgradeTargetMinor))
 		return nil
 	}
-	detail := fmt.Sprintf("Upgrade to the latest 2.%d patch (%s) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.", upgradeTargetMinor, a.latestPatch)
+	detail := fmt.Sprintf("Upgrade to the latest 2.%d patch (%s) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.", UpgradeTargetMinor, a.latestPatch)
 
 	a.flagIfBehind(a.rep.cp.Version, "control plane", latestMin, latestPatch, detail)
 
@@ -942,7 +942,7 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 // latest target patch. An unparseable version is a coverage gap (it cannot be
 // proven current), not a silent pass. origin labels the source in the example ref.
 func (a *auditor) flagIfBehind(version, origin string, latestMin, latestPatch int, detail string) {
-	maj, minor, patch, ok := parseSemver(version)
+	maj, minor, patch, ok := ParseSemver(version)
 	if !ok {
 		a.rep.addGap("version ("+origin+")",
 			"reported version "+version+" is not valid semver — version currency NOT audited")
@@ -950,7 +950,7 @@ func (a *auditor) flagIfBehind(version, origin string, latestMin, latestPatch in
 	}
 	if behind(maj, minor, patch, latestMin, latestPatch) {
 		a.rep.addDoc(blocker, cpVersionCategory,
-			fmt.Sprintf("Control plane behind the latest 2.%d patch", upgradeTargetMinor),
+			fmt.Sprintf("Control plane behind the latest 2.%d patch", UpgradeTargetMinor),
 			detail, docUpgrade, origin+" ("+version+")")
 	}
 }
@@ -1245,7 +1245,7 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // Universal proxies missing the kuma.io/workload label by checkDataplanes, and
 // the legacy CoreDNS path by checkDataplaneVersions (a reported `coredns`
 // dependency) plus the --inspect-dataplanes deep check, so none is repeated here.
-var manualChecks = []manualCheck{
+var manualChecks = []ManualCheck{
 	{
 		Title: "Old inspect APIs removed (switch to the new inspect API)",
 		Detail: "Kuma 3.0 removes the old dataplane rules-inspection endpoint (`_rules`) and " +
@@ -1340,7 +1340,7 @@ fi`,
 // kubernetesManualChecks are appended only when the audit observed Kubernetes in
 // the estate (see report.k8sObserved). They are Kubernetes-object concerns the CP
 // API cannot reveal, so showing them on a Universal-only run would be noise.
-var kubernetesManualChecks = []manualCheck{
+var kubernetesManualChecks = []ManualCheck{
 	{
 		Title: "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
 		Detail: "On Kubernetes a Pod or Namespace is bound to a non-default mesh through " +
@@ -1358,8 +1358,8 @@ var kubernetesManualChecks = []manualCheck{
 
 // buildManualChecks returns the manual checklist for a run, appending the
 // Kubernetes-only items when the audit positively observed Kubernetes.
-func buildManualChecks(k8sObserved bool) []manualCheck {
-	checks := append([]manualCheck{}, manualChecks...)
+func buildManualChecks(k8sObserved bool) []ManualCheck {
+	checks := append([]ManualCheck{}, manualChecks...)
 	if k8sObserved {
 		checks = append(checks, kubernetesManualChecks...)
 	}

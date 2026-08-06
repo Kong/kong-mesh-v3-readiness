@@ -72,9 +72,9 @@ are expected and the snapshot is still written.
   or a legacy policy in a test about something else). Migrate the scaffolding (e.g. inline
   mTLS → MeshIdentity + MeshTrust) without dropping the test's real subject.
 
-The deprecation catalog is shared with the live auditor (`legacyMeshScoped` in
-`cmd/kuma3-preflight/audit.go`); a unit test (`TestMarkerCatalogInSync`) fails if a removed
-kind ever lacks a source marker.
+The deprecation catalog is shared with the live auditor via `preflight.RemovedKinds()`
+(backed by `legacyMeshScoped` in `preflight/audit.go`); a unit test (`TestMarkerCatalogInSync`)
+fails if a removed kind ever lacks a source marker.
 
 ## Report layout
 
