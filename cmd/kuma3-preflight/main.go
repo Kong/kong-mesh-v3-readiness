@@ -1,21 +1,31 @@
 // Command kuma3-preflight audits a running Kuma zone (or global) control plane
 // over its REST API and reports which resources and settings must change before
 // upgrading to Kuma 3.0. See docs/deprecated-features.md for the source
-// of truth behind every check.
+// of truth behind every check. The audit engine itself lives in the importable
+// preflight package (github.com/Kong/kong-mesh-v3-readiness/preflight); this
+// command wires its flags into preflight.Audit and renders the result.
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Kong/kong-mesh-v3-readiness/preflight"
 )
+
+// maxReportBytes caps a single response/file body read by the CLI itself (a
+// --from-json file/stdin read, or a GitHub releases response in release.go) so a
+// hostile/huge input cannot OOM the process. The preflight library enforces its
+// own equivalent cap on control-plane responses.
+const maxReportBytes = 64 << 20 // 64 MiB
 
 func main() {
 	os.Exit(run())
@@ -30,7 +40,7 @@ func run() int {
 	fromJSON := flag.String("from-json", "", "Render a previously captured JSON report (path, or - for stdin) instead of auditing")
 	timeout := flag.Duration("timeout", 60*time.Second, "Overall timeout for the audit")
 	inspect := flag.Int("inspect-dataplanes", 0, "Fetch up to N dataplanes' Envoy config dumps to detect removed features (0 = skip; expensive)")
-	latestVersion := flag.String("latest-version", "", fmt.Sprintf("Latest 2.%d patch to check control plane(s) against (e.g. 2.%d.7); skips the GitHub lookup when set", upgradeTargetMinor, upgradeTargetMinor))
+	latestVersion := flag.String("latest-version", "", fmt.Sprintf("Latest 2.%d patch to check control plane(s) against (e.g. 2.%d.7); skips the GitHub lookup when set", preflight.UpgradeTargetMinor, preflight.UpgradeTargetMinor))
 	classify := flag.Bool("classify", false, "Classify e2e tests by Kuma-3.0 deprecated-feature usage (uses --source-dir / --reports-dir) instead of auditing a CP")
 	sourceDir := flag.String("source-dir", "", "With --classify: root of the e2e test sources to scan statically")
 	reportsDir := flag.String("reports-dir", "", "With --classify: directory of per-spec preflight JSON snapshots to fold in")
@@ -79,8 +89,9 @@ func run() int {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	c, err := newClient(*addr, *token, *timeout)
-	if err != nil {
+	// Validate --address up front (before the GitHub lookup below), so a bad
+	// address fails fast rather than waiting on a network round-trip first.
+	if err := validAddress(*addr); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 2
 	}
@@ -98,24 +109,26 @@ func run() int {
 		v, ferr := fetchLatestPatch(fctx, &http.Client{Timeout: fetchTimeout})
 		fcancel()
 		if ferr != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not determine the latest 2.%d patch from GitHub (%v); version currency will be inconclusive — pass --latest-version to set it\n", upgradeTargetMinor, ferr)
+			fmt.Fprintf(os.Stderr, "warning: could not determine the latest 2.%d patch from GitHub (%v); version currency will be inconclusive — pass --latest-version to set it\n", preflight.UpgradeTargetMinor, ferr)
 		} else {
 			latest = v
 		}
 	}
 
-	report, auditErr := audit(ctx, c, auditOptions{
-		meshFilter: *mesh, inspectDataplanes: *inspect,
-		checkVersionCurrency: true, latestPatch: latest,
+	rep, auditErr := preflight.Audit(ctx, preflight.Options{
+		Address: *addr, Token: *token, Mesh: *mesh,
+		InspectDataplanes: *inspect, LatestPatch: latest,
+		HTTPClient: &http.Client{Timeout: *timeout},
 	})
 
 	// Always make the output reflect this run: on failure, stamp the destination
 	// so a stale clean report is never mistaken for an up-to-date one.
 	var content string
 	if auditErr != nil {
-		content, err = failureContent(fmtName, *addr, auditErr, now)
+		content, err = renderFormat(fmtName, preflight.FailureReport(*addr, auditErr, now))
 	} else {
-		content, err = renderFormat(fmtName, report.toModel(now))
+		rep.GeneratedAt = now
+		content, err = renderFormat(fmtName, rep)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -129,19 +142,24 @@ func run() int {
 
 	// Exit codes (so CI can gate on $?):
 	//   0 clean · 1 blockers found · 2 operational error · 3 audit inconclusive
-	switch {
-	case auditErr != nil:
+	if auditErr != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", auditErr)
 		return 2
-	case report.count(blocker) > 0:
-		return 1
-	case report.incomplete():
-		// Coverage gaps / unparseable resources mean the audit could not prove a
-		// clean result — don't let $? read as success.
-		return 3
-	default:
-		return 0
 	}
+	return exitForStatus(rep.Status)
+}
+
+// validAddress mirrors the preflight library's own --address validation so a bad
+// address is rejected before the GitHub latest-patch lookup runs.
+func validAddress(addr string) error {
+	u, err := url.Parse(strings.TrimRight(addr, "/"))
+	if err != nil {
+		return fmt.Errorf("invalid --address %q: %w", addr, err)
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("invalid --address %q: need scheme and host, e.g. http://localhost:5681", addr)
+	}
+	return nil
 }
 
 // classifyFormat canonicalizes --format for --classify, which renders Markdown
@@ -175,27 +193,20 @@ func auditFormat(f string) (string, error) {
 	}
 }
 
-func renderFormat(format string, m reportModel) (string, error) {
+func renderFormat(format string, m preflight.Report) (string, error) {
 	if format == "json" {
-		return renderJSON(m)
+		return m.RenderJSON()
 	}
-	return renderHTML(m)
-}
-
-// failureContent renders the "audit did not complete" payload in the requested
-// format (json/html): a structured failed-status model that round-trips and
-// renders a red banner.
-func failureContent(format, addr string, auditErr error, generatedAt string) (string, error) {
-	return renderFormat(format, failureModel(addr, auditErr, generatedAt))
+	return m.RenderHTML()
 }
 
 func exitForStatus(status string) int {
 	switch status {
-	case statusFailed:
+	case preflight.StatusFailed:
 		return 2
-	case statusBlockers:
+	case preflight.StatusBlockers:
 		return 1
-	case statusInconclusive:
+	case preflight.StatusInconclusive:
 		return 3
 	default:
 		return 0
@@ -203,35 +214,21 @@ func exitForStatus(status string) int {
 }
 
 // loadModel reads a JSON report from a file (or stdin when path is "-") and
-// validates it is a kuma3-preflight payload.
-func loadModel(path string) (reportModel, error) {
+// delegates parsing/validation/normalization to preflight.ParseReport.
+func loadModel(path string) (preflight.Report, error) {
 	var (
 		data []byte
 		err  error
 	)
 	if path == "-" {
-		data, err = io.ReadAll(io.LimitReader(os.Stdin, maxBodyBytes))
+		data, err = io.ReadAll(io.LimitReader(os.Stdin, maxReportBytes))
 	} else {
 		data, err = os.ReadFile(path)
 	}
 	if err != nil {
-		return reportModel{}, err
+		return preflight.Report{}, err
 	}
-	var m reportModel
-	if err := json.Unmarshal(data, &m); err != nil {
-		return reportModel{}, fmt.Errorf("parsing JSON report: %w", err)
-	}
-	// Validate the schema value, not merely its presence: a non-empty but foreign
-	// `schema` (e.g. an unrelated JSON document, or a classification report fed where a
-	// report is expected) must be rejected, not silently mis-decoded.
-	if !strings.HasPrefix(m.Schema, toolName+"/") {
-		return reportModel{}, fmt.Errorf("does not look like a %s JSON report (schema %q)", toolName, m.Schema)
-	}
-	// Make the loaded model canonical so every renderer sees group-contiguous
-	// findings — older payloads predate the group field and are sorted only by
-	// category, which would otherwise split a group across the markdown output.
-	normalizeModel(&m)
-	return m, nil
+	return preflight.ParseReport(data)
 }
 
 // emit writes content to stdout, or to a file when out is set.

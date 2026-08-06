@@ -1,4 +1,4 @@
-package main
+package preflight
 
 import (
 	"context"
@@ -88,7 +88,7 @@ func TestInspectDataplanesDetectsEnvoyDNSFilter(t *testing.T) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	c, err := newClient(srv.URL, "", 30*time.Second)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}

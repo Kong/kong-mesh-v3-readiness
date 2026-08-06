@@ -1,10 +1,10 @@
-package main
+package preflight
 
 import "testing"
 
 // auditMesh audits a mock control plane whose only resource is the given Mesh
 // (every other collection answers an empty list).
-func auditMesh(t *testing.T, mesh map[string]any) reportModel {
+func auditMesh(t *testing.T, mesh map[string]any) Report {
 	t.Helper()
 	mesh["type"] = "Mesh"
 	if mesh["name"] == nil {
@@ -94,8 +94,8 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			if f.Count < 1 {
 				t.Errorf("finding %q count = %d, want >= 1", tc.title, f.Count)
 			}
-			if tc.severity == "blocker" && m.Status != statusBlockers {
-				t.Errorf("status = %q, want %q", m.Status, statusBlockers)
+			if tc.severity == "blocker" && m.Status != StatusBlockers {
+				t.Errorf("status = %q, want %q", m.Status, StatusBlockers)
 			}
 		})
 	}
@@ -105,8 +105,8 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 // report with no findings.
 func TestCleanMeshHasNoIssues(t *testing.T) {
 	m := auditMesh(t, map[string]any{"meshServices": map[string]any{"mode": "Exclusive"}})
-	if m.Status != statusClean {
-		t.Errorf("status = %q, want %q", m.Status, statusClean)
+	if m.Status != StatusClean {
+		t.Errorf("status = %q, want %q", m.Status, StatusClean)
 	}
 	if len(m.Findings) != 0 {
 		t.Errorf("expected no findings for a clean mesh, got %+v", m.Findings)

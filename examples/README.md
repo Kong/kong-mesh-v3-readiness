@@ -21,7 +21,7 @@ Nothing is fetched at view time, so they work straight from a `file://` URL.
 ## Regenerating
 
 The JSON fixtures in `json/` are the source of truth; the HTML is rendered from them, so the
-checked-in pages can never drift from the template (`cmd/kuma3-preflight/html.go`). After
+checked-in pages can never drift from the template (`preflight/html.go`). After
 changing the template or a fixture:
 
 ```bash

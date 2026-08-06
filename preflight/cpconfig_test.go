@@ -1,4 +1,4 @@
-package main
+package preflight
 
 import (
 	"encoding/json"
@@ -38,7 +38,7 @@ func goodK8sConfig() cpConfig {
 
 func TestAddCPConfigFindings(t *testing.T) {
 	t.Run("k8s bad config, unqualified examples", func(t *testing.T) {
-		a := &auditor{rep: &report{}}
+		a := &auditor{rep: &collector{}}
 		a.addCPConfigFindings(badK8sConfig(), "")
 		if got, want := a.rep.count(blocker), 7; got != want {
 			t.Errorf("blockers = %d, want %d", got, want)
@@ -53,7 +53,7 @@ func TestAddCPConfigFindings(t *testing.T) {
 	})
 
 	t.Run("zone-qualified examples", func(t *testing.T) {
-		a := &auditor{rep: &report{}}
+		a := &auditor{rep: &collector{}}
 		a.addCPConfigFindings(badK8sConfig(), "zone-1")
 		for _, f := range a.rep.findings {
 			for _, ex := range f.examples {
@@ -65,7 +65,7 @@ func TestAddCPConfigFindings(t *testing.T) {
 	})
 
 	t.Run("good config is silent", func(t *testing.T) {
-		a := &auditor{rep: &report{}}
+		a := &auditor{rep: &collector{}}
 		a.addCPConfigFindings(goodK8sConfig(), "")
 		if n := len(a.rep.findings); n != 0 {
 			t.Errorf("good config produced %d findings, want 0", n)
@@ -75,7 +75,7 @@ func TestAddCPConfigFindings(t *testing.T) {
 	t.Run("universal gates the injector-only checks", func(t *testing.T) {
 		c := badK8sConfig()
 		c.Environment = "universal"
-		a := &auditor{rep: &report{}}
+		a := &auditor{rep: &collector{}}
 		a.addCPConfigFindings(c, "")
 		// eBPF + unified-naming are injector (k8s) checks; the rest still fire.
 		for _, f := range a.rep.findings {
@@ -91,7 +91,7 @@ func TestAddCPConfigFindings(t *testing.T) {
 	})
 
 	t.Run("global-on-k8s only fires for global", func(t *testing.T) {
-		a := &auditor{rep: &report{}}
+		a := &auditor{rep: &collector{}}
 		a.addGlobalOnK8sFinding(badK8sConfig()) // mode=zone -> no-op
 		if n := len(a.rep.findings); n != 0 {
 			t.Fatalf("global-on-k8s fired for a zone CP (%d findings)", n)

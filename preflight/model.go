@@ -1,52 +1,67 @@
-package main
+package preflight
 
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"sort"
+	"strings"
 )
 
-// Schema/tool identifiers stamped into every JSON report so a consumer (or the
-// --from-json renderer) can recognize and version the payload.
+// Schema/tool identifiers stamped into every JSON report so a consumer (or
+// ParseReport) can recognize and version the payload.
 const (
-	reportSchema = "kuma3-preflight/v3"
-	toolName     = "kuma3-preflight"
+	// SchemaVersion is the JSON schema value stamped into every report.
+	SchemaVersion = "kuma3-preflight/v3"
+	// ToolName identifies this tool in the JSON payload and in the User-Agent
+	// header of outbound HTTP requests.
+	ToolName = "kuma3-preflight"
 )
 
-// Audit outcome, mirrored by the process exit code (see exitForStatus).
+// Audit outcome, mirrored by the process exit code the CLI derives from it.
 const (
-	statusClean        = "clean"
-	statusBlockers     = "blockers"
-	statusInconclusive = "inconclusive"
-	statusFailed       = "failed"
+	StatusClean        = "clean"
+	StatusBlockers     = "blockers"
+	StatusInconclusive = "inconclusive"
+	StatusFailed       = "failed"
 )
 
-// reportModel is the canonical, serializable form of a CP-audit report. Both
-// output formats (json, html) are rendered from this single structure, and
-// --from-json loads it back, so they can never drift apart. (Markdown is produced
-// only by --classify, from classificationModel.)
-type reportModel struct {
-	Schema       string          `json:"schema"`
-	Tool         string          `json:"tool"`
-	GeneratedAt  string          `json:"generatedAt,omitempty"`
-	Status       string          `json:"status"`
-	Address      string          `json:"address,omitempty"`
-	Error        string          `json:"error,omitempty"`
-	ControlPlane controlPlane    `json:"controlPlane"`
-	Meshes       []string        `json:"meshes"`
-	Summary      summary         `json:"summary"`
-	Findings     []findingModel  `json:"findings"`
-	Coverage     []coverageModel `json:"coverageGaps"`
-	Manual       []manualCheck   `json:"manualChecks"`
+// Severity strings as they appear in Finding.Severity. SeverityBlocker gates CI;
+// SeverityInfo is advisory only. The "warning" tier still exists internally for
+// backward-compatible --from-json parsing, but no check emits one.
+const (
+	SeverityBlocker = "blocker"
+	SeverityInfo    = "info"
+)
+
+// Report is the canonical, serializable form of a CP-audit report. Both output
+// formats (JSON via RenderJSON, HTML via RenderHTML) are rendered from this single
+// structure, and ParseReport loads it back, so they can never drift apart.
+// (Markdown is produced only by the CLI's --classify mode, from a different model.)
+type Report struct {
+	Schema       string        `json:"schema"`
+	Tool         string        `json:"tool"`
+	GeneratedAt  string        `json:"generatedAt,omitempty"`
+	Status       string        `json:"status"`
+	Address      string        `json:"address,omitempty"`
+	Error        string        `json:"error,omitempty"`
+	ControlPlane ControlPlane  `json:"controlPlane"`
+	Meshes       []string      `json:"meshes"`
+	Summary      Summary       `json:"summary"`
+	Findings     []Finding     `json:"findings"`
+	Coverage     []CoverageGap `json:"coverageGaps"`
+	Manual       []ManualCheck `json:"manualChecks"`
 }
 
-type controlPlane struct {
+// ControlPlane identifies the audited control plane.
+type ControlPlane struct {
 	Product string `json:"product"`
 	Version string `json:"version"`
 	Mode    string `json:"mode,omitempty"`
 }
 
-type summary struct {
+// Summary tallies findings by severity plus coverage/parse-error counts.
+type Summary struct {
 	Blockers       int `json:"blockers"`
 	Warnings       int `json:"warnings"`
 	Info           int `json:"info"`
@@ -55,7 +70,8 @@ type summary struct {
 	SystemFindings int `json:"systemFindings"`
 }
 
-type findingModel struct {
+// Finding is one (severity, category, title) grouped occurrence in the report.
+type Finding struct {
 	Severity string `json:"severity"`
 	Group    string `json:"group"`
 	Category string `json:"category"`
@@ -68,25 +84,27 @@ type findingModel struct {
 	Examples []string `json:"examples"`
 }
 
-type coverageModel struct {
+// CoverageGap records a collection that could not be audited (e.g. a 404 or a
+// transport error), so the report distinguishes "absent" from "not observed".
+type CoverageGap struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
 }
 
-// manualCheck is one upgrade item the CP API cannot surface, rendered as a card in
+// ManualCheck is one upgrade item the CP API cannot surface, rendered as a card in
 // the manual checklist. Title is always set; Detail and Command enrich a card with
 // an explanation and a copy-paste validation command when one exists.
-type manualCheck struct {
+type ManualCheck struct {
 	Title   string `json:"title"`
 	Detail  string `json:"detail,omitempty"`
 	Command string `json:"command,omitempty"`
 }
 
 // UnmarshalJSON accepts either the v3 object form or the v2 form, where each
-// manual check was a bare string. A legacy string maps to Title, so --from-json
+// manual check was a bare string. A legacy string maps to Title, so ParseReport
 // still renders reports captured before the schema bump (the v2 schema value
-// passes loadModel's prefix check).
-func (m *manualCheck) UnmarshalJSON(b []byte) error {
+// passes ParseReport's prefix check).
+func (m *ManualCheck) UnmarshalJSON(b []byte) error {
 	if t := bytes.TrimSpace(b); len(t) > 0 && t[0] == '"' {
 		var title string
 		if err := json.Unmarshal(b, &title); err != nil {
@@ -95,12 +113,12 @@ func (m *manualCheck) UnmarshalJSON(b []byte) error {
 		m.Title = title
 		return nil
 	}
-	type alias manualCheck // avoid recursing into this method
+	type alias ManualCheck // avoid recursing into this method
 	var a alias
 	if err := json.Unmarshal(b, &a); err != nil {
 		return err
 	}
-	*m = manualCheck(a)
+	*m = ManualCheck(a)
 	return nil
 }
 
@@ -189,9 +207,9 @@ func severityRank(sev string) int {
 // normalizeModel makes a model canonical for rendering: every finding gets its
 // group, and findings are sorted (severity, group order, category, title) so each
 // group is contiguous. Renderers rely on that contiguity, so both fresh audits and
-// --from-json (including older payloads written before the group field existed)
+// ParseReport (including older payloads written before the group field existed)
 // render identically — preserving the one-model/three-renderers contract.
-func normalizeModel(m *reportModel) {
+func normalizeModel(m *Report) {
 	for i := range m.Findings {
 		if m.Findings[i].Group == "" {
 			m.Findings[i].Group = categoryGroup(m.Findings[i].Category)
@@ -228,33 +246,33 @@ func (s severity) String() string {
 // status classifies the run; blockers take precedence over inconclusive so a
 // failing audit is never softened by a coverage gap. Warnings are advisory and do
 // not gate: a run with only warnings (no blockers, fully observed) is still clean.
-func (r *report) status() string {
+func (r *collector) status() string {
 	switch {
 	case r.count(blocker) > 0:
-		return statusBlockers
+		return StatusBlockers
 	case r.incomplete():
-		return statusInconclusive
+		return StatusInconclusive
 	default:
-		return statusClean
+		return StatusClean
 	}
 }
 
 // toModel projects an audited report onto the serializable model. Findings and
 // coverage gaps are sorted deterministically (by severity, category, title /
 // by path) so JSON output is stable across runs.
-func (r *report) toModel(generatedAt string) reportModel {
+func (r *collector) toModel(generatedAt string) Report {
 	product := r.cp.Product
 	if product == "" {
 		product = "Kuma"
 	}
-	m := reportModel{
-		Schema:       reportSchema,
-		Tool:         toolName,
+	m := Report{
+		Schema:       SchemaVersion,
+		Tool:         ToolName,
 		GeneratedAt:  generatedAt,
 		Status:       r.status(),
-		ControlPlane: controlPlane{Product: product, Version: r.cp.Version, Mode: r.cp.Mode},
+		ControlPlane: ControlPlane{Product: product, Version: r.cp.Version, Mode: r.cp.Mode},
 		Meshes:       append([]string{}, r.meshes...),
-		Summary: summary{
+		Summary: Summary{
 			Blockers:       r.count(blocker),
 			Warnings:       r.count(warning),
 			Info:           r.count(info),
@@ -262,13 +280,13 @@ func (r *report) toModel(generatedAt string) reportModel {
 			ParseErrors:    r.parseErrors,
 			SystemFindings: r.systemFindings,
 		},
-		Findings: []findingModel{},
-		Coverage: []coverageModel{},
-		Manual:   append([]manualCheck{}, r.manual...),
+		Findings: []Finding{},
+		Coverage: []CoverageGap{},
+		Manual:   append([]ManualCheck{}, r.manual...),
 	}
 
 	for _, f := range r.findings {
-		m.Findings = append(m.Findings, findingModel{
+		m.Findings = append(m.Findings, Finding{
 			Severity: f.severity.String(),
 			Group:    categoryGroup(f.category),
 			Category: f.category,
@@ -284,34 +302,35 @@ func (r *report) toModel(generatedAt string) reportModel {
 	cg := append([]coverageGap(nil), r.coverage...)
 	sort.SliceStable(cg, func(i, j int) bool { return cg[i].path < cg[j].path })
 	for _, g := range cg {
-		m.Coverage = append(m.Coverage, coverageModel{Path: g.path, Reason: g.reason})
+		m.Coverage = append(m.Coverage, CoverageGap{Path: g.path, Reason: g.reason})
 	}
 	return m
 }
 
-// failureModel builds the model emitted when the audit itself could not run, so
+// FailureReport builds the model emitted when the audit itself could not run, so
 // JSON/HTML consumers receive a structured "do not trust this" payload.
-func failureModel(addr string, auditErr error, generatedAt string) reportModel {
-	return reportModel{
-		Schema:      reportSchema,
-		Tool:        toolName,
+func FailureReport(addr string, auditErr error, generatedAt string) Report {
+	return Report{
+		Schema:      SchemaVersion,
+		Tool:        ToolName,
 		GeneratedAt: generatedAt,
-		Status:      statusFailed,
+		Status:      StatusFailed,
 		Address:     addr,
 		Error:       auditErr.Error(),
 		Meshes:      []string{},
-		Findings:    []findingModel{},
-		Coverage:    []coverageModel{},
-		Manual:      []manualCheck{},
+		Findings:    []Finding{},
+		Coverage:    []CoverageGap{},
+		Manual:      []ManualCheck{},
 	}
 }
 
-func renderJSON(m reportModel) (string, error) {
+// RenderJSON renders the report as 2-space-indented JSON with a trailing newline.
+func (m Report) RenderJSON() (string, error) {
 	return marshalIndentJSON(m)
 }
 
 // marshalIndentJSON renders v as 2-space-indented JSON with a trailing newline —
-// the on-disk/stdout shape shared by the CP-audit and --classify JSON renderers.
+// the on-disk/stdout shape shared by the CP-audit renderer.
 func marshalIndentJSON(v any) (string, error) {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -320,13 +339,31 @@ func marshalIndentJSON(v any) (string, error) {
 	return string(b) + "\n", nil
 }
 
-// renderHTML embeds the report JSON into a self-contained, dependency-free page
+// RenderHTML embeds the report JSON into a self-contained, dependency-free page
 // (see html.go) that renders it client-side. json.Marshal escapes <, >, & to
 // \u00xx, so the payload is safe inside the <script> tag.
-func renderHTML(m reportModel) (string, error) {
+func (m Report) RenderHTML() (string, error) {
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return "", err
 	}
 	return htmlHead + string(b) + htmlTail, nil
+}
+
+// ParseReport decodes and validates a JSON report payload (as produced by
+// RenderJSON / captured via --from-json), normalizing it so every renderer sees
+// group-contiguous findings regardless of when the payload was captured.
+func ParseReport(data []byte) (Report, error) {
+	var m Report
+	if err := json.Unmarshal(data, &m); err != nil {
+		return Report{}, fmt.Errorf("parsing JSON report: %w", err)
+	}
+	// Validate the schema value, not merely its presence: a non-empty but foreign
+	// `schema` (e.g. an unrelated JSON document, or a classification report fed where a
+	// report is expected) must be rejected, not silently mis-decoded.
+	if !strings.HasPrefix(m.Schema, ToolName+"/") {
+		return Report{}, fmt.Errorf("does not look like a %s JSON report (schema %q)", ToolName, m.Schema)
+	}
+	normalizeModel(&m)
+	return m, nil
 }

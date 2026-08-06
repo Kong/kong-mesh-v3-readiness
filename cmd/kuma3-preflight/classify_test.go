@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Kong/kong-mesh-v3-readiness/preflight"
 )
 
 // writeFixture writes a file under dir, creating parent directories.
@@ -125,37 +127,37 @@ func TestScanSourceClassification(t *testing.T) {
 }
 
 // TestMarkerCatalogInSync guarantees every removed mesh-scoped kind the live
-// auditor knows about (legacyMeshScoped) has a matching source marker, so the
+// auditor knows about (preflight.RemovedKinds()) has a matching source marker, so the
 // scanner can never silently miss a kind the auditor flags.
 func TestMarkerCatalogInSync(t *testing.T) {
 	byKind := map[string]deprecatedMarker{}
 	for _, mk := range deprecatedMarkers() {
 		byKind[mk.kind] = mk
 	}
-	for _, lt := range legacyMeshScoped {
-		mk, ok := byKind[lt.kind]
+	for _, lt := range preflight.RemovedKinds() {
+		mk, ok := byKind[lt.Kind]
 		if !ok {
-			t.Errorf("legacy kind %q has no source marker", lt.kind)
+			t.Errorf("legacy kind %q has no source marker", lt.Kind)
 			continue
 		}
 		if !mk.removable {
-			t.Errorf("marker for removed resource %q must be removable", lt.kind)
+			t.Errorf("marker for removed resource %q must be removable", lt.Kind)
 		}
 		if mk.category != "Removed resource" {
-			t.Errorf("marker %q: want category %q, got %q", lt.kind, "Removed resource", mk.category)
+			t.Errorf("marker %q: want category %q, got %q", lt.Kind, "Removed resource", mk.category)
 		}
-		if mk.replacement != lt.replacement {
-			t.Errorf("marker %q replacement out of sync: %q vs %q", lt.kind, mk.replacement, lt.replacement)
+		if mk.replacement != lt.Replacement {
+			t.Errorf("marker %q replacement out of sync: %q vs %q", lt.Kind, mk.replacement, lt.Replacement)
 		}
 	}
 }
 
 // writeSnapshot writes a preflight JSON report (the dynamic-capture artifact).
-func writeSnapshot(t *testing.T, dir, name string, findings []findingModel) {
+func writeSnapshot(t *testing.T, dir, name string, findings []preflight.Finding) {
 	t.Helper()
-	m := reportModel{
-		Schema: reportSchema, Tool: toolName, Status: statusBlockers,
-		Meshes: []string{}, Findings: findings, Coverage: []coverageModel{}, Manual: []manualCheck{},
+	m := preflight.Report{
+		Schema: preflight.SchemaVersion, Tool: preflight.ToolName, Status: preflight.StatusBlockers,
+		Meshes: []string{}, Findings: findings, Coverage: []preflight.CoverageGap{}, Manual: []preflight.ManualCheck{},
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
@@ -172,20 +174,20 @@ func TestIngestReportsMergeAndDelta(t *testing.T) {
 	}
 
 	reports := t.TempDir()
-	removed := findingModel{
+	removed := preflight.Finding{
 		Severity: "blocker", Category: "Removed policies",
 		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []string{"trafficroute/route-all"},
 	}
-	infoFinding := findingModel{Severity: "info", Category: "Dataplane DNS", Title: "Envoy config inspected for a sample of dataplanes", Count: 1}
+	infoFinding := preflight.Finding{Severity: "info", Category: "Dataplane DNS", Title: "Envoy config inspected for a sample of dataplanes", Count: 1}
 	// CP-level findings describe the e2e CP itself, not a test's resource — excluded.
-	cpFinding := findingModel{
+	cpFinding := preflight.Finding{
 		Severity: "blocker", Category: cpConfigCategory, Title: "Delta xDS not enabled",
 		Count: 1, Examples: []string{"experimental.deltaXds=false"},
 	}
 	// The shared CP is cumulative + parallel, so the same finding recurs across
 	// snapshots; dedupe by (feature, kind, example) must collapse it.
-	writeSnapshot(t, reports, "0001-trafficroute-should-route.json", []findingModel{removed, infoFinding, cpFinding})
-	writeSnapshot(t, reports, "0002-some-other-spec.json", []findingModel{removed, cpFinding})
+	writeSnapshot(t, reports, "0001-trafficroute-should-route.json", []preflight.Finding{removed, infoFinding, cpFinding})
+	writeSnapshot(t, reports, "0002-some-other-spec.json", []preflight.Finding{removed, cpFinding})
 
 	if err := ci.ingestReports(reports); err != nil {
 		t.Fatal(err)
@@ -349,7 +351,7 @@ func TestGlobalMigrationExtraction(t *testing.T) {
 
 func TestLoadModelValidatesSchema(t *testing.T) {
 	dir := t.TempDir()
-	writeFixture(t, dir, "good.json", `{"schema":"`+reportSchema+`","status":"clean","meshes":[],"findings":[],"coverageGaps":[],"manualChecks":[]}`)
+	writeFixture(t, dir, "good.json", `{"schema":"`+preflight.SchemaVersion+`","status":"clean","meshes":[],"findings":[],"coverageGaps":[],"manualChecks":[]}`)
 	if _, err := loadModel(filepath.Join(dir, "good.json")); err != nil {
 		t.Errorf("a valid report schema must be accepted, got: %v", err)
 	}
@@ -375,7 +377,7 @@ func TestDynamicFieldFindingsMergeWithStatic(t *testing.T) {
 		}
 	}
 	// A dynamic field finding adopts the static kind/category/replacement so it merges.
-	kind, removable, category, replacement := dynamicUsage(findingModel{
+	kind, removable, category, replacement := dynamicUsage(preflight.Finding{
 		Severity: "blocker", Category: "Mesh object settings", Title: "Inline mTLS on Mesh",
 	})
 	if kind != "Mesh.mtls" || removable || category != "Mesh field" || replacement == "" {
@@ -398,7 +400,7 @@ func TestDynamicFieldMergesIntoStaticFeatureBucket(t *testing.T) {
 	}
 
 	reports := t.TempDir()
-	writeSnapshot(t, reports, "0001-mtls.json", []findingModel{{
+	writeSnapshot(t, reports, "0001-mtls.json", []preflight.Finding{{
 		Severity: "blocker", Category: "Mesh object settings", Title: "Inline mTLS on Mesh",
 		Count: 1, Examples: []string{"mtls (mtls)"},
 	}})
@@ -425,7 +427,7 @@ func TestDynamicFieldMergesIntoStaticFeatureBucket(t *testing.T) {
 func TestIngestReportsSkipsForeignJSON(t *testing.T) {
 	ci := newClassIndex()
 	reports := t.TempDir()
-	writeSnapshot(t, reports, "0001-spec.json", []findingModel{{
+	writeSnapshot(t, reports, "0001-spec.json", []preflight.Finding{{
 		Severity: "blocker", Category: "Removed policies",
 		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []string{"tr/route"},
 	}})

@@ -40,6 +40,29 @@ Exit codes: `0` clean · `1` blockers found · `2` operational error · `3` inco
 endpoint is skipped (the run is inconclusive, exit 3), so pass a token to audit control-plane
 settings. See the example report gallery in [`examples/`](examples/).
 
+## Use it as a Go library
+
+The audit engine behind the CLI is importable directly, so another Go program can run the
+same audit without shelling out:
+
+```bash
+go get github.com/Kong/kong-mesh-v3-readiness/preflight
+```
+
+```go
+import "github.com/Kong/kong-mesh-v3-readiness/preflight"
+
+rep, err := preflight.Audit(ctx, preflight.Options{Address: "http://localhost:5681"})
+if err != nil {
+	// hard failure: invalid Options.Address, unreachable CP, or a non-Kuma endpoint
+}
+out, err := rep.RenderJSON() // or rep.RenderHTML()
+```
+
+`preflight.Audit` performs no I/O beyond requests to `Options.Address` — it never prints,
+logs, or calls `os.Exit`. See the [`preflight`](preflight) package doc for the full API,
+including `preflight.RemovedKinds()` for introspecting the removed-resource catalog.
+
 ## More
 
 - **[Full flag reference + the checks it runs](cmd/kuma3-preflight/README.md)**

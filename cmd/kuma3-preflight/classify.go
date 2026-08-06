@@ -9,14 +9,26 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/Kong/kong-mesh-v3-readiness/preflight"
 )
 
 // The classifier answers a different question from the live audit: given the Kuma
 // e2e test tree (and, optionally, per-spec preflight snapshots captured during an
 // e2e run), which tests exercise features removed or deprecated in Kuma 3.0 — so
 // the team can decide which e2e tests to remove/replace vs rewrite. It reuses the
-// same deprecation catalog the live auditor uses (legacyMeshScoped, audit.go), so
-// the two never drift.
+// same deprecation catalog the live auditor uses (preflight.RemovedKinds(), which
+// mirrors preflight/audit.go's legacyMeshScoped), so the two never drift.
+
+// cpConfigCategory and the removed-kind categories mirror the unexported category
+// string constants in preflight/audit.go (cpConfigCategory, categoryRemovedPolicy,
+// categoryRemovedResources) — kept as literals here since the preflight package
+// intentionally keeps its category strings unexported.
+const (
+	cpConfigCategory         = "Control plane configuration"
+	categoryRemovedPolicy    = "Removed policies"
+	categoryRemovedResources = "Removed resources"
+)
 
 const classificationSchema = "kuma3-preflight-classification/v1"
 
@@ -75,7 +87,7 @@ func marker(kind, category, replacement string, removable bool, patterns, requir
 }
 
 // deprecatedMarkers builds the scan catalog. The removed mesh-scoped kinds come
-// from legacyMeshScoped (audit.go) so the scanner stays in lockstep with the live
+// from preflight.RemovedKinds() so the scanner stays in lockstep with the live
 // auditor; helper/builder identifiers (which apply a resource without a literal
 // `type:` line) are added per kind.
 func deprecatedMarkers() []deprecatedMarker {
@@ -87,10 +99,10 @@ func deprecatedMarkers() []deprecatedMarker {
 		"Retry":             {`\bRetryUniversal\b`},
 	}
 	var markers []deprecatedMarker
-	for _, lt := range legacyMeshScoped {
-		pats := []string{`(?m)^\s*type:\s*` + regexp.QuoteMeta(lt.kind) + `\b`}
-		pats = append(pats, helperPatterns[lt.kind]...)
-		markers = append(markers, marker(lt.kind, "Removed resource", lt.replacement, true, pats, nil))
+	for _, lt := range preflight.RemovedKinds() {
+		pats := []string{`(?m)^\s*type:\s*` + regexp.QuoteMeta(lt.Kind) + `\b`}
+		pats = append(pats, helperPatterns[lt.Kind]...)
+		markers = append(markers, marker(lt.Kind, "Removed resource", lt.Replacement, true, pats, nil))
 	}
 
 	meshDefines := []string{`(?m)^\s*type:\s*Mesh\b`}
@@ -167,7 +179,7 @@ func (ci *classIndex) addUsage(feature, kind, category, replacement string, remo
 	}
 	u.count++
 	u.sources[source] = true
-	if example != "" && len(u.examples) < exampleCap {
+	if example != "" && len(u.examples) < preflight.ExampleCap {
 		u.examples = append(u.examples, example)
 	}
 }
@@ -271,7 +283,7 @@ func (ci *classIndex) ingestReports(dir string) error {
 			continue
 		}
 		for _, f := range m.Findings {
-			if f.Severity != blocker.String() {
+			if f.Severity != preflight.SeverityBlocker {
 				continue // warning/info findings (advisories, sampling-coverage notes) are not deprecations
 			}
 			if cpLevelCategory(f.Category) {
@@ -338,7 +350,7 @@ var fieldFindingToKind = map[string]string{
 
 // dynamicUsage projects a live-audit finding onto the classifier's (kind, removable)
 // taxonomy so dynamic findings merge with static markers of the same kind.
-func dynamicUsage(f findingModel) (string, bool, string, string) {
+func dynamicUsage(f preflight.Finding) (string, bool, string, string) {
 	// Both removed-kind categories (classic policies now group under Policies,
 	// networking/gateway resources under Removed resources) carry the kind in the
 	// title, so classify maps them the same way.
@@ -354,9 +366,9 @@ func dynamicUsage(f findingModel) (string, bool, string, string) {
 }
 
 func replacementFor(kind string) string {
-	for _, lt := range legacyMeshScoped {
-		if lt.kind == kind {
-			return lt.replacement
+	for _, lt := range preflight.RemovedKinds() {
+		if lt.Kind == kind {
+			return lt.Replacement
 		}
 	}
 	return ""

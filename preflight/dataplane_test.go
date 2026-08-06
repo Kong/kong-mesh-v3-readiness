@@ -1,11 +1,11 @@
-package main
+package preflight
 
 import "testing"
 
 // auditDataplane audits a mock control plane whose only Dataplane is the given
 // one (no meshes, every other collection empty), so dataplane findings stand
 // alone in the report.
-func auditDataplane(t *testing.T, dp map[string]any) reportModel {
+func auditDataplane(t *testing.T, dp map[string]any) Report {
 	t.Helper()
 	dp["type"] = "Dataplane"
 	if dp["mesh"] == nil {
@@ -63,8 +63,8 @@ func TestDataplaneDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			if f.Count < 1 {
 				t.Errorf("finding %q count = %d, want >= 1", tc.title, f.Count)
 			}
-			if tc.severity == "blocker" && m.Status != statusBlockers {
-				t.Errorf("status = %q, want %q", m.Status, statusBlockers)
+			if tc.severity == "blocker" && m.Status != StatusBlockers {
+				t.Errorf("status = %q, want %q", m.Status, StatusBlockers)
 			}
 		})
 	}
@@ -81,8 +81,8 @@ func TestDataplaneProbesIgnoredOnKubernetes(t *testing.T) {
 	if _, ok := findFinding(m, "blocker", "Dataplane probes", "Dataplane has a probes section"); ok {
 		t.Errorf("probes on a Kubernetes dataplane must not be flagged\nfindings: %+v", m.Findings)
 	}
-	if m.Status != statusClean {
-		t.Errorf("status = %q, want %q", m.Status, statusClean)
+	if m.Status != StatusClean {
+		t.Errorf("status = %q, want %q", m.Status, StatusClean)
 	}
 }
 
@@ -112,8 +112,8 @@ func TestCleanDataplaneHasNoIssues(t *testing.T) {
 		"labels":     map[string]any{"kuma.io/workload": "dp-1"},
 		"networking": map[string]any{"inbound": []any{map[string]any{"port": 8080}}},
 	})
-	if m.Status != statusClean {
-		t.Errorf("status = %q, want %q", m.Status, statusClean)
+	if m.Status != StatusClean {
+		t.Errorf("status = %q, want %q", m.Status, StatusClean)
 	}
 	if len(m.Findings) != 0 {
 		t.Errorf("expected no findings for a clean dataplane, got %+v", m.Findings)

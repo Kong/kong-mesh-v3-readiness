@@ -4,7 +4,10 @@ Audits a running Kuma control plane (zone or global) over its REST API and
 produces a self-contained HTML (default) or JSON report of what must change before
 upgrading to **Kuma 3.0**. (Markdown is produced by `--classify`, not a CP audit.)
 
-The checks track `docs/deprecated-features.md`.
+The checks track `docs/deprecated-features.md`. The CLI is a thin wrapper around the
+importable audit engine in [`preflight`](../../preflight) — see the root
+[README](../../README.md#use-it-as-a-go-library) to call the same audit from another Go
+program.
 
 ## Usage
 
@@ -40,7 +43,8 @@ Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operation
 
 ## Classify e2e tests (`--classify`)
 
-A second mode reuses the same deprecation catalog (`legacyMeshScoped` in `audit.go`) to
+A second mode reuses the same deprecation catalog (`preflight.RemovedKinds()`, backed by
+`legacyMeshScoped` in `preflight/audit.go`) to
 classify a Kuma **e2e test suite** by which 3.0-removed features each test exercises — so
 you can decide which e2e tests to **remove/replace** (the test's subject is a removed
 resource) vs **rewrite** (it uses a removed thing only as scaffolding).

@@ -1,4 +1,4 @@
-package main
+package preflight
 
 import (
 	"context"
@@ -92,7 +92,7 @@ func TestControlPlaneConfigMissingIsCoverageGap(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	c, err := newClient(srv.URL, "", 30*time.Second)
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second})
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -101,8 +101,8 @@ func TestControlPlaneConfigMissingIsCoverageGap(t *testing.T) {
 		t.Fatalf("audit: %v", err)
 	}
 	m := rep.toModel("")
-	if m.Status != statusInconclusive {
-		t.Errorf("status = %q, want %q", m.Status, statusInconclusive)
+	if m.Status != StatusInconclusive {
+		t.Errorf("status = %q, want %q", m.Status, StatusInconclusive)
 	}
 	var found bool
 	for _, g := range m.Coverage {

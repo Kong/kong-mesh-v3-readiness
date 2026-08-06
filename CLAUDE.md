@@ -8,12 +8,19 @@ keep it focused on the preflight CLI + its docs.
 
 ## Layout
 
-- `cmd/kuma3-preflight/` — the entire CLI (one `package main`):
-  - `main.go` flags / `--from-json` / exit codes / atomic write · `client.go` HTTP client
-  - `audit.go` **all audit logic + deprecation check definitions** · `report.go` finding types
-  - `model.go` `reportModel` + renderers · `html.go` embedded HTML
-  - `render_test.go` unit/render tests · `golden_test.go` mock-CP golden tests
-    (fixtures + reference JSON under `testdata/golden/<scenario>/`)
+- `preflight/` — the importable audit engine (`package preflight`,
+  `github.com/Kong/kong-mesh-v3-readiness/preflight`):
+  - `preflight.go` public entrypoint (`Audit`, `Options`, `Report`, `RemovedKinds`)
+  - `client.go` HTTP client · `audit.go` **all audit logic + deprecation check definitions**
+  - `report.go` internal finding accumulator · `model.go` `Report` model + JSON/HTML renderers
+  - `html.go` embedded HTML · `semver.go` version parsing/comparison
+  - `render_test.go`/`golden_test.go`/etc. white-box tests (package `preflight`);
+    `api_test.go` black-box tests of the public surface (package `preflight_test`)
+  - `testdata/golden/<scenario>/` golden fixtures + reference JSON
+- `cmd/kuma3-preflight/` — the CLI (`package main`), a thin wrapper around `preflight`:
+  - `main.go` flags / `--from-json` / exit codes / atomic write
+  - `release.go` GitHub latest-patch lookup (CLI-only network call; never in `preflight`)
+  - `classify.go`/`classify_model.go` the `--classify` e2e-test scanner (its own Markdown model)
 - `docs/` — `deprecated-features.md` (3.0 deprecations the checks track), `test-plan.md`,
   `test-setup.md` (k3d + Universal CP), `test-results.md`
 - `examples/` real captured reports · `bin/` build output (gitignored) · `mise.toml` tool pins
@@ -42,7 +49,7 @@ go test ./...        # all tests pass
 golangci-lint run    # 0 issues (pinned 2.12.2; config .golangci.yml, modeled on Kuma's)
 nilaway ./...         # 0 nil-panic findings (Uber NilAway, pinned via mise.toml)
 go vet ./...         # clean
-gofmt -l cmd/        # prints nothing (no unformatted files; .golangci.yml also enforces gofumpt+gci)
+gofmt -l .           # prints nothing (no unformatted files; .golangci.yml also enforces gofumpt+gci)
 ```
 
 `mise run check` runs them all. Fix root causes — never suppress a linter finding with an

@@ -1,4 +1,4 @@
-package main
+package preflight
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 const (
@@ -25,7 +24,10 @@ type client struct {
 	http  *http.Client
 }
 
-func newClient(addr, token string, timeout time.Duration) (*client, error) {
+// newClientWithHTTP builds a client against an already-constructed *http.Client,
+// so a caller (e.g. Audit, via Options.HTTPClient) can supply its own transport,
+// timeout, or proxy settings instead of a fresh one derived from a timeout alone.
+func newClientWithHTTP(addr, token string, hc *http.Client) (*client, error) {
 	base, err := url.Parse(strings.TrimRight(addr, "/"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid --address %q: %w", addr, err)
@@ -33,13 +35,7 @@ func newClient(addr, token string, timeout time.Duration) (*client, error) {
 	if base.Scheme == "" || base.Host == "" {
 		return nil, fmt.Errorf("invalid --address %q: need scheme and host, e.g. http://localhost:5681", addr)
 	}
-	return &client{
-		base:  base,
-		token: token,
-		// Derive the per-request timeout from the overall budget so --timeout stays
-		// authoritative (no hidden shorter cap).
-		http: &http.Client{Timeout: timeout},
-	}, nil
+	return &client{base: base, token: token, http: hc}, nil
 }
 
 // list fetches every item of a resource collection, following pagination.
