@@ -909,12 +909,6 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 	if !a.checkVersionCurrency {
 		return nil
 	}
-	if a.skipAuditedCPVersion {
-		a.rep.add(info, cpVersionCategory, "Audited control plane version check out of scope",
-			"The caller excluded the audited control plane's own patch level from this check; "+
-				"it was NOT checked against the latest 2.x line. Connected zone control planes are still audited.",
-			"control plane ("+a.rep.cp.Version+")")
-	}
 	if a.latestPatch == "" {
 		a.rep.addGap("github.com/kumahq/kuma/releases",
 			fmt.Sprintf("could not determine the latest 2.%d patch — control-plane version currency NOT audited (pass --latest-version to set it explicitly)", UpgradeTargetMinor))
@@ -933,6 +927,14 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 		a.rep.addGap("--latest-version",
 			fmt.Sprintf("latest version %s is not a 2.%d patch — version currency NOT audited", a.latestPatch, UpgradeTargetMinor))
 		return nil
+	}
+	// Emitted only once the latest-patch prerequisite above is satisfied, so the
+	// "zones are still audited" claim is true rather than aspirational.
+	if a.skipAuditedCPVersion {
+		a.rep.add(info, cpVersionCategory, "Audited control plane version check out of scope",
+			"The caller excluded the audited control plane's own patch level from this check; "+
+				"it was NOT checked against the latest 2.x line. Connected zone control planes are still audited.",
+			"control plane ("+a.rep.cp.Version+")")
 	}
 	detail := fmt.Sprintf("Upgrade to the latest 2.%d patch (%s) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.", UpgradeTargetMinor, a.latestPatch)
 

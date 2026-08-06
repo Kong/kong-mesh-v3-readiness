@@ -39,7 +39,7 @@ func auditVersion(t *testing.T, latest string, handlers map[string]http.HandlerF
 }
 
 // auditVersionOpts audits a stub CP with the given auditOptions, overriding
-// checkVersionCurrency and latestPatch is left to the caller via opts.
+// checkVersionCurrency and latestPatch are left to the caller via opts.
 func auditVersionOpts(t *testing.T, opts auditOptions, handlers map[string]http.HandlerFunc) *collector {
 	t.Helper()
 	srv := cpServer(t, handlers)
