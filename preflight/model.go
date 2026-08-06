@@ -39,53 +39,59 @@ const (
 // structure, and ParseReport loads it back, so they can never drift apart.
 // (Markdown is produced only by the CLI's --classify mode, from a different model.)
 type Report struct {
-	Schema       string        `json:"schema"`
-	Tool         string        `json:"tool"`
-	GeneratedAt  string        `json:"generatedAt,omitempty"`
-	Status       string        `json:"status"`
-	Address      string        `json:"address,omitempty"`
-	Error        string        `json:"error,omitempty"`
-	ControlPlane ControlPlane  `json:"controlPlane"`
-	Meshes       []string      `json:"meshes"`
-	Summary      Summary       `json:"summary"`
-	Findings     []Finding     `json:"findings"`
-	Coverage     []CoverageGap `json:"coverageGaps"`
-	Manual       []ManualCheck `json:"manualChecks"`
+	// Schema is "kuma3-preflight/vN"; ParseReport accepts any prior vN by prefix.
+	Schema      string `json:"schema" jsonschema:"pattern=^kuma3-preflight/v[0-9]+$"`
+	Tool        string `json:"tool" jsonschema:"enum=kuma3-preflight"`
+	GeneratedAt string `json:"generatedAt,omitempty" jsonschema:"format=date-time"`
+	// Status: blockers outranks inconclusive, so a coverage gap never softens a failing audit.
+	Status  string `json:"status" jsonschema:"enum=clean,enum=blockers,enum=inconclusive,enum=failed"`
+	Address string `json:"address,omitempty"`
+	// Error never echoes a raw HTTP response body or bearer token.
+	Error        string       `json:"error,omitempty"`
+	ControlPlane ControlPlane `json:"controlPlane"`
+	Meshes       []string     `json:"meshes"`
+	Summary      Summary      `json:"summary"`
+	Findings     []Finding    `json:"findings"`
+	// Coverage gaps make the run inconclusive, never clean.
+	Coverage []CoverageGap `json:"coverageGaps"`
+	Manual   []ManualCheck `json:"manualChecks"`
 }
 
 // ControlPlane identifies the audited control plane.
 type ControlPlane struct {
 	Product string `json:"product"`
 	Version string `json:"version"`
-	Mode    string `json:"mode,omitempty"`
+	Mode    string `json:"mode,omitempty" jsonschema:"enum=,enum=standalone,enum=zone,enum=global"`
 }
 
 // Summary tallies findings by severity plus coverage/parse-error counts.
 type Summary struct {
-	Blockers       int `json:"blockers"`
-	Warnings       int `json:"warnings"`
-	Info           int `json:"info"`
-	CoverageGaps   int `json:"coverageGaps"`
-	ParseErrors    int `json:"parseErrors"`
-	SystemFindings int `json:"systemFindings"`
+	Blockers int `json:"blockers" jsonschema:"minimum=0"`
+	// Warnings stays for ParseReport backward compatibility; no check emits one.
+	Warnings       int `json:"warnings" jsonschema:"minimum=0"`
+	Info           int `json:"info" jsonschema:"minimum=0"`
+	CoverageGaps   int `json:"coverageGaps" jsonschema:"minimum=0"`
+	ParseErrors    int `json:"parseErrors" jsonschema:"minimum=0"`
+	SystemFindings int `json:"systemFindings" jsonschema:"minimum=0"`
 }
 
 // Finding is one (severity, category, title) grouped occurrence in the report.
 type Finding struct {
-	Severity string `json:"severity"`
-	Group    string `json:"group"`
+	// Severity "warning" only appears in pre-re-grade payloads; no current check emits one.
+	Severity string `json:"severity" jsonschema:"enum=blocker,enum=warning,enum=info"`
+	Group    string `json:"group" jsonschema:"enum=Control plane,enum=Mesh object,enum=Policies,enum=Removed resources,enum=Data plane & workloads,enum=Other"`
 	Category string `json:"category"`
 	Title    string `json:"title"`
 	Detail   string `json:"detail"`
 	// Doc links to the Kong Mesh page explaining the 3.0 replacement API/feature.
 	// Optional: omitted for findings with no replacement to point at.
-	Doc      string   `json:"doc,omitempty"`
-	Count    int      `json:"count"`
-	Examples []string `json:"examples"`
+	Doc      string   `json:"doc,omitempty" jsonschema:"format=uri"`
+	Count    int      `json:"count" jsonschema:"minimum=1"`
+	Examples []string `json:"examples" jsonschema:"maxItems=10"`
 }
 
-// CoverageGap records a collection that could not be audited (e.g. a 404 or a
-// transport error), so the report distinguishes "absent" from "not observed".
+// CoverageGap records a collection that could not be audited — a 404 or a
+// transport error — so the report distinguishes "absent" from "not observed".
 type CoverageGap struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`

@@ -9,59 +9,25 @@ import (
 	"strings"
 
 	"github.com/Kong/kong-mesh-v3-readiness/preflight"
+	"github.com/Kong/kong-mesh-v3-readiness/reportmodel"
 )
 
-// classificationModel is the canonical, serializable form of a classification run.
-// As with reportModel, every format renders from this one structure and the JSON
-// shape is the stable contract.
-type classificationModel struct {
-	Schema      string         `json:"schema"`
-	Tool        string         `json:"tool"`
-	GeneratedAt string         `json:"generatedAt,omitempty"`
-	SourceDir   string         `json:"sourceDir,omitempty"`
-	ReportsDir  string         `json:"reportsDir,omitempty"`
-	Summary     classSummary   `json:"summary"`
-	Global      []globalModel  `json:"global"`
-	Features    []featureModel `json:"features"`
-}
+// classificationModel is the canonical, serializable form of a classification
+// run — an alias for reportmodel.Classification so every existing call site in
+// this package keeps working unchanged. As with preflight.Report, every format
+// renders from this one structure and the JSON shape is the stable contract.
+type classificationModel = reportmodel.Classification
 
 // globalModel is a cross-cutting deprecation: a non-removable field/policy/mesh
 // setting recurring across many suites, fixed once centrally rather than per suite.
-type globalModel struct {
-	Kind        string `json:"kind"`
-	Category    string `json:"category"`
-	Replacement string `json:"replacement"`
-	Removable   bool   `json:"removable"`
-	Suites      int    `json:"suites"`
-	Count       int    `json:"count"`
-}
+type globalModel = reportmodel.GlobalMigration
 
-type classSummary struct {
-	Features         int `json:"features"`
-	Remove           int `json:"remove"`
-	Rewrite          int `json:"rewrite"`
-	DeprecatedUsages int `json:"deprecatedUsages"`
-	GlobalMigrations int `json:"globalMigrations"`
-}
+type featureModel = reportmodel.Feature
 
-type featureModel struct {
-	Name           string       `json:"name"`
-	Recommendation string       `json:"recommendation"`
-	Usages         []usageModel `json:"usages"`
-}
-
-type usageModel struct {
-	Kind        string   `json:"kind"`
-	Category    string   `json:"category"`
-	Replacement string   `json:"replacement"`
-	Removable   bool     `json:"removable"`
-	Count       int      `json:"count"`
-	Sources     []string `json:"sources"`
-	Examples    []string `json:"examples"`
-	// Global marks a usage whose kind was lifted into the cross-cutting Global table;
-	// per-suite renderers omit these to avoid repeating the same fix in every suite.
-	Global bool `json:"global,omitempty"`
-}
+// usageModel marks a usage whose kind was lifted into the cross-cutting Global
+// table (the Global field) via reportmodel.Usage; per-suite renderers omit
+// those to avoid repeating the same fix in every suite.
+type usageModel = reportmodel.Usage
 
 // globalSuiteThreshold: a non-removable deprecation seen in at least this many suites
 // is a cross-cutting "global" migration (one centralized fix), lifted out of the

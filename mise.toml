@@ -9,7 +9,7 @@ GOFLAGS = "-mod=mod"
 
 [tasks.build]
 description = "Build the kuma3-preflight CLI into bin/"
-sources = ["cmd/**/*.go", "preflight/**/*.go", "go.mod"]
+sources = ["cmd/**/*.go", "preflight/**/*.go", "reportmodel/**/*.go", "go.mod"]
 outputs = ["bin/kuma3-preflight"]
 run = "go build -o bin/kuma3-preflight ./cmd/kuma3-preflight"
 
@@ -50,6 +50,12 @@ depends = ["build"]
 sources = ["preflight/html.go", "examples/json/*.json", "bin/kuma3-preflight"]
 outputs = ["examples/html/*.html"]
 run = "examples/regen.sh --no-build"
+
+[tasks.openapi]
+description = "Regenerate docs/openapi.yaml from the report/classification types (tools/openapigen is its own module)"
+sources = ["preflight/model.go", "reportmodel/**/*.go", "tools/openapigen/**/*.go"]
+outputs = ["docs/openapi.yaml"]
+run = "go generate ./..."
 
 [tasks.check]
 description = "Run all pre-commit quality gates"

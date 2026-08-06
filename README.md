@@ -63,6 +63,11 @@ out, err := rep.RenderJSON() // or rep.RenderHTML()
 logs, or calls `os.Exit`. See the [`preflight`](preflight) package doc for the full API,
 including `preflight.RemovedKinds()` for introspecting the removed-resource catalog.
 
+The report types are also re-exported as aliases from
+[`reportmodel`](reportmodel) (which additionally owns the `--classify`
+`Classification` contract), so code written against that import path still compiles.
+Both contracts are published as JSON Schema in [`docs/openapi.yaml`](docs/openapi.yaml).
+
 ## More
 
 - **[Full flag reference + the checks it runs](cmd/kuma3-preflight/README.md)**

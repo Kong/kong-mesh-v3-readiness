@@ -2,12 +2,15 @@
 
 - **One model, N renderers.** Everything renders from a single model — the CP audit from
   `preflight.Report` (`preflight/model.go`) into JSON (`RenderJSON`) + HTML (`RenderHTML`);
-  `--classify` from `classificationModel` (`cmd/kuma3-preflight/classify_model.go`) into
-  Markdown + JSON + HTML. Within each, the formats must never disagree (Markdown is
-  classify-only — a CP audit emits JSON or HTML, default HTML). `preflight.ParseReport`
-  reloads a `Report` and re-renders (the CLI's `--from-json` uses it), so the JSON shape is a
-  stable contract. Bump `preflight.SchemaVersion` (`preflight/model.go`) on incompatible
-  changes.
+  `--classify` from `classificationModel` (`cmd/kuma3-preflight/classify_model.go`; aliases
+  `reportmodel.Classification`) into Markdown + JSON + HTML. Within each, the formats must
+  never disagree (Markdown is classify-only — a CP audit emits JSON or HTML, default HTML).
+  `preflight.ParseReport` reloads a `Report` and re-renders (the CLI's `--from-json` uses it),
+  so the JSON shape is a stable contract. Bump `preflight.SchemaVersion` (`preflight/model.go`)
+  on incompatible changes. The `reportmodel/` package (see repo-root `CLAUDE.md`) owns
+  `Classification` and re-exports the audit types as aliases of the `preflight` ones, so
+  `tools/openapigen` can reflect both contracts into `docs/openapi.yaml`; it holds struct
+  shapes only, never audit/render logic.
 - **Exit codes gate CI** (derived in `cmd/kuma3-preflight/main.go`'s `run`/`exitForStatus`):
   `0` clean · `1` blockers · `2` operational error · `3` inconclusive. Keep `exitForStatus`,
   the internal `collector.status()` (`preflight/model.go`), and `preflight.Status*` constants
