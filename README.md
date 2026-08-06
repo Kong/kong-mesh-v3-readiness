@@ -52,7 +52,13 @@ go get github.com/Kong/kong-mesh-v3-readiness/preflight
 ```go
 import "github.com/Kong/kong-mesh-v3-readiness/preflight"
 
-rep, err := preflight.Audit(ctx, preflight.Options{Address: "http://localhost:5681"})
+rep, err := preflight.Audit(ctx, preflight.Options{
+	Address: "http://localhost:5681",
+	// Latest 2.14 patch to check CP/zone version currency against. Resolving it is
+	// the caller's job — leave it empty and that one check becomes a coverage gap,
+	// which makes the whole report inconclusive.
+	LatestPatch: "2.14.7",
+})
 if err != nil {
 	// hard failure: invalid Options.Address, unreachable CP, or a non-Kuma endpoint
 }
@@ -60,8 +66,12 @@ out, err := rep.RenderJSON() // or rep.RenderHTML()
 ```
 
 `preflight.Audit` performs no I/O beyond requests to `Options.Address` — it never prints,
-logs, or calls `os.Exit`. See the [`preflight`](preflight) package doc for the full API,
-including `preflight.RemovedKinds()` for introspecting the removed-resource catalog.
+logs, or calls `os.Exit`. That is why `Options.LatestPatch` is an input: the CLI reads the
+`kumahq/kuma` GitHub releases API for it, and an importer must supply the value the same way
+(hardcoded, from its own cache, or from that API) to get a conclusive report. See the
+[`preflight`](preflight) package doc for the full API, including
+`preflight.UpgradeTargetMinor` for the 2.x minor the check is scoped to and
+`preflight.RemovedKinds()` for introspecting the removed-resource catalog.
 
 The report types are also re-exported as aliases from
 [`reportmodel`](reportmodel) (which additionally owns the `--classify`
