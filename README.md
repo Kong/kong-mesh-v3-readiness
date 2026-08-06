@@ -81,6 +81,11 @@ Importers can also supply a custom `HTTPClient` and static `RequestHeaders` for 
 requests; built-in defaults fill only missing headers, and `Token` still overrides any custom
 `Authorization` header.
 
+Set `Options.SkipAuditedControlPlaneVersionCheck` to exclude only the audited control plane's
+own patch level from the version-currency check — connected zone control planes are still
+checked, and the report records an info finding noting the exclusion so its absence is never
+read as a pass.
+
 The report types are also re-exported as aliases from
 [`reportmodel`](reportmodel) (which additionally owns the `--classify`
 `Classification` contract), so code written against that import path still compiles.

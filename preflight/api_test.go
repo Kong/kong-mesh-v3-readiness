@@ -42,11 +42,18 @@ const cleanConfigJSON = `{
 // audit completes with status "clean".
 func mockCleanCP(t *testing.T) *httptest.Server {
 	t.Helper()
+	return mockCleanCPVersion(t, "2.14.0")
+}
+
+// mockCleanCPVersion is mockCleanCP with the reported control-plane version
+// parameterized, for tests that need a stale audited CP.
+func mockCleanCPVersion(t *testing.T, version string) *httptest.Server {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/":
-			_, _ = io.WriteString(w, `{"product":"Kuma","version":"2.14.0","mode":"zone"}`)
+			_, _ = io.WriteString(w, `{"product":"Kuma","version":"`+version+`","mode":"zone"}`)
 		case "/config":
 			_, _ = io.WriteString(w, cleanConfigJSON)
 		case "/meshes":
@@ -81,6 +88,31 @@ func TestExternalConsumerFlow(t *testing.T) {
 	}
 	if !strings.HasPrefix(strings.TrimSpace(out), "{") {
 		t.Errorf("rendered JSON does not look like a JSON object: %s", out)
+	}
+}
+
+// TestAuditSkipAuditedControlPlaneVersion proves the public Options field
+// suppresses the blocker for the audited control plane's own stale version
+// while still reporting the run as clean (no other findings on this CP).
+func TestAuditSkipAuditedControlPlaneVersion(t *testing.T) {
+	srv := mockCleanCPVersion(t, "2.9.0")
+
+	rep, err := preflight.Audit(context.Background(), preflight.Options{
+		Address: srv.URL, LatestPatch: "2.14.0", SkipAuditedControlPlaneVersionCheck: true,
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if rep.Status != preflight.StatusClean {
+		t.Errorf("status = %q, want %q", rep.Status, preflight.StatusClean)
+	}
+	if rep.Summary.Info < 1 {
+		t.Errorf("Summary.Info = %d, want at least 1 (out-of-scope note)", rep.Summary.Info)
+	}
+	for _, f := range rep.Findings {
+		if f.Severity == preflight.SeverityBlocker && f.Category == "Control plane version" {
+			t.Errorf("found blocker in %q despite SkipAuditedControlPlaneVersionCheck: %+v", f.Category, f)
+		}
 	}
 }
 

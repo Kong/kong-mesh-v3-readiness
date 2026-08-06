@@ -47,6 +47,12 @@ type Options struct {
 	// Address. These headers are cloned before use, built-in defaults fill only
 	// missing values, and Token still overrides Authorization when non-empty.
 	RequestHeaders http.Header
+	// SkipAuditedControlPlaneVersionCheck excludes only the audited control
+	// plane's own patch level from the version-currency check; connected zone
+	// control planes are still checked. The report records the exclusion as an
+	// info finding, so its absence is never read as a pass. Default false keeps
+	// today's behavior of flagging the audited control plane.
+	SkipAuditedControlPlaneVersionCheck bool
 }
 
 // Audit runs a full readiness audit against the control plane described by opts
@@ -75,6 +81,7 @@ func Audit(ctx context.Context, opts Options) (Report, error) {
 		// degrades it to a coverage gap. See checkControlPlaneVersions.
 		checkVersionCurrency: true,
 		latestPatch:          opts.LatestPatch,
+		skipAuditedCPVersion: opts.SkipAuditedControlPlaneVersionCheck,
 	})
 	if err != nil {
 		return Report{}, err
