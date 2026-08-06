@@ -149,6 +149,9 @@ type auditOptions struct {
 	// latestPatch is the latest 2.x patch to compare against (resolved by the
 	// caller from --latest-version or the GitHub lookup; "" = could not determine).
 	latestPatch string
+	// skipAuditedCPVersion excludes only the audited control plane's own patch
+	// level from the version-currency check; connected zones are still checked.
+	skipAuditedCPVersion bool
 }
 
 type auditor struct {
@@ -157,6 +160,7 @@ type auditor struct {
 	inspectDataplanes    int
 	checkVersionCurrency bool
 	latestPatch          string
+	skipAuditedCPVersion bool
 	rep                  *collector
 
 	// /zones+insights is read by both the config and version fan-outs on a global;
@@ -192,7 +196,8 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	a := &auditor{
 		c: c, meshFilter: opts.meshFilter, inspectDataplanes: opts.inspectDataplanes,
 		checkVersionCurrency: opts.checkVersionCurrency, latestPatch: opts.latestPatch,
-		rep: &collector{cp: idx},
+		skipAuditedCPVersion: opts.skipAuditedCPVersion,
+		rep:                  &collector{cp: idx},
 	}
 
 	meshes, found, err := c.list(ctx, "/meshes")
@@ -904,6 +909,12 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 	if !a.checkVersionCurrency {
 		return nil
 	}
+	if a.skipAuditedCPVersion {
+		a.rep.add(info, cpVersionCategory, "Audited control plane version check out of scope",
+			"The caller excluded the audited control plane's own patch level from this check; "+
+				"it was NOT checked against the latest 2.x line. Connected zone control planes are still audited.",
+			"control plane ("+a.rep.cp.Version+")")
+	}
 	if a.latestPatch == "" {
 		a.rep.addGap("github.com/kumahq/kuma/releases",
 			fmt.Sprintf("could not determine the latest 2.%d patch — control-plane version currency NOT audited (pass --latest-version to set it explicitly)", UpgradeTargetMinor))
@@ -925,7 +936,9 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 	}
 	detail := fmt.Sprintf("Upgrade to the latest 2.%d patch (%s) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.", UpgradeTargetMinor, a.latestPatch)
 
-	a.flagIfBehind(a.rep.cp.Version, "control plane", latestMin, latestPatch, detail)
+	if !a.skipAuditedCPVersion {
+		a.flagIfBehind(a.rep.cp.Version, "control plane", latestMin, latestPatch, detail)
+	}
 
 	// Fan out to connected zones unless we KNOW this CP is not a global. The Kuma
 	// GET / index carries no mode, so cp.Mode is only set when /config was readable
