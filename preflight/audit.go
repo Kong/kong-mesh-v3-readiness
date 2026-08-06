@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -249,13 +250,40 @@ func (a *auditor) scopedPath(wsPath string) string {
 	return "/" + wsPath
 }
 
+func collectionReadGapReason(err error) string {
+	var reqErr *requestError
+	if errors.As(err, &reqErr) {
+		switch reqErr.kind {
+		case requestErrStatus:
+			if reqErr.status == http.StatusUnauthorized || reqErr.status == http.StatusForbidden {
+				return fmt.Sprintf("collection read failed — status %d (authentication failed; check --token) — NOT audited", reqErr.status)
+			}
+			return fmt.Sprintf("collection read failed — status %d — NOT audited", reqErr.status)
+		case requestErrDecode:
+			return "collection read failed — response could not be decoded — NOT audited"
+		default:
+			return "collection read failed — request failed — NOT audited"
+		}
+	}
+	var listErr *listError
+	if errors.As(err, &listErr) {
+		switch listErr.kind {
+		case listErrCursorLoop, listErrPageLimit:
+			return "collection read failed — pagination did not converge — NOT audited"
+		case listErrCursorParse:
+			return "collection read failed — pagination cursor was invalid — NOT audited"
+		}
+	}
+	return "collection read failed — NOT audited"
+}
+
 // listColl lists a collection and records a coverage gap (instead of silently
-// treating it as empty) when the endpoint is not reachable.
+// treating it as empty) when the collection cannot be read.
 func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
 		if ctx.Err() == nil {
-			a.rep.addGap(path, "collection read failed — NOT audited: "+err.Error())
+			a.rep.addGap(path, collectionReadGapReason(err))
 		}
 		return nil
 	}
@@ -273,7 +301,7 @@ func (a *auditor) listIfServed(ctx context.Context, path string) []resourceItem 
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
 		if ctx.Err() == nil {
-			a.rep.addGap(path, "collection read failed — NOT audited: "+err.Error())
+			a.rep.addGap(path, collectionReadGapReason(err))
 		}
 		return nil
 	}

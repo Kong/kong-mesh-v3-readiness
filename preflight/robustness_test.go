@@ -157,25 +157,44 @@ func TestGlobalZonesInsightsForbiddenDegradesToGap(t *testing.T) {
 // failures. They should not be fanned out into one coverage gap per remaining
 // collection after audit scope has already been established.
 func TestGlobalTimeoutDuringCollectionAborts(t *testing.T) {
+	requestSeen := make(chan struct{}, 1)
 	srv := cpServer(t, map[string]http.HandlerFunc{
 		"/meshes": func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Disabled"}}],"next":null}`))
 		},
-		"/traffic-permissions": func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(200 * time.Millisecond)
-			writeJSON(w, []byte(`{"total":0,"items":[],"next":null}`))
+		"/traffic-permissions": func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case requestSeen <- struct{}{}:
+			default:
+			}
+			<-r.Context().Done()
 		},
 	})
 	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, err = audit(ctx, c, auditOptions{})
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("audit error = %v, want context deadline exceeded", err)
+	done := make(chan error, 1)
+	go func() {
+		_, err := audit(ctx, c, auditOptions{})
+		done <- err
+	}()
+	select {
+	case <-requestSeen:
+		cancel()
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for /traffic-permissions request")
+	}
+	select {
+	case err = <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for audit to observe cancellation")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("audit error = %v, want context canceled", err)
 	}
 }
 
@@ -210,6 +229,12 @@ func TestCollectionReadFailureReturnsPartialReport(t *testing.T) {
 	}
 	if !strings.Contains(g.reason, "NOT audited") {
 		t.Errorf("gap reason = %q, want NOT audited marker", g.reason)
+	}
+	if !strings.Contains(g.reason, "status 403") {
+		t.Errorf("gap reason = %q, want sanitized HTTP status", g.reason)
+	}
+	if strings.Contains(g.reason, "GET ") || strings.Contains(g.reason, srv.URL) {
+		t.Errorf("gap reason leaked raw request details: %q", g.reason)
 	}
 	model := rep.toModel("")
 	if model.Status != StatusInconclusive {
