@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,82 @@ func TestAuditContactsOnlyControlPlane(t *testing.T) {
 	}
 }
 
+// TestAuditRequestHeadersSentToControlPlane proves Audit forwards static request
+// headers to control-plane requests while still honoring the caller's transport.
+func TestAuditRequestHeadersSentToControlPlane(t *testing.T) {
+	var gotAccept []string
+	var gotTrace []string
+	hc := &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			gotAccept = append([]string(nil), req.Header.Values("Accept")...)
+			gotTrace = append([]string(nil), req.Header.Values("X-Trace-Id")...)
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+	srv := mockCleanCP(t)
+	headers := http.Header{
+		"Accept":     {"application/custom+json"},
+		"X-Trace-Id": {"trace-123"},
+	}
+
+	rep, err := preflight.Audit(context.Background(), preflight.Options{
+		Address:        srv.URL,
+		LatestPatch:    "2.14.0",
+		HTTPClient:     hc,
+		RequestHeaders: headers,
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if rep.Status != preflight.StatusClean {
+		t.Errorf("status = %q, want %q", rep.Status, preflight.StatusClean)
+	}
+	if !slices.Equal(gotAccept, []string{"application/custom+json"}) {
+		t.Errorf("Accept = %v, want only the custom value", gotAccept)
+	}
+	if !slices.Equal(gotTrace, []string{"trace-123"}) {
+		t.Errorf("X-Trace-Id = %v, want custom header on the request", gotTrace)
+	}
+
+	headers.Set("X-Trace-Id", "mutated")
+	if slices.Equal(gotTrace, []string{"mutated"}) {
+		t.Fatal("caller mutation changed the in-flight request; RequestHeaders were not cloned")
+	}
+}
+
+func TestAuditTokenOverridesCustomAuthorization(t *testing.T) {
+	var gotAuthorization string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/":
+			_, _ = io.WriteString(w, `{"product":"Kuma","version":"2.14.0","mode":"zone"}`)
+		case "/config":
+			_, _ = io.WriteString(w, cleanConfigJSON)
+		case "/meshes":
+			_, _ = io.WriteString(w, `{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`)
+		default:
+			_, _ = io.WriteString(w, `{"total":0,"items":[],"next":null}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := preflight.Audit(context.Background(), preflight.Options{
+		Address: srv.URL,
+		Token:   "from-token",
+		RequestHeaders: http.Header{
+			"Authorization": {"Bearer from-header"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if gotAuthorization != "Bearer from-token" {
+		t.Errorf("Authorization = %q, want token to override the custom header", gotAuthorization)
+	}
+}
+
 // TestAuditWritesNothingToStdio guards that the library never prints: Audit must
 // be silent so an importing program's own stdout/stderr are never polluted.
 func TestAuditWritesNothingToStdio(t *testing.T) {
@@ -162,4 +239,10 @@ func captureFD(t *testing.T, target **os.File) func() string {
 		_ = r.Close()
 		return got
 	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

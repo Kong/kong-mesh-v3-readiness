@@ -45,7 +45,7 @@ func TestGoldenReports(t *testing.T) {
 			dir := filepath.Join(root, name)
 			srv := mockCP(t, dir)
 
-			c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second})
+			c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second}, nil)
 			if err != nil {
 				t.Fatalf("newClient: %v", err)
 			}
@@ -91,7 +91,7 @@ func TestGoldenReports(t *testing.T) {
 func TestBlockerFindingsCarryDocLinks(t *testing.T) {
 	dir := filepath.Join("testdata", "golden", "kitchen-sink")
 	srv := mockCP(t, dir)
-	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second}, nil)
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}

@@ -52,12 +52,17 @@ go get github.com/Kong/kong-mesh-v3-readiness/preflight
 ```go
 import "github.com/Kong/kong-mesh-v3-readiness/preflight"
 
+hc := &http.Client{Timeout: 30 * time.Second}
 rep, err := preflight.Audit(ctx, preflight.Options{
 	Address: "http://localhost:5681",
 	// Latest 2.14 patch to check CP/zone version currency against. Resolving it is
 	// the caller's job — leave it empty and that one check becomes a coverage gap,
 	// which makes the whole report inconclusive.
 	LatestPatch: "2.14.7",
+	HTTPClient:  hc,
+	RequestHeaders: http.Header{
+		"X-Trace-Id": {"audit-123"},
+	},
 })
 if err != nil {
 	// hard failure: invalid Options.Address, unreachable CP, or a non-Kuma endpoint
@@ -72,6 +77,9 @@ logs, or calls `os.Exit`. That is why `Options.LatestPatch` is an input: the CLI
 [`preflight`](preflight) package doc for the full API, including
 `preflight.UpgradeTargetMinor` for the 2.x minor the check is scoped to and
 `preflight.RemovedKinds()` for introspecting the removed-resource catalog.
+Importers can also supply a custom `HTTPClient` and static `RequestHeaders` for control-plane
+requests; built-in defaults fill only missing headers, and `Token` still overrides any custom
+`Authorization` header.
 
 The report types are also re-exported as aliases from
 [`reportmodel`](reportmodel) (which additionally owns the `--classify`

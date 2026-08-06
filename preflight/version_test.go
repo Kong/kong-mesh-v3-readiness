@@ -36,7 +36,7 @@ func TestLatestZoneVersion(t *testing.T) {
 func auditVersion(t *testing.T, latest string, handlers map[string]http.HandlerFunc) *collector {
 	t.Helper()
 	srv := cpServer(t, handlers)
-	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestVersionCurrencyUnknownIsGap(t *testing.T) {
 
 func TestVersionCheckOffByDefault(t *testing.T) {
 	srv := cpServer(t, nil)
-	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
