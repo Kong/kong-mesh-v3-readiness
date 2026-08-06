@@ -155,10 +155,64 @@ func TestAuditRequestHeadersSentToControlPlane(t *testing.T) {
 	if !slices.Equal(gotTrace, []string{"trace-123"}) {
 		t.Errorf("X-Trace-Id = %v, want custom header on the request", gotTrace)
 	}
+}
 
-	headers.Set("X-Trace-Id", "mutated")
-	if slices.Equal(gotTrace, []string{"mutated"}) {
-		t.Fatal("caller mutation changed the in-flight request; RequestHeaders were not cloned")
+func TestAuditRequestHeadersClonedBeforeUse(t *testing.T) {
+	headers := http.Header{
+		"X-Trace-Id": {"trace-123"},
+	}
+	seen := map[string]struct {
+		trace    []string
+		injected string
+	}{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen[r.URL.Path] = struct {
+			trace    []string
+			injected string
+		}{
+			trace:    append([]string(nil), r.Header.Values("X-Trace-Id")...),
+			injected: r.Header.Get("X-Injected"),
+		}
+		if r.URL.Path == "/" {
+			headers["X-Trace-Id"][0] = "mutated-slice"
+			headers.Set("X-Injected", "mutated-map")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/":
+			_, _ = io.WriteString(w, `{"product":"Kuma","version":"2.14.0","mode":"zone"}`)
+		case "/config":
+			_, _ = io.WriteString(w, cleanConfigJSON)
+		case "/meshes":
+			_, _ = io.WriteString(w, `{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`)
+		default:
+			_, _ = io.WriteString(w, `{"total":0,"items":[],"next":null}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	rep, err := preflight.Audit(context.Background(), preflight.Options{
+		Address:        srv.URL,
+		LatestPatch:    "2.14.0",
+		RequestHeaders: headers,
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if rep.Status != preflight.StatusClean {
+		t.Errorf("status = %q, want %q", rep.Status, preflight.StatusClean)
+	}
+	for path, got := range seen {
+		if !slices.Equal(got.trace, []string{"trace-123"}) {
+			t.Errorf("%s X-Trace-Id = %v, want cloned original value", path, got.trace)
+		}
+		if got.injected != "" {
+			t.Errorf("%s X-Injected = %q, want caller's later map mutation ignored", path, got.injected)
+		}
+	}
+	if _, ok := seen["/config"]; !ok {
+		t.Fatal("Audit did not request /config after mutating caller headers")
 	}
 }
 
