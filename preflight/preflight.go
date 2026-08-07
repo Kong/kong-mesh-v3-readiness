@@ -43,6 +43,9 @@ type Options struct {
 	// HTTPClient is used to reach the control plane. A nil value builds a
 	// default client with a 60s timeout.
 	HTTPClient *http.Client
+	// ResourceReadLimit caps how many resource items one audit admits across all
+	// collection reads. 0 or less disables the cap.
+	ResourceReadLimit int
 	// RequestHeaders are added to every control-plane audit request sent to
 	// Address. These headers are cloned before use, built-in defaults fill only
 	// missing values, and Token still overrides Authorization when non-empty.
@@ -73,6 +76,7 @@ func Audit(ctx context.Context, opts Options) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	c.resourceReadCeil = newResourceReadBudget(opts.ResourceReadLimit)
 	col, err := audit(ctx, c, auditOptions{
 		meshFilter:        opts.Mesh,
 		inspectDataplanes: opts.InspectDataplanes,

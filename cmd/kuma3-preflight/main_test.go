@@ -11,6 +11,24 @@ import (
 	"github.com/Kong/kong-mesh-v3-readiness/preflight"
 )
 
+const cleanConfigJSON = `{
+  "mode": "zone",
+  "environment": "kubernetes",
+  "experimental": {
+    "autoReachableServices": false,
+    "deltaXds": true,
+    "sidecarContainers": true,
+    "inboundTagsDisabled": true,
+    "kdsEventBasedWatchdog": {"enabled": true}
+  },
+  "runtime": {"kubernetes": {
+    "injector": {
+      "unifiedResourceNamingEnabled": true,
+      "ebpf": {"enabled": false}
+    }
+  }}
+}`
+
 func TestClassifyFormat(t *testing.T) {
 	// --classify keeps Markdown as its default and supported format.
 	cases := map[string]string{"": "markdown", "md": "markdown", "MARKDOWN": "markdown", "json": "json", "HTML": "html", "htm": "html"}
@@ -92,6 +110,98 @@ func TestRunCollectionReadFailureExitsInconclusive(t *testing.T) {
 
 	if got := run(); got != 3 {
 		t.Fatalf("run() exit = %d, want 3", got)
+	}
+}
+
+func TestRunMaxResourceReadsValidation(t *testing.T) {
+	oldArgs := os.Args
+	oldFlags := flag.CommandLine
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlags
+	})
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.SetOutput(os.Stderr)
+	os.Args = []string{"kuma3-preflight", "--max-resource-reads", "-1"}
+
+	if got := run(); got != 2 {
+		t.Fatalf("run() exit = %d, want 2", got)
+	}
+}
+
+func TestRunMaxResourceReadsWiring(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			writeJSON(w, []byte(`{"product":"Kuma","version":"2.14.0"}`))
+		case "/meshes":
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`))
+		default:
+			writeJSON(w, []byte(`{"total":0,"items":[],"next":null}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	oldArgs := os.Args
+	oldFlags := flag.CommandLine
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlags
+	})
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.SetOutput(os.Stderr)
+	out := filepath.Join(t.TempDir(), "report.json")
+	os.Args = []string{
+		"kuma3-preflight",
+		"--address", srv.URL,
+		"--format", "json",
+		"--output", out,
+		"--latest-version", "2.14.0",
+		"--max-resource-reads", "1",
+	}
+
+	if got := run(); got != 3 {
+		t.Fatalf("run() exit = %d, want 3", got)
+	}
+}
+
+func TestRunDefaultResourceReadLimitKeepsSmallAuditClean(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			writeJSON(w, []byte(`{"product":"Kuma","version":"2.14.0"}`))
+		case "/config":
+			writeJSON(w, []byte(cleanConfigJSON))
+		case "/meshes":
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`))
+		default:
+			writeJSON(w, []byte(`{"total":0,"items":[],"next":null}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	oldArgs := os.Args
+	oldFlags := flag.CommandLine
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlags
+	})
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.SetOutput(os.Stderr)
+	out := filepath.Join(t.TempDir(), "report.json")
+	os.Args = []string{
+		"kuma3-preflight",
+		"--address", srv.URL,
+		"--format", "json",
+		"--output", out,
+		"--latest-version", "2.14.0",
+	}
+
+	if got := run(); got != 0 {
+		t.Fatalf("run() exit = %d, want 0", got)
 	}
 }
 

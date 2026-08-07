@@ -254,6 +254,104 @@ func TestCollectionReadFailureReturnsPartialReport(t *testing.T) {
 	}
 }
 
+func TestResourceReadLimitStopsAtFirstCollectionGap(t *testing.T) {
+	srv := cpServer(t, map[string]http.HandlerFunc{
+		"/meshes": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`))
+		},
+		"/traffic-permissions": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"total":2,"items":[{"type":"TrafficPermission","name":"tp-1","mesh":"default"},{"type":"TrafficPermission","name":"tp-2","mesh":"default"}],"next":null}`))
+		},
+		"/dataplanes": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Dataplane","name":"dp-1","mesh":"default","networking":{"transparentProxying":{"reachableServices":["backend_kuma-demo_svc_80"]}}}],"next":null}`))
+		},
+	})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	c.resourceReadCeil = newResourceReadBudget(3)
+
+	rep, err := audit(context.Background(), c, auditOptions{})
+	if err != nil {
+		t.Fatalf("audit aborted on resource read limit, want partial report: %v", err)
+	}
+	g, ok := gapForPath(rep, "/traffic-permissions")
+	if !ok {
+		t.Fatalf("no coverage gap recorded for the collection that hit the ceiling; gaps=%v", rep.coverage)
+	}
+	if !strings.Contains(g.reason, "ceiling (3 resources)") {
+		t.Errorf("gap reason = %q, want the configured ceiling", g.reason)
+	}
+	if _, ok := gapForPath(rep, "/dataplanes"); ok {
+		t.Fatalf("later collections should stop quietly after the ceiling; gaps=%v", rep.coverage)
+	}
+	model := rep.toModel("")
+	if model.Status != StatusInconclusive {
+		t.Fatalf("status = %q, want %q", model.Status, StatusInconclusive)
+	}
+	seenTrafficPermissions := false
+	for _, f := range model.Findings {
+		switch f.Title {
+		case "TrafficPermission (removed in 3.0)":
+			seenTrafficPermissions = true
+			if f.Count != 2 {
+				t.Fatalf("TrafficPermission count = %d, want 2 admitted items", f.Count)
+			}
+		case "Dataplane uses reachableServices":
+			t.Fatalf("later collections should not be processed after the ceiling: %+v", f)
+		}
+	}
+	if !seenTrafficPermissions {
+		t.Fatalf("admitted TrafficPermission findings missing from partial report: %+v", model.Findings)
+	}
+}
+
+func TestResourceLimitBeforeZoneInsightsDoesNotReportNoZones(t *testing.T) {
+	zoneRequested := make(chan struct{}, 1)
+	srv := cpServer(t, map[string]http.HandlerFunc{
+		"/config": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"mode":"global","environment":"universal"}`))
+		},
+		"/meshes": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`))
+		},
+		"/zones+insights": func(w http.ResponseWriter, _ *http.Request) {
+			select {
+			case zoneRequested <- struct{}{}:
+			default:
+			}
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"ZoneInsight","name":"zone-1"}],"next":null}`))
+		},
+	})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	c.resourceReadCeil = newResourceReadBudget(1)
+
+	rep, err := audit(context.Background(), c, auditOptions{})
+	if err != nil {
+		t.Fatalf("audit aborted on resource read limit before /zones+insights: %v", err)
+	}
+	if _, ok := gapForPath(rep, "/meshes"); !ok {
+		t.Fatalf("resource limit gap missing; gaps=%v", rep.coverage)
+	}
+	select {
+	case <-zoneRequested:
+		t.Fatal("/zones+insights should not be requested after the resource read limit is exhausted")
+	default:
+	}
+	for _, f := range rep.findings {
+		if f.title == "No zones connected to the global control plane" {
+			t.Fatalf("reported a successful empty /zones+insights read after the resource limit was exhausted: %+v", f)
+		}
+	}
+	if rep.status() != StatusInconclusive {
+		t.Fatalf("status = %q, want %q", rep.status(), StatusInconclusive)
+	}
+}
+
 // TestOptionalCollectionReadFailureDegradesToGap: optional collections still do
 // not treat 404 as a gap, but other read failures after scope is established
 // must degrade to an inconclusive partial report instead of aborting.

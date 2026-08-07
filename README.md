@@ -59,7 +59,9 @@ rep, err := preflight.Audit(ctx, preflight.Options{
 	// the caller's job — leave it empty and that one check becomes a coverage gap,
 	// which makes the whole report inconclusive.
 	LatestPatch: "2.14.7",
-	HTTPClient:  hc,
+	// Cap one audit's total collection reads. 0 leaves it unlimited.
+	ResourceReadLimit: 50000,
+	HTTPClient:        hc,
 	RequestHeaders: http.Header{
 		"X-Trace-Id": {"audit-123"},
 	},
@@ -80,6 +82,10 @@ logs, or calls `os.Exit`. That is why `Options.LatestPatch` is an input: the CLI
 Importers can also supply a custom `HTTPClient` and static `RequestHeaders` for control-plane
 requests; built-in defaults fill only missing headers, and `Token` still overrides any custom
 `Authorization` header.
+`Options.ResourceReadLimit` bounds how many resource items one audit admits across all
+collection reads; when the ceiling is reached the affected collection becomes a coverage gap,
+the report is inconclusive, and later collection reads stop. Set it to `0` to leave reads
+unlimited.
 
 Set `Options.SkipAuditedControlPlaneVersionCheck` to exclude only the audited control plane's
 own patch level from the version-currency check — connected zone control planes are still

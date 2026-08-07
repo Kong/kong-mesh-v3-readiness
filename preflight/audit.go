@@ -170,6 +170,8 @@ type auditor struct {
 	zonesFound  bool
 	zonesErr    error
 	zonesCached bool
+
+	resourceLimitGapRecorded bool
 }
 
 // zoneInsights fetches /zones+insights once and caches the result (items, whether
@@ -202,8 +204,15 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	}
 
 	meshes, found, err := c.list(ctx, "/meshes")
+	meshesHitResourceLimit := false
 	if err != nil {
-		return nil, fmt.Errorf("listing meshes: %w", err)
+		var listErr *listError
+		if !errors.As(err, &listErr) || listErr.kind != listErrResourceLimit {
+			return nil, fmt.Errorf("listing meshes: %w", err)
+		}
+		meshesHitResourceLimit = true
+		a.rep.addGap("/meshes", collectionReadGapReason(err))
+		a.resourceLimitGapRecorded = true
 	}
 	if !found {
 		return nil, fmt.Errorf("GET /meshes returned 404; is %s a Kuma control plane?", c.base)
@@ -217,7 +226,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		a.checkName(m, "Mesh")
 	}
 	// A --mesh that matches nothing must not pass as a clean audit.
-	if opts.meshFilter != "" && len(a.rep.meshes) == 0 {
+	if opts.meshFilter != "" && len(a.rep.meshes) == 0 && !meshesHitResourceLimit {
 		return nil, fmt.Errorf("mesh %q not found on the control plane", opts.meshFilter)
 	}
 
@@ -272,6 +281,8 @@ func collectionReadGapReason(err error) string {
 			return "collection read failed — pagination did not converge — NOT audited"
 		case listErrCursorParse:
 			return "collection read failed — pagination cursor was invalid — NOT audited"
+		case listErrResourceLimit:
+			return fmt.Sprintf("resource read ceiling reached while reading this collection — configured ceiling (%d resources); audit may be incomplete", listErr.limit)
 		}
 	}
 	return "collection read failed — NOT audited"
@@ -282,10 +293,14 @@ func collectionReadGapReason(err error) string {
 func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
-		if ctx.Err() == nil {
+		var listErr *listError
+		if ctx.Err() == nil && (!errors.As(err, &listErr) || listErr.kind != listErrResourceLimit || !a.resourceLimitGapRecorded) {
 			a.rep.addGap(path, collectionReadGapReason(err))
+			if errors.As(err, &listErr) && listErr.kind == listErrResourceLimit {
+				a.resourceLimitGapRecorded = true
+			}
 		}
-		return nil
+		return items
 	}
 	if !found {
 		a.rep.addGap(path, "endpoint returned 404 — NOT audited")
@@ -300,10 +315,14 @@ func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 func (a *auditor) listIfServed(ctx context.Context, path string) []resourceItem {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
-		if ctx.Err() == nil {
+		var listErr *listError
+		if ctx.Err() == nil && (!errors.As(err, &listErr) || listErr.kind != listErrResourceLimit || !a.resourceLimitGapRecorded) {
 			a.rep.addGap(path, collectionReadGapReason(err))
+			if errors.As(err, &listErr) && listErr.kind == listErrResourceLimit {
+				a.resourceLimitGapRecorded = true
+			}
 		}
-		return nil
+		return items
 	}
 	if !found {
 		return nil
@@ -868,17 +887,29 @@ func latestZoneVersion(zo zoneOverview) (string, bool) {
 // pass (an unobserved zone is not a clean zone).
 func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 	items, found, err := a.zoneInsights(ctx)
+	zonesHitResourceLimit := false
 	if err != nil {
-		// Same rationale as /config: an unreadable zones overview (e.g. auth) is a
-		// coverage gap, not a reason to abort the whole global audit.
-		a.rep.addGap("/zones+insights", "could not read /zones+insights — per-zone control-plane settings NOT audited (pass --token if the CP requires auth)")
-		return nil
+		var listErr *listError
+		if !errors.As(err, &listErr) || listErr.kind != listErrResourceLimit {
+			// Same rationale as /config: an unreadable zones overview (e.g. auth) is a
+			// coverage gap, not a reason to abort the whole global audit.
+			a.rep.addGap("/zones+insights", "could not read /zones+insights — per-zone control-plane settings NOT audited (pass --token if the CP requires auth)")
+			return nil
+		}
+		if !a.resourceLimitGapRecorded {
+			a.rep.addGap("/zones+insights", collectionReadGapReason(err))
+			a.resourceLimitGapRecorded = true
+		}
+		zonesHitResourceLimit = true
 	}
 	if !found {
 		a.rep.addGap("/zones+insights", "endpoint returned 404 — per-zone control-plane settings NOT audited")
 		return nil
 	}
 	if len(items) == 0 {
+		if zonesHitResourceLimit {
+			return nil
+		}
 		a.rep.add(info, cpConfigCategory, "No zones connected to the global control plane",
 			"This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
 			"zones=0")
@@ -998,9 +1029,16 @@ func (a *auditor) flagIfBehind(version, origin string, latestMin, latestPatch in
 func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch int, detail string) error {
 	items, found, err := a.zoneInsights(ctx)
 	if err != nil {
-		a.rep.addGap("/zones+insights (versions)",
-			"could not read /zones+insights — per-zone control-plane versions NOT audited (pass --token if the CP requires auth)")
-		return nil
+		var listErr *listError
+		if !errors.As(err, &listErr) || listErr.kind != listErrResourceLimit {
+			a.rep.addGap("/zones+insights (versions)",
+				"could not read /zones+insights — per-zone control-plane versions NOT audited (pass --token if the CP requires auth)")
+			return nil
+		}
+		if !a.resourceLimitGapRecorded {
+			a.rep.addGap("/zones+insights", collectionReadGapReason(err))
+			a.resourceLimitGapRecorded = true
+		}
 	}
 	if !found {
 		// 404 means this CP does not serve ZoneInsight (a zone/standalone, not a

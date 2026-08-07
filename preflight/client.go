@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -45,12 +46,14 @@ const (
 	listErrCursorLoop listErrorKind = iota
 	listErrPageLimit
 	listErrCursorParse
+	listErrResourceLimit
 )
 
 type listError struct {
 	kind   listErrorKind
 	detail string
 	err    error
+	limit  int
 }
 
 func (e *listError) Error() string { return e.detail }
@@ -58,10 +61,50 @@ func (e *listError) Error() string { return e.detail }
 func (e *listError) Unwrap() error { return e.err }
 
 type client struct {
-	base    *url.URL
-	token   string
-	http    *http.Client
-	headers http.Header
+	base             *url.URL
+	token            string
+	http             *http.Client
+	headers          http.Header
+	resourceReadCeil *resourceReadBudget
+}
+
+type resourceReadBudget struct {
+	limit int
+	used  int
+}
+
+func newResourceReadBudget(limit int) *resourceReadBudget {
+	if limit <= 0 {
+		return nil
+	}
+	return &resourceReadBudget{limit: limit}
+}
+
+func (b *resourceReadBudget) remaining() int {
+	if b == nil {
+		return 0
+	}
+	return max(b.limit-b.used, 0)
+}
+
+func (b *resourceReadBudget) exhausted() bool {
+	return b != nil && b.used >= b.limit
+}
+
+func (b *resourceReadBudget) admit(items []resourceItem) ([]resourceItem, bool) {
+	if b == nil {
+		return items, false
+	}
+	remaining := b.remaining()
+	if remaining == 0 {
+		return nil, true
+	}
+	if len(items) > remaining {
+		b.used += remaining
+		return items[:remaining], true
+	}
+	b.used += len(items)
+	return items, b.used >= b.limit
 }
 
 // newClientWithHTTP builds a client against an already-constructed *http.Client,
@@ -83,14 +126,18 @@ func newClientWithHTTP(addr, token string, hc *http.Client, headers http.Header)
 // registered" / not reachable) so the caller can record a coverage gap rather
 // than silently treating it as empty.
 func (c *client) list(ctx context.Context, path string) ([]resourceItem, bool, error) {
-	if !strings.Contains(path, "?") {
-		path += "?size=1000"
-	}
 	var items []resourceItem
 	visited := map[string]bool{}
 	pages := 0
-	next := path
+	next := c.listPath(path)
 	for next != "" {
+		if c.resourceReadCeil != nil && c.resourceReadCeil.exhausted() {
+			return items, true, &listError{
+				kind:   listErrResourceLimit,
+				detail: fmt.Sprintf("resource read limit reached (%d)", c.resourceReadCeil.limit),
+				limit:  c.resourceReadCeil.limit,
+			}
+		}
 		if visited[next] {
 			return nil, false, &listError{
 				kind:   listErrCursorLoop,
@@ -113,7 +160,19 @@ func (c *client) list(ctx context.Context, path string) ([]resourceItem, bool, e
 		if status == http.StatusNotFound {
 			return nil, false, nil
 		}
-		items = append(items, page.Items...)
+		admitted := page.Items
+		limitReached := false
+		if c.resourceReadCeil != nil {
+			admitted, limitReached = c.resourceReadCeil.admit(page.Items)
+		}
+		items = append(items, admitted...)
+		if limitReached {
+			return items, true, &listError{
+				kind:   listErrResourceLimit,
+				detail: fmt.Sprintf("resource read limit reached (%d)", c.resourceReadCeil.limit),
+				limit:  c.resourceReadCeil.limit,
+			}
+		}
 		if page.Next != nil && *page.Next != "" {
 			u, err := url.Parse(*page.Next)
 			if err != nil {
@@ -123,12 +182,38 @@ func (c *client) list(ctx context.Context, path string) ([]resourceItem, bool, e
 					err:    err,
 				}
 			}
-			next = u.RequestURI() // reuse our own host; the cursor only matters for path+query
+			next = c.listPath(u.RequestURI()) // reuse our own host; the cursor only matters for path+query
 		} else {
 			next = ""
 		}
 	}
 	return items, true, nil
+}
+
+func (c *client) listPath(path string) string {
+	if c.resourceReadCeil == nil {
+		if !strings.Contains(path, "?") {
+			return path + "?size=1000"
+		}
+		return path
+	}
+	remaining := c.resourceReadCeil.remaining()
+	if remaining == 0 {
+		return path
+	}
+	u, err := url.Parse(path)
+	if err != nil {
+		return path
+	}
+	q := u.Query()
+	size := q.Get("size")
+	if size == "" {
+		q.Set("size", fmt.Sprintf("%d", min(1000, remaining)))
+	} else if parsed, err := strconv.Atoi(size); err == nil && parsed > remaining {
+		q.Set("size", fmt.Sprintf("%d", remaining))
+	}
+	u.RawQuery = q.Encode()
+	return u.RequestURI()
 }
 
 // getJSON GETs path (absolute path with leading slash) and decodes the body into
