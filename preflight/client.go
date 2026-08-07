@@ -18,6 +18,45 @@ const (
 	maxPages = 100_000
 )
 
+type requestErrorKind uint8
+
+const (
+	requestErrBuild requestErrorKind = iota
+	requestErrTransport
+	requestErrNilResponse
+	requestErrStatus
+	requestErrDecode
+)
+
+type requestError struct {
+	kind   requestErrorKind
+	status int
+	detail string
+	err    error
+}
+
+func (e *requestError) Error() string { return e.detail }
+
+func (e *requestError) Unwrap() error { return e.err }
+
+type listErrorKind uint8
+
+const (
+	listErrCursorLoop listErrorKind = iota
+	listErrPageLimit
+	listErrCursorParse
+)
+
+type listError struct {
+	kind   listErrorKind
+	detail string
+	err    error
+}
+
+func (e *listError) Error() string { return e.detail }
+
+func (e *listError) Unwrap() error { return e.err }
+
 type client struct {
 	base    *url.URL
 	token   string
@@ -53,12 +92,18 @@ func (c *client) list(ctx context.Context, path string) ([]resourceItem, bool, e
 	next := path
 	for next != "" {
 		if visited[next] {
-			return nil, false, fmt.Errorf("pagination cursor repeated (%s); aborting to avoid an infinite loop", next)
+			return nil, false, &listError{
+				kind:   listErrCursorLoop,
+				detail: fmt.Sprintf("pagination cursor repeated (%s); aborting to avoid an infinite loop", next),
+			}
 		}
 		visited[next] = true
 		pages++
 		if pages > maxPages {
-			return nil, false, fmt.Errorf("pagination exceeded %d pages; aborting", maxPages)
+			return nil, false, &listError{
+				kind:   listErrPageLimit,
+				detail: fmt.Sprintf("pagination exceeded %d pages; aborting", maxPages),
+			}
 		}
 		var page resourceList
 		status, err := c.getJSON(ctx, next, &page)
@@ -72,7 +117,11 @@ func (c *client) list(ctx context.Context, path string) ([]resourceItem, bool, e
 		if page.Next != nil && *page.Next != "" {
 			u, err := url.Parse(*page.Next)
 			if err != nil {
-				return nil, false, fmt.Errorf("parsing next cursor: %w", err)
+				return nil, false, &listError{
+					kind:   listErrCursorParse,
+					detail: fmt.Sprintf("parsing next cursor: %v", err),
+					err:    err,
+				}
 			}
 			next = u.RequestURI() // reuse our own host; the cursor only matters for path+query
 		} else {
@@ -95,7 +144,7 @@ func (c *client) getJSON(ctx context.Context, path string, v any) (int, error) {
 	full.Path = c.prefixed(reqPath) // honor a path prefix in --address (e.g. behind an ingress)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full.String(), http.NoBody)
 	if err != nil {
-		return 0, err
+		return 0, &requestError{kind: requestErrBuild, detail: err.Error(), err: err}
 	}
 	for k, vs := range c.headers {
 		for _, v := range vs {
@@ -110,23 +159,43 @@ func (c *client) getJSON(ctx context.Context, path string, v any) (int, error) {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("GET %s: %w", full.String(), err)
+		return 0, &requestError{
+			kind:   requestErrTransport,
+			detail: fmt.Sprintf("GET %s: %v", full.String(), err),
+			err:    err,
+		}
 	}
 	if resp == nil { // unreachable per net/http (resp non-nil when err == nil); guards the deref for static analysis
-		return 0, fmt.Errorf("GET %s: nil response", full.String())
+		return 0, &requestError{
+			kind:   requestErrNilResponse,
+			detail: fmt.Sprintf("GET %s: nil response", full.String()),
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return resp.StatusCode, nil
 	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return resp.StatusCode, fmt.Errorf("GET %s: status %d (authentication failed; check --token)", full.String(), resp.StatusCode)
+		return resp.StatusCode, &requestError{
+			kind:   requestErrStatus,
+			status: resp.StatusCode,
+			detail: fmt.Sprintf("GET %s: status %d (authentication failed; check --token)", full.String(), resp.StatusCode),
+		}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, fmt.Errorf("GET %s: status %d", full.String(), resp.StatusCode)
+		return resp.StatusCode, &requestError{
+			kind:   requestErrStatus,
+			status: resp.StatusCode,
+			detail: fmt.Sprintf("GET %s: status %d", full.String(), resp.StatusCode),
+		}
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes)).Decode(v); err != nil {
-		return resp.StatusCode, fmt.Errorf("decoding %s: %w", full.String(), err)
+		return resp.StatusCode, &requestError{
+			kind:   requestErrDecode,
+			status: resp.StatusCode,
+			detail: fmt.Sprintf("decoding %s: %v", full.String(), err),
+			err:    err,
+		}
 	}
 	return resp.StatusCode, nil
 }

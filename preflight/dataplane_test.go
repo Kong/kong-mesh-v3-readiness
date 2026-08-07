@@ -63,8 +63,12 @@ func TestDataplaneDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			if f.Count < 1 {
 				t.Errorf("finding %q count = %d, want >= 1", tc.title, f.Count)
 			}
-			if tc.severity == "blocker" && m.Status != StatusBlockers {
-				t.Errorf("status = %q, want %q", m.Status, StatusBlockers)
+			wantStatus := StatusBlockers
+			if tc.category == "Unparseable resources" {
+				wantStatus = StatusInconclusive
+			}
+			if tc.severity == "blocker" && m.Status != wantStatus {
+				t.Errorf("status = %q, want %q", m.Status, wantStatus)
 			}
 		})
 	}

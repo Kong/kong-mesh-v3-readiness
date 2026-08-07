@@ -2,8 +2,10 @@ package preflight
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -149,4 +151,161 @@ func TestGlobalZonesInsightsForbiddenDegradesToGap(t *testing.T) {
 	if rep.status() != StatusInconclusive {
 		t.Errorf("status = %q, want %q", rep.status(), StatusInconclusive)
 	}
+}
+
+// TestGlobalTimeoutDuringCollectionAborts: caller-level timeouts are operational
+// failures. They should not be fanned out into one coverage gap per remaining
+// collection after audit scope has already been established.
+func TestGlobalTimeoutDuringCollectionAborts(t *testing.T) {
+	requestSeen := make(chan struct{}, 1)
+	srv := cpServer(t, map[string]http.HandlerFunc{
+		"/meshes": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Disabled"}}],"next":null}`))
+		},
+		"/traffic-permissions": func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case requestSeen <- struct{}{}:
+			default:
+			}
+			<-r.Context().Done()
+		},
+	})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := audit(ctx, c, auditOptions{})
+		done <- err
+	}()
+	select {
+	case <-requestSeen:
+		cancel()
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for /traffic-permissions request")
+	}
+	select {
+	case err = <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for audit to observe cancellation")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("audit error = %v, want context canceled", err)
+	}
+}
+
+// TestCollectionReadFailureReturnsPartialReport: once audit scope is established,
+// a failed ordinary collection read must not abort the audit. The report keeps
+// findings from other collections, records a coverage gap naming the failed
+// collection, and becomes inconclusive.
+func TestCollectionReadFailureReturnsPartialReport(t *testing.T) {
+	srv := cpServer(t, map[string]http.HandlerFunc{
+		"/meshes": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Disabled"}}],"next":null}`))
+		},
+		"/traffic-permissions": func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"status":403}`))
+		},
+		"/dataplanes": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Dataplane","name":"dp-1","mesh":"default","networking":{"transparentProxying":{"reachableServices":["backend_kuma-demo_svc_80"]}}}],"next":null}`))
+		},
+	})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	rep, err := audit(context.Background(), c, auditOptions{})
+	if err != nil {
+		t.Fatalf("audit aborted on collection read failure, want partial report: %v", err)
+	}
+	g, ok := gapForPath(rep, "/traffic-permissions")
+	if !ok {
+		t.Fatalf("no coverage gap recorded for failed collection; gaps=%v", rep.coverage)
+	}
+	if !strings.Contains(g.reason, "NOT audited") {
+		t.Errorf("gap reason = %q, want NOT audited marker", g.reason)
+	}
+	if !strings.Contains(g.reason, "status 403") {
+		t.Errorf("gap reason = %q, want sanitized HTTP status", g.reason)
+	}
+	if strings.Contains(g.reason, "GET ") || strings.Contains(g.reason, srv.URL) {
+		t.Errorf("gap reason leaked raw request details: %q", g.reason)
+	}
+	model := rep.toModel("")
+	if model.Status != StatusInconclusive {
+		t.Fatalf("status = %q, want %q", model.Status, StatusInconclusive)
+	}
+	titles := []string{}
+	for _, f := range model.Findings {
+		titles = append(titles, f.Title)
+	}
+	for _, want := range []string{
+		"meshServices.mode is not Exclusive",
+		"Dataplane uses reachableServices",
+	} {
+		if !slices.Contains(titles, want) {
+			t.Errorf("retained findings missing %q; got titles=%v", want, titles)
+		}
+	}
+}
+
+// TestOptionalCollectionReadFailureDegradesToGap: optional collections still do
+// not treat 404 as a gap, but other read failures after scope is established
+// must degrade to an inconclusive partial report instead of aborting.
+func TestOptionalCollectionReadFailureDegradesToGap(t *testing.T) {
+	t.Run("forbidden becomes gap", func(t *testing.T) {
+		srv := cpServer(t, map[string]http.HandlerFunc{
+			"/meshes": func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Disabled"}}],"next":null}`))
+			},
+			"/meshglobalratelimits": func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"status":403}`))
+			},
+		})
+		c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
+		if err != nil {
+			t.Fatalf("newClient: %v", err)
+		}
+		rep, err := audit(context.Background(), c, auditOptions{})
+		if err != nil {
+			t.Fatalf("audit aborted on optional collection 403, want graceful degradation: %v", err)
+		}
+		if _, ok := gapForPath(rep, "/meshglobalratelimits"); !ok {
+			t.Fatalf("no /meshglobalratelimits coverage gap recorded; gaps=%v", rep.coverage)
+		}
+		if rep.status() != StatusInconclusive {
+			t.Errorf("status = %q, want %q", rep.status(), StatusInconclusive)
+		}
+	})
+
+	t.Run("not served stays non-gap", func(t *testing.T) {
+		srv := cpServer(t, map[string]http.HandlerFunc{
+			"/config": func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, []byte(`{"mode":"zone","environment":"kubernetes","experimental":{"autoReachableServices":false,"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true,"ebpf":{"enabled":false}},"workloadLabels":["app.kubernetes.io/name"]}}}`))
+			},
+			"/meshes": func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`))
+			},
+		})
+		c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
+		if err != nil {
+			t.Fatalf("newClient: %v", err)
+		}
+		rep, err := audit(context.Background(), c, auditOptions{})
+		if err != nil {
+			t.Fatalf("audit aborted on optional collection 404, want normal success: %v", err)
+		}
+		if _, ok := gapForPath(rep, "/meshglobalratelimits"); ok {
+			t.Fatalf("unexpected /meshglobalratelimits coverage gap on 404; gaps=%v", rep.coverage)
+		}
+		if rep.status() != StatusClean {
+			t.Errorf("status = %q, want %q", rep.status(), StatusClean)
+		}
+	})
 }

@@ -1,7 +1,7 @@
 {
   "schema": "kuma3-preflight/v3",
   "tool": "kuma3-preflight",
-  "status": "blockers",
+  "status": "inconclusive",
   "controlPlane": {
     "product": "Kuma",
     "version": "2.9.0",

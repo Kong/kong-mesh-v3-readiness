@@ -52,8 +52,8 @@ func TestAddDocBackfillsDocOnMerge(t *testing.T) {
 
 func TestToModelSummaryAndStatus(t *testing.T) {
 	m := sampleReport().toModel("2026-06-17T10:00:00Z")
-	if m.Status != StatusBlockers {
-		t.Fatalf("status = %q, want %q", m.Status, StatusBlockers)
+	if m.Status != StatusInconclusive {
+		t.Fatalf("status = %q, want %q", m.Status, StatusInconclusive)
 	}
 	if m.Summary.Blockers != 16 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies)
 		t.Errorf("blockers = %d, want 16", m.Summary.Blockers)
@@ -268,6 +268,23 @@ func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	// Sanity: the sample's blocker carries a Kong Mesh doc link in the data block.
 	if !strings.Contains(data, "https://developer.konghq.com/mesh/") {
 		t.Error("expected a Kong Mesh doc link in the report data")
+	}
+}
+
+func TestRenderHTMLInconclusiveBannerMentionsRetainedBlockers(t *testing.T) {
+	m := sampleReport().toModel("2026-06-17T10:00:00Z")
+	if m.Status != StatusInconclusive || m.Summary.Blockers == 0 {
+		t.Fatalf("sample report should exercise an inconclusive report with blockers: status=%q blockers=%d", m.Status, m.Summary.Blockers)
+	}
+	html, err := m.RenderHTML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(html, "No blockers found, but some collections could not be read") {
+		t.Error("inconclusive banner can still claim no blockers were found")
+	}
+	if !strings.Contains(html, "retained blocker") {
+		t.Error("inconclusive banner does not mention retained blockers")
 	}
 }
 

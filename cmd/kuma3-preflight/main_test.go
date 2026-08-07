@@ -1,6 +1,11 @@
 package main
 
 import (
+	"flag"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Kong/kong-mesh-v3-readiness/preflight"
@@ -51,6 +56,45 @@ func TestExitForStatus(t *testing.T) {
 	}
 }
 
+func TestRunCollectionReadFailureExitsInconclusive(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			writeJSON(w, []byte(`{"product":"Kuma","version":"2.14.0"}`))
+		case "/meshes":
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","mesh":"default","meshServices":{"mode":"Disabled"}}],"next":null}`))
+		case "/traffic-permissions":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"status":403}`))
+		default:
+			writeJSON(w, []byte(`{"total":0,"items":[],"next":null}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	oldArgs := os.Args
+	oldFlags := flag.CommandLine
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlags
+	})
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.SetOutput(os.Stderr)
+	out := filepath.Join(t.TempDir(), "report.json")
+	os.Args = []string{
+		"kuma3-preflight",
+		"--address", srv.URL,
+		"--format", "json",
+		"--output", out,
+		"--latest-version", "2.14.0",
+	}
+
+	if got := run(); got != 3 {
+		t.Fatalf("run() exit = %d, want 3", got)
+	}
+}
+
 func TestValidAddress(t *testing.T) {
 	if err := validAddress("http://localhost:5681"); err != nil {
 		t.Errorf("valid address rejected: %v", err)
@@ -60,4 +104,9 @@ func TestValidAddress(t *testing.T) {
 			t.Errorf("validAddress(%q) should error", bad)
 		}
 	}
+}
+
+func writeJSON(w http.ResponseWriter, body []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body)
 }

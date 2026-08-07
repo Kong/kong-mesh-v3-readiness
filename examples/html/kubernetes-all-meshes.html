@@ -320,7 +320,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   "schema": "kuma3-preflight/v3",
   "tool": "kuma3-preflight",
   "generatedAt": "2026-06-25T09:30:00Z",
-  "status": "blockers",
+  "status": "inconclusive",
   "address": "http://localhost:5681",
   "controlPlane": {
     "product": "Kong Mesh",
@@ -928,7 +928,14 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     var title, sub;
     if(st === 'failed'){ title = 'Audit failed'; sub = 'Do NOT treat this control plane as upgrade-safe — re-run after fixing the cause.'; }
     else if(st === 'blockers'){ title = fmtNum(s.blockers) + ' blocker' + (s.blockers === 1 ? '' : 's') + ' must be resolved before upgrading to 3.0'; sub = 'Each blocker is a removed or relocated API that breaks on 3.0. Work through the sections below.'; }
-    else if(st === 'inconclusive'){ title = 'Inconclusive — not a clean bill of health'; sub = 'No blockers found, but some collections could not be read. Resolve the coverage gaps before trusting this result.'; }
+    else if(st === 'inconclusive'){
+      title = 'Inconclusive — not a clean bill of health';
+      if((s.blockers || 0) > 0){
+        sub = fmtNum(s.blockers) + ' retained blocker' + (s.blockers === 1 ? '' : 's') + ' must still be resolved, and some collections could not be read. Resolve the coverage gaps before trusting this result.';
+      } else {
+        sub = 'No blockers were observed, but some collections could not be read. Resolve the coverage gaps before trusting this result.';
+      }
+    }
     else { title = 'No blocking resources or Mesh settings found'; sub = 'Review the informational notes and manual checks before upgrading.'; }
     return el('div', {class:'banner ' + st}, [
       el('div', {class:'glyph', text:GLYPH[st] || '!'}),
