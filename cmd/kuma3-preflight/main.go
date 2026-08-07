@@ -25,8 +25,10 @@ import (
 // --from-json file/stdin read, or a GitHub releases response in release.go) so a
 // hostile/huge input cannot OOM the process. The preflight library enforces its
 // own equivalent cap on control-plane responses.
-const maxReportBytes = 64 << 20 // 64 MiB
-const defaultResourceReadLimit = 50000
+const (
+	maxReportBytes           = 64 << 20 // 64 MiB
+	defaultResourceReadLimit = 50000
+)
 
 func main() {
 	os.Exit(run())

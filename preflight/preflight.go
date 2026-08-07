@@ -86,7 +86,6 @@ func Audit(ctx context.Context, opts Options) (Report, error) {
 		checkVersionCurrency: true,
 		latestPatch:          opts.LatestPatch,
 		skipAuditedCPVersion: opts.SkipAuditedControlPlaneVersionCheck,
-		resourceReadLimit:    opts.ResourceReadLimit,
 	})
 	if err != nil {
 		return Report{}, err

@@ -153,7 +153,6 @@ type auditOptions struct {
 	// skipAuditedCPVersion excludes only the audited control plane's own patch
 	// level from the version-currency check; connected zones are still checked.
 	skipAuditedCPVersion bool
-	resourceReadLimit    int
 }
 
 type auditor struct {
@@ -283,7 +282,7 @@ func collectionReadGapReason(err error) string {
 		case listErrCursorParse:
 			return "collection read failed — pagination cursor was invalid — NOT audited"
 		case listErrResourceLimit:
-			return fmt.Sprintf("collection read stopped after reaching the audit resource read ceiling (%d resources) — collection NOT fully audited", listErr.limit)
+			return fmt.Sprintf("resource read ceiling reached while reading this collection — configured ceiling (%d resources); audit may be incomplete", listErr.limit)
 		}
 	}
 	return "collection read failed — NOT audited"
@@ -295,7 +294,7 @@ func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
 		var listErr *listError
-		if ctx.Err() == nil && !(errors.As(err, &listErr) && listErr.kind == listErrResourceLimit && a.resourceLimitGapRecorded) {
+		if ctx.Err() == nil && (!errors.As(err, &listErr) || listErr.kind != listErrResourceLimit || !a.resourceLimitGapRecorded) {
 			a.rep.addGap(path, collectionReadGapReason(err))
 			if errors.As(err, &listErr) && listErr.kind == listErrResourceLimit {
 				a.resourceLimitGapRecorded = true
@@ -317,7 +316,7 @@ func (a *auditor) listIfServed(ctx context.Context, path string) []resourceItem 
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
 		var listErr *listError
-		if ctx.Err() == nil && !(errors.As(err, &listErr) && listErr.kind == listErrResourceLimit && a.resourceLimitGapRecorded) {
+		if ctx.Err() == nil && (!errors.As(err, &listErr) || listErr.kind != listErrResourceLimit || !a.resourceLimitGapRecorded) {
 			a.rep.addGap(path, collectionReadGapReason(err))
 			if errors.As(err, &listErr) && listErr.kind == listErrResourceLimit {
 				a.resourceLimitGapRecorded = true
