@@ -26,6 +26,7 @@ import (
 // hostile/huge input cannot OOM the process. The preflight library enforces its
 // own equivalent cap on control-plane responses.
 const maxReportBytes = 64 << 20 // 64 MiB
+const defaultResourceReadLimit = 50000
 
 func main() {
 	os.Exit(run())
@@ -40,6 +41,7 @@ func run() int {
 	fromJSON := flag.String("from-json", "", "Render a previously captured JSON report (path, or - for stdin) instead of auditing")
 	timeout := flag.Duration("timeout", 60*time.Second, "Overall timeout for the audit")
 	inspect := flag.Int("inspect-dataplanes", 0, "Fetch up to N dataplanes' Envoy config dumps to detect removed features (0 = skip; expensive)")
+	resourceReads := flag.Int("max-resource-reads", defaultResourceReadLimit, "Cap how many resources one audit reads across all collection fetches (0 = unlimited)")
 	latestVersion := flag.String("latest-version", "", fmt.Sprintf("Latest 2.%d patch to check control plane(s) against (e.g. 2.%d.7); skips the GitHub lookup when set", preflight.UpgradeTargetMinor, preflight.UpgradeTargetMinor))
 	classify := flag.Bool("classify", false, "Classify e2e tests by Kuma-3.0 deprecated-feature usage (uses --source-dir / --reports-dir) instead of auditing a CP")
 	sourceDir := flag.String("source-dir", "", "With --classify: root of the e2e test sources to scan statically")
@@ -95,6 +97,10 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 2
 	}
+	if *resourceReads < 0 {
+		fmt.Fprintf(os.Stderr, "error: invalid --max-resource-reads %d: must be >= 0\n", *resourceReads)
+		return 2
+	}
 
 	// Resolve the latest 2.x patch to check against: an explicit --latest-version
 	// wins (and keeps the run offline/deterministic); otherwise look it up from
@@ -118,7 +124,8 @@ func run() int {
 	rep, auditErr := preflight.Audit(ctx, preflight.Options{
 		Address: *addr, Token: *token, Mesh: *mesh,
 		InspectDataplanes: *inspect, LatestPatch: latest,
-		HTTPClient: &http.Client{Timeout: *timeout},
+		ResourceReadLimit: *resourceReads,
+		HTTPClient:        &http.Client{Timeout: *timeout},
 	})
 
 	// Always make the output reflect this run: on failure, stamp the destination

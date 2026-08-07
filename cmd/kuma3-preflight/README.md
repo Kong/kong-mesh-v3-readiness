@@ -34,12 +34,15 @@ go run ./cmd/kuma3-preflight --output report.html
 | `--from-json` | _(none)_ | Render a previously captured JSON report (path, or `-` for stdin) instead of auditing |
 | `--timeout` | `60s` | Overall audit timeout |
 | `--inspect-dataplanes` | `0` | Fetch up to N dataplanes' Envoy config dumps to detect removed features (`0` = skip; expensive per-proxy fetch) |
+| `--max-resource-reads` | `50000` | Cap how many resource items one audit reads across all collection fetches. When the ceiling is hit, the affected collection becomes a coverage gap and later collection reads stop; `0` leaves it unlimited |
 | `--latest-version` | _(GitHub lookup)_ | Latest 2.14 patch to check the CP / zones against (e.g. `2.14.7`). When set, skips the `kumahq/kuma` GitHub releases lookup, keeping the run offline and deterministic |
 | `--classify` | `false` | Classification mode: instead of auditing a CP, classify e2e tests by their 3.0-deprecated-feature usage (see below). Uses `--source-dir` and/or `--reports-dir` |
 | `--source-dir` | _(none)_ | With `--classify`: root of an e2e test tree to scan statically (e.g. a Kuma `test/e2e_env/<env>` dir) |
 | `--reports-dir` | _(none)_ | With `--classify`: directory of per-spec preflight JSON snapshots captured during an e2e run, folded into the classification |
 
 Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse — the result is a partial report, not a proven clean bill of health, even if it retained blockers). In `--classify` mode the exit code is `0` on success or `2` on error.
+
+`--max-resource-reads` defaults to `50000`, which leaves the checked-in example reports unchanged. Lower it to bound one audit's total collection reads on very large estates; the report names the collection and ceiling that stopped the run so you can raise it and rerun.
 
 ## Classify e2e tests (`--classify`)
 

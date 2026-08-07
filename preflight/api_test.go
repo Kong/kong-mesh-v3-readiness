@@ -91,6 +91,28 @@ func TestExternalConsumerFlow(t *testing.T) {
 	}
 }
 
+func TestExternalConsumerFlowResourceReadLimit(t *testing.T) {
+	srv := mockCleanCP(t)
+
+	rep, err := preflight.Audit(context.Background(), preflight.Options{
+		Address:           srv.URL,
+		LatestPatch:       "2.14.0",
+		ResourceReadLimit: 1,
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if rep.Status != preflight.StatusInconclusive {
+		t.Fatalf("status = %q, want %q", rep.Status, preflight.StatusInconclusive)
+	}
+	if len(rep.Coverage) != 1 || rep.Coverage[0].Path != "/meshes" {
+		t.Fatalf("coverage = %+v, want one /meshes gap", rep.Coverage)
+	}
+	if !strings.Contains(rep.Coverage[0].Reason, "ceiling (1 resources)") {
+		t.Fatalf("coverage reason = %q, want the limit value", rep.Coverage[0].Reason)
+	}
+}
+
 // TestAuditSkipAuditedControlPlaneVersion proves the public Options field
 // suppresses the blocker for the audited control plane's own stale version
 // while still reporting the run as clean (no other findings on this CP).
