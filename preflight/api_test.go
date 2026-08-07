@@ -113,6 +113,42 @@ func TestExternalConsumerFlowResourceReadLimit(t *testing.T) {
 	}
 }
 
+func TestAuditMeshFilterBeyondResourceReadLimitIsInconclusive(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/":
+			_, _ = io.WriteString(w, `{"product":"Kuma","version":"2.14.0","mode":"zone"}`)
+		case "/config":
+			_, _ = io.WriteString(w, cleanConfigJSON)
+		case "/meshes":
+			_, _ = io.WriteString(w, `{"total":2,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}},{"type":"Mesh","name":"target","meshServices":{"mode":"Exclusive"}}],"next":null}`)
+		default:
+			_, _ = io.WriteString(w, `{"total":0,"items":[],"next":null}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	rep, err := preflight.Audit(context.Background(), preflight.Options{
+		Address:           srv.URL,
+		LatestPatch:       "2.14.0",
+		Mesh:              "target",
+		ResourceReadLimit: 1,
+	})
+	if err != nil {
+		t.Fatalf("Audit should preserve partial report when target mesh may be beyond read limit: %v", err)
+	}
+	if rep.Status != preflight.StatusInconclusive {
+		t.Fatalf("status = %q, want %q", rep.Status, preflight.StatusInconclusive)
+	}
+	if len(rep.Coverage) != 1 || rep.Coverage[0].Path != "/meshes" {
+		t.Fatalf("coverage = %+v, want one /meshes gap", rep.Coverage)
+	}
+	if len(rep.Meshes) != 0 {
+		t.Fatalf("meshes = %v, want no admitted target mesh", rep.Meshes)
+	}
+}
+
 // TestAuditSkipAuditedControlPlaneVersion proves the public Options field
 // suppresses the blocker for the audited control plane's own stale version
 // while still reporting the run as clean (no other findings on this CP).

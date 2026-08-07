@@ -205,11 +205,13 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	}
 
 	meshes, found, err := c.list(ctx, "/meshes")
+	meshesHitResourceLimit := false
 	if err != nil {
 		var listErr *listError
 		if !errors.As(err, &listErr) || listErr.kind != listErrResourceLimit {
 			return nil, fmt.Errorf("listing meshes: %w", err)
 		}
+		meshesHitResourceLimit = true
 		a.rep.addGap("/meshes", collectionReadGapReason(err))
 		a.resourceLimitGapRecorded = true
 	}
@@ -225,7 +227,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		a.checkName(m, "Mesh")
 	}
 	// A --mesh that matches nothing must not pass as a clean audit.
-	if opts.meshFilter != "" && len(a.rep.meshes) == 0 {
+	if opts.meshFilter != "" && len(a.rep.meshes) == 0 && !meshesHitResourceLimit {
 		return nil, fmt.Errorf("mesh %q not found on the control plane", opts.meshFilter)
 	}
 
