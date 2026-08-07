@@ -307,6 +307,51 @@ func TestResourceReadLimitStopsAtFirstCollectionGap(t *testing.T) {
 	}
 }
 
+func TestResourceLimitBeforeZoneInsightsDoesNotReportNoZones(t *testing.T) {
+	zoneRequested := make(chan struct{}, 1)
+	srv := cpServer(t, map[string]http.HandlerFunc{
+		"/config": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"mode":"global","environment":"universal"}`))
+		},
+		"/meshes": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`))
+		},
+		"/zones+insights": func(w http.ResponseWriter, _ *http.Request) {
+			select {
+			case zoneRequested <- struct{}{}:
+			default:
+			}
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"ZoneInsight","name":"zone-1"}],"next":null}`))
+		},
+	})
+	c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	c.resourceReadCeil = newResourceReadBudget(1)
+
+	rep, err := audit(context.Background(), c, auditOptions{})
+	if err != nil {
+		t.Fatalf("audit aborted on resource read limit before /zones+insights: %v", err)
+	}
+	if _, ok := gapForPath(rep, "/meshes"); !ok {
+		t.Fatalf("resource limit gap missing; gaps=%v", rep.coverage)
+	}
+	select {
+	case <-zoneRequested:
+		t.Fatal("/zones+insights should not be requested after the resource read limit is exhausted")
+	default:
+	}
+	for _, f := range rep.findings {
+		if f.title == "No zones connected to the global control plane" {
+			t.Fatalf("reported a successful empty /zones+insights read after the resource limit was exhausted: %+v", f)
+		}
+	}
+	if rep.status() != StatusInconclusive {
+		t.Fatalf("status = %q, want %q", rep.status(), StatusInconclusive)
+	}
+}
+
 // TestOptionalCollectionReadFailureDegradesToGap: optional collections still do
 // not treat 404 as a gap, but other read failures after scope is established
 // must degrade to an inconclusive partial report instead of aborting.

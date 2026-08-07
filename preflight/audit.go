@@ -888,6 +888,7 @@ func latestZoneVersion(zo zoneOverview) (string, bool) {
 // pass (an unobserved zone is not a clean zone).
 func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 	items, found, err := a.zoneInsights(ctx)
+	zonesHitResourceLimit := false
 	if err != nil {
 		var listErr *listError
 		if !errors.As(err, &listErr) || listErr.kind != listErrResourceLimit {
@@ -900,12 +901,16 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 			a.rep.addGap("/zones+insights", collectionReadGapReason(err))
 			a.resourceLimitGapRecorded = true
 		}
+		zonesHitResourceLimit = true
 	}
 	if !found {
 		a.rep.addGap("/zones+insights", "endpoint returned 404 — per-zone control-plane settings NOT audited")
 		return nil
 	}
 	if len(items) == 0 {
+		if zonesHitResourceLimit {
+			return nil
+		}
 		a.rep.add(info, cpConfigCategory, "No zones connected to the global control plane",
 			"This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
 			"zones=0")
