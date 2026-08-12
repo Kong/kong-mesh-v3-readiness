@@ -47,8 +47,13 @@
   `preflight.ExampleCap` (10). Rendered as one bullet per `(severity, category, title)` with
   merged count + capped example list.
 - `preflight.Finding` (`preflight/model.go`) is the serialized form; JSON top-level contract
-  is `preflight.Report` (`preflight/model.go`): `schema`, `tool`, `status`, `controlPlane`,
-  `summary`, `findings[]`, `coverageGaps[]`, `manualChecks[]`.
+  is `preflight.Report` (`preflight/model.go`): `schema`, `tool`, `status`, `control_plane`,
+  `summary`, `findings[]`, `coverage_gaps[]`, `manual_checks[]`. **Every emitted JSON key is
+  snake_case** — the contract is embedded verbatim in Konnect OpenAPI specs, which lint
+  field names with `properties-snake-case-aip-122`. A new multi-word field must be
+  snake_case. `ParseReport` accepts `preflight.SchemaVersion` only and rejects an older
+  vN outright: a pre-v4 capture would decode with an empty control plane and no coverage
+  gaps, re-rendering an inconclusive audit as clean.
 
 ## Extensibility
 

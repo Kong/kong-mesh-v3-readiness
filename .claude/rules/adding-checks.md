@@ -18,8 +18,8 @@ Pick the site by check shape:
   local anonymous struct; on unmarshal error `return` (already counted as a parse error
   upstream). Field deprecations are **blockers**. The tool emits two severities in practice —
   `blocker` (gates CI) and `info` (non-actionable counts). The `warning` tier still
-  exists in the model for backward-compatible `ParseReport` parsing but no check
-  produces one; prefer `blocker` for anything actionable.
+  exists in the model but no check produces one; prefer `blocker` for anything
+  actionable.
 - **Mesh object setting:** extend `checkMeshSettings` (`preflight/audit.go`, decode into
   `meshSpec`).
 - **Dataplane / zone-proxy / resource-name check:** extend the matching `check*` method.
@@ -44,9 +44,8 @@ New manual (non-CP-detectable) items go in the `manualChecks` slice in `prefligh
 **Default to `blocker` for anything actionable** — deprecations, relocations and
 should-fix items are blockers. `info` is reserved for non-actionable counts. Only
 `blocker` changes the exit code; `info` leaves a fully-observed run `clean` (exit 0).
-The `warning` tier still exists in the severity enum for backward-compatible
-`--from-json` parsing, but no check emits one and the HTML report no longer renders a
-warnings section — do not add new warnings.
+The `warning` tier still exists in the severity enum, but no check emits one and the
+HTML report no longer renders a warnings section — do not add new warnings.
 
 | Severity  | Meaning | Use for |
 |-----------|---------|---------|

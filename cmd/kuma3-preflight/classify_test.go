@@ -351,7 +351,7 @@ func TestGlobalMigrationExtraction(t *testing.T) {
 
 func TestLoadModelValidatesSchema(t *testing.T) {
 	dir := t.TempDir()
-	writeFixture(t, dir, "good.json", `{"schema":"`+preflight.SchemaVersion+`","status":"clean","meshes":[],"findings":[],"coverageGaps":[],"manualChecks":[]}`)
+	writeFixture(t, dir, "good.json", `{"schema":"`+preflight.SchemaVersion+`","status":"clean","meshes":[],"findings":[],"coverage_gaps":[],"manual_checks":[]}`)
 	if _, err := loadModel(filepath.Join(dir, "good.json")); err != nil {
 		t.Errorf("a valid report schema must be accepted, got: %v", err)
 	}

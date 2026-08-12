@@ -317,12 +317,12 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 <noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
 <script id="report-data" type="application/json">
 {
-  "schema": "kuma3-preflight/v3",
+  "schema": "kuma3-preflight/v4",
   "tool": "kuma3-preflight",
-  "generatedAt": "2026-06-25T09:30:00Z",
+  "generated_at": "2026-06-25T09:30:00Z",
   "status": "inconclusive",
   "address": "http://localhost:5681",
-  "controlPlane": {
+  "control_plane": {
     "product": "Kong Mesh",
     "version": "2.11.3",
     "mode": "global"
@@ -345,9 +345,9 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     "blockers": 1577,
     "warnings": 0,
     "info": 1,
-    "coverageGaps": 2,
-    "parseErrors": 3,
-    "systemFindings": 6
+    "coverage_gaps": 2,
+    "parse_errors": 3,
+    "system_findings": 6
   },
   "findings": [
     {
@@ -738,7 +738,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       ]
     }
   ],
-  "coverageGaps": [
+  "coverage_gaps": [
     {
       "path": "/meshes/legacy/meshfaultinjections",
       "reason": "HTTP 404 — collection not audited; absence of blockers is unproven"
@@ -748,7 +748,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "reason": "HTTP 500 — collection not audited"
     }
   ],
-  "manualChecks": [
+  "manual_checks": [
     {
       "title": "Old inspect APIs removed (switch to the new inspect API)",
       "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",
@@ -955,7 +955,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   function shownFindings(){ return (data.findings || []).filter(matches); }
 
   // ---- sidebar table-of-contents (rebuilt to reflect active filters) ----
-  var cp = data.controlPlane || {};
+  var cp = data.control_plane || {};
   function buildSidebar(){
     var sb = el('aside', {class:'sidebar'});
     sb.appendChild(el('div', {class:'brand'}, [
@@ -1006,8 +1006,8 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
         ]));
       });
     });
-    if((data.coverageGaps || []).length) nav.appendChild(navLink('Coverage gaps', (data.coverageGaps||[]).length, 'sec-coverage'));
-    if((data.manualChecks || []).length) nav.appendChild(navLink('Manual checks', (data.manualChecks||[]).length, 'sec-manual'));
+    if((data.coverage_gaps || []).length) nav.appendChild(navLink('Coverage gaps', (data.coverage_gaps||[]).length, 'sec-coverage'));
+    if((data.manual_checks || []).length) nav.appendChild(navLink('Manual checks', (data.manual_checks||[]).length, 'sec-manual'));
     // setupSpy is deliberately NOT called here: buildNav runs before the group
     // sections are appended to the DOM, so the observer must be (re)armed by the
     // caller once the .grpblock elements exist.
@@ -1046,7 +1046,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     if(cp.mode){ sep(); part('mode: ' + cp.mode); }
     sep(); part((data.meshes || []).length + ' mesh' + ((data.meshes||[]).length === 1 ? '' : 'es'));
     if(data.address){ sep(); part(data.address); }
-    if(data.generatedAt){ sep(); part(fmtTime(data.generatedAt)); }
+    if(data.generated_at){ sep(); part(fmtTime(data.generated_at)); }
     h.appendChild(meta);
 
     var meshes = data.meshes || [];
@@ -1149,7 +1149,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       card.appendChild(el('div', {class:'l2 num', text:types + ' issue type' + (types === 1 ? '' : 's')}));
       cards.appendChild(card);
     });
-    [['coverageGaps','Coverage gaps'],['parseErrors','Unparseable'],['systemFindings','System-managed']].forEach(function(e){
+    [['coverage_gaps','Coverage gaps'],['parse_errors','Unparseable'],['system_findings','System-managed']].forEach(function(e){
       var n = s[e[0]] || 0;
       if(!n) return;
       var card = el('div', {class:'card'});
@@ -1366,7 +1366,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   }
 
   function renderCoverage(){
-    var cov = data.coverageGaps || [];
+    var cov = data.coverage_gaps || [];
     if(!cov.length) return null;
     var sec = el('section', {class:'grp', id:'sec-coverage'});
     sec.appendChild(el('h2', {class:'blockhead', text:'Coverage gaps — collections NOT audited'}));
@@ -1426,7 +1426,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 
   // ---- manual checklist (progress persisted per report) ----
   function renderManual(){
-    var items = data.manualChecks || [];
+    var items = data.manual_checks || [];
     if(!items.length) return null;
     var sig = [cp.product, cp.version, (data.meshes||[]).join('|'), items.length].join('::');
     var key = 'kuma3pf:manual:' + sig;
@@ -1465,7 +1465,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   function isSpotless(){
     var s = data.summary || {};
     return data.status === 'clean' && !(s.blockers || 0) && !(s.warnings || 0)
-      && !(s.info || 0) && !(s.coverageGaps || 0) && !(s.parseErrors || 0);
+      && !(s.info || 0) && !(s.coverage_gaps || 0) && !(s.parse_errors || 0);
   }
   function renderCelebrate(){
     var wrap = el('div', {class:'celebrate'});
@@ -1481,7 +1481,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     var nm = (data.meshes || []).length;
     meta.appendChild(el('span', null, [el('b', {text:String(nm)}),
       document.createTextNode(' mesh' + (nm === 1 ? '' : 'es') + ' audited, all clean')]));
-    if(data.generatedAt) meta.appendChild(el('span', {text:'as of ' + fmtTime(data.generatedAt)}));
+    if(data.generated_at) meta.appendChild(el('span', {text:'as of ' + fmtTime(data.generated_at)}));
     wrap.appendChild(meta);
     return wrap;
   }

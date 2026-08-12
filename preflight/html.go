@@ -509,7 +509,7 @@ const htmlTail = `
   function shownFindings(){ return (data.findings || []).filter(matches); }
 
   // ---- sidebar table-of-contents (rebuilt to reflect active filters) ----
-  var cp = data.controlPlane || {};
+  var cp = data.control_plane || {};
   function buildSidebar(){
     var sb = el('aside', {class:'sidebar'});
     sb.appendChild(el('div', {class:'brand'}, [
@@ -560,8 +560,8 @@ const htmlTail = `
         ]));
       });
     });
-    if((data.coverageGaps || []).length) nav.appendChild(navLink('Coverage gaps', (data.coverageGaps||[]).length, 'sec-coverage'));
-    if((data.manualChecks || []).length) nav.appendChild(navLink('Manual checks', (data.manualChecks||[]).length, 'sec-manual'));
+    if((data.coverage_gaps || []).length) nav.appendChild(navLink('Coverage gaps', (data.coverage_gaps||[]).length, 'sec-coverage'));
+    if((data.manual_checks || []).length) nav.appendChild(navLink('Manual checks', (data.manual_checks||[]).length, 'sec-manual'));
     // setupSpy is deliberately NOT called here: buildNav runs before the group
     // sections are appended to the DOM, so the observer must be (re)armed by the
     // caller once the .grpblock elements exist.
@@ -600,7 +600,7 @@ const htmlTail = `
     if(cp.mode){ sep(); part('mode: ' + cp.mode); }
     sep(); part((data.meshes || []).length + ' mesh' + ((data.meshes||[]).length === 1 ? '' : 'es'));
     if(data.address){ sep(); part(data.address); }
-    if(data.generatedAt){ sep(); part(fmtTime(data.generatedAt)); }
+    if(data.generated_at){ sep(); part(fmtTime(data.generated_at)); }
     h.appendChild(meta);
 
     var meshes = data.meshes || [];
@@ -703,7 +703,7 @@ const htmlTail = `
       card.appendChild(el('div', {class:'l2 num', text:types + ' issue type' + (types === 1 ? '' : 's')}));
       cards.appendChild(card);
     });
-    [['coverageGaps','Coverage gaps'],['parseErrors','Unparseable'],['systemFindings','System-managed']].forEach(function(e){
+    [['coverage_gaps','Coverage gaps'],['parse_errors','Unparseable'],['system_findings','System-managed']].forEach(function(e){
       var n = s[e[0]] || 0;
       if(!n) return;
       var card = el('div', {class:'card'});
@@ -920,7 +920,7 @@ const htmlTail = `
   }
 
   function renderCoverage(){
-    var cov = data.coverageGaps || [];
+    var cov = data.coverage_gaps || [];
     if(!cov.length) return null;
     var sec = el('section', {class:'grp', id:'sec-coverage'});
     sec.appendChild(el('h2', {class:'blockhead', text:'Coverage gaps — collections NOT audited'}));
@@ -980,7 +980,7 @@ const htmlTail = `
 
   // ---- manual checklist (progress persisted per report) ----
   function renderManual(){
-    var items = data.manualChecks || [];
+    var items = data.manual_checks || [];
     if(!items.length) return null;
     var sig = [cp.product, cp.version, (data.meshes||[]).join('|'), items.length].join('::');
     var key = 'kuma3pf:manual:' + sig;
@@ -1019,7 +1019,7 @@ const htmlTail = `
   function isSpotless(){
     var s = data.summary || {};
     return data.status === 'clean' && !(s.blockers || 0) && !(s.warnings || 0)
-      && !(s.info || 0) && !(s.coverageGaps || 0) && !(s.parseErrors || 0);
+      && !(s.info || 0) && !(s.coverage_gaps || 0) && !(s.parse_errors || 0);
   }
   function renderCelebrate(){
     var wrap = el('div', {class:'celebrate'});
@@ -1035,7 +1035,7 @@ const htmlTail = `
     var nm = (data.meshes || []).length;
     meta.appendChild(el('span', null, [el('b', {text:String(nm)}),
       document.createTextNode(' mesh' + (nm === 1 ? '' : 'es') + ' audited, all clean')]));
-    if(data.generatedAt) meta.appendChild(el('span', {text:'as of ' + fmtTime(data.generatedAt)}));
+    if(data.generated_at) meta.appendChild(el('span', {text:'as of ' + fmtTime(data.generated_at)}));
     wrap.appendChild(meta);
     return wrap;
   }
