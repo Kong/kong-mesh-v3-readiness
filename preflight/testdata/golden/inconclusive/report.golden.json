@@ -1,8 +1,8 @@
 {
-  "schema": "kuma3-preflight/v3",
+  "schema": "kuma3-preflight/v4",
   "tool": "kuma3-preflight",
   "status": "inconclusive",
-  "controlPlane": {
+  "control_plane": {
     "product": "Kuma",
     "version": "2.9.0",
     "mode": "zone"
@@ -14,9 +14,9 @@
     "blockers": 1,
     "warnings": 0,
     "info": 0,
-    "coverageGaps": 3,
-    "parseErrors": 1,
-    "systemFindings": 0
+    "coverage_gaps": 3,
+    "parse_errors": 1,
+    "system_findings": 0
   },
   "findings": [
     {
@@ -31,7 +31,7 @@
       ]
     }
   ],
-  "coverageGaps": [
+  "coverage_gaps": [
     {
       "path": "/config",
       "reason": "endpoint returned 404 — control-plane settings NOT audited"
@@ -45,7 +45,7 @@
       "reason": "endpoint returned 404 — NOT audited"
     }
   ],
-  "manualChecks": [
+  "manual_checks": [
     {
       "title": "Old inspect APIs removed (switch to the new inspect API)",
       "detail": "Kuma 3.0 removes the old dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. The dropped endpoint returned every policy's rules for a proxy in one nested blob (fromRules/toRules/inboundRules/toResourceRules), and it goes away together with `kuma.io/service` routing support. The new API splits that into per-scope endpoints that reference resources by KRI, listed below. The control-plane API cannot tell you which clients still call the old endpoint, whether that's kumactl, the GUI, dashboards, scripts, or monitoring, so you have to find and migrate those consumers yourself; a 2.x kumactl or GUI pointed at a 3.0 CP gets a 404. Upgrade kumactl and the GUI to their 3.0 builds, which already use the new endpoints.",

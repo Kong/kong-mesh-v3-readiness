@@ -1,10 +1,10 @@
 {
-  "schema": "kuma3-preflight/v3",
+  "schema": "kuma3-preflight/v4",
   "tool": "kuma3-preflight",
-  "generatedAt": "2026-06-25T09:30:00Z",
+  "generated_at": "2026-06-25T09:30:00Z",
   "status": "blockers",
   "address": "http://localhost:5681",
-  "controlPlane": {
+  "control_plane": {
     "product": "Kuma",
     "version": "2.13.0",
     "mode": "global"
@@ -35,9 +35,9 @@
     "blockers": 7490,
     "warnings": 0,
     "info": 1,
-    "coverageGaps": 0,
-    "parseErrors": 11,
-    "systemFindings": 14
+    "coverage_gaps": 0,
+    "parse_errors": 11,
+    "system_findings": 14
   },
   "findings": [
     {
@@ -476,8 +476,8 @@
       ]
     }
   ],
-  "coverageGaps": [],
-  "manualChecks": [
+  "coverage_gaps": [],
+  "manual_checks": [
     {
       "title": "Old inspect APIs removed (switch to the new inspect API)",
       "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",

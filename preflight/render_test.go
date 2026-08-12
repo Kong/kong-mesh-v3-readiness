@@ -207,26 +207,73 @@ func TestRenderJSONRoundTrips(t *testing.T) {
 	}
 }
 
-// A v2 report carried manualChecks as plain strings. The tolerant ManualCheck
-// unmarshaler must still load it (mapping each string to Title) so --from-json
-// renders reports captured before the v3 schema bump.
-func TestLoadV2ManualChecksStrings(t *testing.T) {
-	v2 := `{"schema":"kuma3-preflight/v2","tool":"kuma3-preflight","status":"clean",` +
-		`"controlPlane":{"product":"Kuma","version":"2.9.0"},"meshes":[],` +
-		`"summary":{},"findings":[],"coverageGaps":[],` +
-		`"manualChecks":["Rotate legacy keys","Migrate gateways"]}`
-	m, err := ParseReport([]byte(v2))
+// Every multi-word key in the emitted JSON must be snake_case (v4), so the
+// contract can be embedded verbatim in a Konnect OpenAPI spec without tripping
+// properties-snake-case-aip-122.
+func TestRenderJSONUsesSnakeCaseKeys(t *testing.T) {
+	out, err := sampleReport().toModel("2026-06-17T10:00:00Z").RenderJSON()
 	if err != nil {
-		t.Fatalf("v2 report failed to load: %v", err)
+		t.Fatal(err)
 	}
-	if len(m.Manual) != 2 {
-		t.Fatalf("manual checks = %d, want 2", len(m.Manual))
+	for _, key := range []string{
+		"generated_at", "control_plane", "coverage_gaps", "manual_checks",
+		"parse_errors", "system_findings",
+	} {
+		if !strings.Contains(out, `"`+key+`"`) {
+			t.Errorf("rendered JSON missing snake_case key %q", key)
+		}
 	}
-	if m.Manual[0].Title != "Rotate legacy keys" || m.Manual[0].Detail != "" || m.Manual[0].Command != "" {
-		t.Errorf("v2 string did not map to a Title-only card: %+v", m.Manual[0])
+	for _, key := range []string{
+		"generatedAt", "controlPlane", "coverageGaps", "manualChecks",
+		"parseErrors", "systemFindings",
+	} {
+		if strings.Contains(out, `"`+key+`"`) {
+			t.Errorf("rendered JSON still emits camelCase key %q", key)
+		}
 	}
-	if _, err := m.RenderJSON(); err != nil {
-		t.Fatalf("rendering loaded v2 model: %v", err)
+}
+
+// The page script reads the embedded payload by key, so a renamed field that is
+// missed in html.go renders a silently empty section — the coverage-gap and
+// manual-check lists most of all. Nothing executes the JS in tests, so guard the
+// spelling directly.
+func TestHTMLScriptReadsSnakeCaseKeys(t *testing.T) {
+	page := htmlHead + htmlTail
+	for _, ref := range []string{
+		"data.control_plane", "data.coverage_gaps", "data.manual_checks",
+		"data.generated_at", "s.coverage_gaps", "s.parse_errors",
+	} {
+		if !strings.Contains(page, ref) {
+			t.Errorf("page script does not read %q", ref)
+		}
+	}
+	for _, key := range []string{
+		"generatedAt", "controlPlane", "coverageGaps", "manualChecks",
+		"parseErrors", "systemFindings",
+	} {
+		if strings.Contains(page, key) {
+			t.Errorf("page script still reads camelCase key %q", key)
+		}
+	}
+}
+
+// v4 renamed every multi-word field, so a v2/v3 capture no longer decodes: its
+// controlPlane, coverageGaps and manualChecks would all land empty and an
+// inconclusive audit would re-render as clean. ParseReport must refuse it.
+func TestParseReportRejectsOlderSchema(t *testing.T) {
+	for _, version := range []string{"kuma3-preflight/v2", "kuma3-preflight/v3"} {
+		old := `{"schema":"` + version + `","tool":"kuma3-preflight","status":"inconclusive",` +
+			`"controlPlane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
+			`"summary":{"coverageGaps":1},"findings":[],` +
+			`"coverageGaps":[{"path":"/meshes/default/meshpassthroughs","reason":"404"}],` +
+			`"manualChecks":[]}`
+		_, err := ParseReport([]byte(old))
+		if err == nil {
+			t.Fatalf("%s payload was accepted; want rejection", version)
+		}
+		if !strings.Contains(err.Error(), version) || !strings.Contains(err.Error(), SchemaVersion) {
+			t.Errorf("error should name both the found and expected schema, got: %v", err)
+		}
 	}
 }
 

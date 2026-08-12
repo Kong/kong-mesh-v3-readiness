@@ -1,10 +1,10 @@
 {
-  "schema": "kuma3-preflight/v3",
+  "schema": "kuma3-preflight/v4",
   "tool": "kuma3-preflight",
-  "generatedAt": "2026-06-25T09:30:00Z",
+  "generated_at": "2026-06-25T09:30:00Z",
   "status": "inconclusive",
   "address": "http://localhost:5681",
-  "controlPlane": {
+  "control_plane": {
     "product": "Kong Mesh",
     "version": "2.11.3",
     "mode": "global"
@@ -27,9 +27,9 @@
     "blockers": 1577,
     "warnings": 0,
     "info": 1,
-    "coverageGaps": 2,
-    "parseErrors": 3,
-    "systemFindings": 6
+    "coverage_gaps": 2,
+    "parse_errors": 3,
+    "system_findings": 6
   },
   "findings": [
     {
@@ -420,7 +420,7 @@
       ]
     }
   ],
-  "coverageGaps": [
+  "coverage_gaps": [
     {
       "path": "/meshes/legacy/meshfaultinjections",
       "reason": "HTTP 404 — collection not audited; absence of blockers is unproven"
@@ -430,7 +430,7 @@
       "reason": "HTTP 500 — collection not audited"
     }
   ],
-  "manualChecks": [
+  "manual_checks": [
     {
       "title": "Old inspect APIs removed (switch to the new inspect API)",
       "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",

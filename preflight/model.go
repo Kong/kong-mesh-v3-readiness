@@ -1,7 +1,6 @@
 package preflight
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -11,8 +10,10 @@ import (
 // Schema/tool identifiers stamped into every JSON report so a consumer (or
 // ParseReport) can recognize and version the payload.
 const (
-	// SchemaVersion is the JSON schema value stamped into every report.
-	SchemaVersion = "kuma3-preflight/v3"
+	// SchemaVersion is the JSON schema value stamped into every report. v4
+	// renamed every multi-word field to snake_case; ParseReport reads this
+	// version only, so a v2/v3 capture must be re-audited rather than reloaded.
+	SchemaVersion = "kuma3-preflight/v4"
 	// ToolName identifies this tool in the JSON payload and in the User-Agent
 	// header of outbound HTTP requests.
 	ToolName = "kuma3-preflight"
@@ -28,7 +29,7 @@ const (
 
 // Severity strings as they appear in Finding.Severity. SeverityBlocker gates CI;
 // SeverityInfo is advisory only. The "warning" tier still exists internally for
-// backward-compatible --from-json parsing, but no check emits one.
+// the severity enum and the Summary counter, but no check emits one.
 const (
 	SeverityBlocker = "blocker"
 	SeverityInfo    = "info"
@@ -39,23 +40,23 @@ const (
 // structure, and ParseReport loads it back, so they can never drift apart.
 // (Markdown is produced only by the CLI's --classify mode, from a different model.)
 type Report struct {
-	// Schema is "kuma3-preflight/vN"; ParseReport accepts any prior vN by prefix.
+	// Schema is "kuma3-preflight/vN"; ParseReport accepts the current vN only.
 	Schema      string `json:"schema" jsonschema:"pattern=^kuma3-preflight/v[0-9]+$"`
 	Tool        string `json:"tool" jsonschema:"enum=kuma3-preflight"`
-	GeneratedAt string `json:"generatedAt,omitempty" jsonschema:"format=date-time"`
+	GeneratedAt string `json:"generated_at,omitempty" jsonschema:"format=date-time"`
 	// Status reflects report trustworthiness first: an incomplete audit is
 	// inconclusive even when it still found blockers elsewhere.
 	Status  string `json:"status" jsonschema:"enum=clean,enum=blockers,enum=inconclusive,enum=failed"`
 	Address string `json:"address,omitempty"`
 	// Error never echoes a raw HTTP response body or bearer token.
 	Error        string       `json:"error,omitempty"`
-	ControlPlane ControlPlane `json:"controlPlane"`
+	ControlPlane ControlPlane `json:"control_plane"`
 	Meshes       []string     `json:"meshes"`
 	Summary      Summary      `json:"summary"`
 	Findings     []Finding    `json:"findings"`
 	// Coverage gaps make the run inconclusive, never clean.
-	Coverage []CoverageGap `json:"coverageGaps"`
-	Manual   []ManualCheck `json:"manualChecks"`
+	Coverage []CoverageGap `json:"coverage_gaps"`
+	Manual   []ManualCheck `json:"manual_checks"`
 }
 
 // ControlPlane identifies the audited control plane.
@@ -68,17 +69,17 @@ type ControlPlane struct {
 // Summary tallies findings by severity plus coverage/parse-error counts.
 type Summary struct {
 	Blockers int `json:"blockers" jsonschema:"minimum=0"`
-	// Warnings stays for ParseReport backward compatibility; no check emits one.
+	// Warnings stays in the emitted contract; no check emits one.
 	Warnings       int `json:"warnings" jsonschema:"minimum=0"`
 	Info           int `json:"info" jsonschema:"minimum=0"`
-	CoverageGaps   int `json:"coverageGaps" jsonschema:"minimum=0"`
-	ParseErrors    int `json:"parseErrors" jsonschema:"minimum=0"`
-	SystemFindings int `json:"systemFindings" jsonschema:"minimum=0"`
+	CoverageGaps   int `json:"coverage_gaps" jsonschema:"minimum=0"`
+	ParseErrors    int `json:"parse_errors" jsonschema:"minimum=0"`
+	SystemFindings int `json:"system_findings" jsonschema:"minimum=0"`
 }
 
 // Finding is one (severity, category, title) grouped occurrence in the report.
 type Finding struct {
-	// Severity "warning" only appears in pre-re-grade payloads; no current check emits one.
+	// Severity "warning" stays in the enum; no current check emits one.
 	Severity string `json:"severity" jsonschema:"enum=blocker,enum=warning,enum=info"`
 	Group    string `json:"group" jsonschema:"enum=Control plane,enum=Mesh object,enum=Policies,enum=Removed resources,enum=Data plane & workloads,enum=Other"`
 	Category string `json:"category"`
@@ -105,28 +106,6 @@ type ManualCheck struct {
 	Title   string `json:"title"`
 	Detail  string `json:"detail,omitempty"`
 	Command string `json:"command,omitempty"`
-}
-
-// UnmarshalJSON accepts either the v3 object form or the v2 form, where each
-// manual check was a bare string. A legacy string maps to Title, so ParseReport
-// still renders reports captured before the schema bump (the v2 schema value
-// passes ParseReport's prefix check).
-func (m *ManualCheck) UnmarshalJSON(b []byte) error {
-	if t := bytes.TrimSpace(b); len(t) > 0 && t[0] == '"' {
-		var title string
-		if err := json.Unmarshal(b, &title); err != nil {
-			return err
-		}
-		m.Title = title
-		return nil
-	}
-	type alias ManualCheck // avoid recursing into this method
-	var a alias
-	if err := json.Unmarshal(b, &a); err != nil {
-		return err
-	}
-	*m = ManualCheck(a)
-	return nil
 }
 
 // Finding groups organize the rendered report into top-level sections. Every
@@ -371,6 +350,13 @@ func ParseReport(data []byte) (Report, error) {
 	// report is expected) must be rejected, not silently mis-decoded.
 	if !strings.HasPrefix(m.Schema, ToolName+"/") {
 		return Report{}, fmt.Errorf("does not look like a %s JSON report (schema %q)", ToolName, m.Schema)
+	}
+	// Reject a prior schema version rather than decode it: v4 renamed every
+	// multi-word field to snake_case, so a v2/v3 payload would silently lose its
+	// control plane, coverage gaps and manual checks and re-render an
+	// inconclusive audit as clean. Fail loudly and let the operator re-run.
+	if m.Schema != SchemaVersion {
+		return Report{}, fmt.Errorf("report schema %q is not supported by this build (expects %q) — re-run the audit", m.Schema, SchemaVersion)
 	}
 	normalizeModel(&m)
 	return m, nil

@@ -181,8 +181,7 @@ components:
           - Other
           type: string
         severity:
-          description: Severity "warning" only appears in pre-re-grade payloads; no current
-            check emits one.
+          description: Severity "warning" stays in the enum; no current check emits one.
           enum:
           - blocker
           - warning
@@ -249,9 +248,9 @@ components:
       properties:
         address:
           type: string
-        controlPlane:
+        control_plane:
           $ref: '#/components/schemas/ControlPlane'
-        coverageGaps:
+        coverage_gaps:
           description: Coverage gaps make the run inconclusive, never clean.
           items:
             $ref: '#/components/schemas/CoverageGap'
@@ -263,10 +262,10 @@ components:
           items:
             $ref: '#/components/schemas/Finding'
           type: array
-        generatedAt:
+        generated_at:
           format: date-time
           type: string
-        manualChecks:
+        manual_checks:
           items:
             $ref: '#/components/schemas/ManualCheck'
           type: array
@@ -275,13 +274,14 @@ components:
             type: string
           type: array
         schema:
-          description: Schema is "kuma3-preflight/vN"; ParseReport accepts any prior vN
-            by prefix.
+          description: Schema is "kuma3-preflight/vN"; ParseReport accepts the current
+            vN only.
           pattern: ^kuma3-preflight/v[0-9]+$
           type: string
         status:
-          description: 'Status reflects report trustworthiness first: an incomplete
-            audit is inconclusive even when it still found blockers elsewhere.'
+          description: |-
+            Status reflects report trustworthiness first: an incomplete audit is
+            inconclusive even when it still found blockers elsewhere.
           enum:
           - clean
           - blockers
@@ -298,12 +298,12 @@ components:
       - schema
       - tool
       - status
-      - controlPlane
+      - control_plane
       - meshes
       - summary
       - findings
-      - coverageGaps
-      - manualChecks
+      - coverage_gaps
+      - manual_checks
       type: object
     Summary:
       additionalProperties: false
@@ -312,30 +312,29 @@ components:
         blockers:
           minimum: 0
           type: integer
-        coverageGaps:
+        coverage_gaps:
           minimum: 0
           type: integer
         info:
           minimum: 0
           type: integer
-        parseErrors:
+        parse_errors:
           minimum: 0
           type: integer
-        systemFindings:
+        system_findings:
           minimum: 0
           type: integer
         warnings:
-          description: Warnings stays for ParseReport backward compatibility; no check
-            emits one.
+          description: Warnings stays in the emitted contract; no check emits one.
           minimum: 0
           type: integer
       required:
       - blockers
       - warnings
       - info
-      - coverageGaps
-      - parseErrors
-      - systemFindings
+      - coverage_gaps
+      - parse_errors
+      - system_findings
       type: object
     Usage:
       additionalProperties: false

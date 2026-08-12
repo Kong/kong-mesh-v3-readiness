@@ -85,7 +85,8 @@ data, so they never disagree. (Markdown is produced only by `--classify`.)
   works offline from `file://`): status banner, clickable severity filters, full-text search,
   and a manual-checks checklist whose progress is saved per report in the browser.
 - **`json`** — a stable, machine-readable document (`schema`, `status`, `summary`,
-  `findings[]`, `coverageGaps[]`, `manualChecks[]`). Status maps to the same exit codes.
+  `findings[]`, `coverage_gaps[]`, `manual_checks[]`). Every key is snake_case.
+  Status maps to the same exit codes.
   This is the format the e2e capture hook saves per spec and `--classify` folds back in.
 
 ```bash
