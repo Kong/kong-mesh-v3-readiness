@@ -10,9 +10,6 @@ import (
 // Schema/tool identifiers stamped into every JSON report so a consumer (or
 // ParseReport) can recognize and version the payload.
 const (
-	// SchemaVersion is the JSON schema value stamped into every report. v4
-	// renamed every multi-word field to snake_case; ParseReport reads this
-	// version only, so a v2/v3 capture must be re-audited rather than reloaded.
 	SchemaVersion = "kuma3-preflight/v5"
 	// ToolName identifies this tool in the JSON payload and in the User-Agent
 	// header of outbound HTTP requests.
@@ -345,9 +342,6 @@ func ParseReport(data []byte) (Report, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return Report{}, fmt.Errorf("parsing JSON report: %w", err)
 	}
-	// Validate the schema value, not merely its presence: a non-empty but foreign
-	// `schema` (e.g. an unrelated JSON document, or a classification report fed where a
-	// report is expected) must be rejected, not silently mis-decoded.
 	if !strings.HasPrefix(m.Schema, ToolName+"/") {
 		if legacy := legacySchema(data); legacy != "" {
 			return Report{}, fmt.Errorf("report schema %q is not supported by this build (expects %q) — re-run the audit", legacy, SchemaVersion)

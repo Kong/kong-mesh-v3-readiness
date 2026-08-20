@@ -273,11 +273,14 @@ func TestHTMLScriptReadsSnakeCaseKeys(t *testing.T) {
 	}
 	for _, key := range []string{
 		"generatedAt", "controlPlane", "coverageGaps", "manualChecks",
-		"parseErrors", "systemFindings", "f.examples", "f.doc ",
+		"parseErrors", "systemFindings", "f.examples",
 	} {
 		if strings.Contains(page, key) {
 			t.Errorf("page script still reads camelCase key %q", key)
 		}
+	}
+	if got, want := strings.Count(page, "f.doc"), strings.Count(page, "f.doc_url"); got != want {
+		t.Errorf("page script has a bare f.doc reference outside f.doc_url: %d total f.doc, %d f.doc_url", got, want)
 	}
 }
 
