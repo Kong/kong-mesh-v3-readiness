@@ -13,7 +13,7 @@ const (
 	// SchemaVersion is the JSON schema value stamped into every report. v4
 	// renamed every multi-word field to snake_case; ParseReport reads this
 	// version only, so a v2/v3 capture must be re-audited rather than reloaded.
-	SchemaVersion = "kuma3-preflight/v4"
+	SchemaVersion = "kuma3-preflight/v5"
 	// ToolName identifies this tool in the JSON payload and in the User-Agent
 	// header of outbound HTTP requests.
 	ToolName = "kuma3-preflight"
@@ -41,7 +41,7 @@ const (
 // (Markdown is produced only by the CLI's --classify mode, from a different model.)
 type Report struct {
 	// Schema is "kuma3-preflight/vN"; ParseReport accepts the current vN only.
-	Schema      string `json:"schema" jsonschema:"pattern=^kuma3-preflight/v[0-9]+$"`
+	Schema      string `json:"tool_schema" jsonschema:"pattern=^kuma3-preflight/v[0-9]+$"`
 	Tool        string `json:"tool" jsonschema:"enum=kuma3-preflight"`
 	GeneratedAt string `json:"generated_at,omitempty" jsonschema:"format=date-time"`
 	// Status reflects report trustworthiness first: an incomplete audit is
@@ -81,15 +81,15 @@ type Summary struct {
 type Finding struct {
 	// Severity "warning" stays in the enum; no current check emits one.
 	Severity string `json:"severity" jsonschema:"enum=blocker,enum=warning,enum=info"`
-	Group    string `json:"group" jsonschema:"enum=Control plane,enum=Mesh object,enum=Policies,enum=Removed resources,enum=Data plane & workloads,enum=Other"`
+	Group    string `json:"group" jsonschema:"enum=control_plane,enum=mesh_object,enum=policies,enum=removed_resources,enum=data_plane_and_workloads,enum=other"`
 	Category string `json:"category"`
 	Title    string `json:"title"`
 	Detail   string `json:"detail"`
 	// Doc links to the Kong Mesh page explaining the 3.0 replacement API/feature.
 	// Optional: omitted for findings with no replacement to point at.
-	Doc      string   `json:"doc,omitempty" jsonschema:"format=uri"`
+	Doc      string   `json:"doc_url,omitempty" jsonschema:"format=uri"`
 	Count    int      `json:"count" jsonschema:"minimum=1"`
-	Examples []string `json:"examples" jsonschema:"maxItems=10"`
+	Examples []string `json:"example_resources" jsonschema:"maxItems=10"`
 }
 
 // CoverageGap records a collection that could not be audited — a 404 or a
@@ -112,12 +112,12 @@ type ManualCheck struct {
 // category maps to exactly one group; an unmapped category falls into groupOther
 // so a newly added check is never silently dropped from the report.
 const (
-	groupControlPlane     = "Control plane"
-	groupMeshObject       = "Mesh object"
-	groupPolicies         = "Policies"
-	groupRemovedResources = "Removed resources"
-	groupDataPlane        = "Data plane & workloads"
-	groupOther            = "Other"
+	groupControlPlane     = "control_plane"
+	groupMeshObject       = "mesh_object"
+	groupPolicies         = "policies"
+	groupRemovedResources = "removed_resources"
+	groupDataPlane        = "data_plane_and_workloads"
+	groupOther            = "other"
 )
 
 // groupOrder is the display order of the groups, top to bottom.
@@ -349,6 +349,9 @@ func ParseReport(data []byte) (Report, error) {
 	// `schema` (e.g. an unrelated JSON document, or a classification report fed where a
 	// report is expected) must be rejected, not silently mis-decoded.
 	if !strings.HasPrefix(m.Schema, ToolName+"/") {
+		if legacy := legacySchema(data); legacy != "" {
+			return Report{}, fmt.Errorf("report schema %q is not supported by this build (expects %q) — re-run the audit", legacy, SchemaVersion)
+		}
 		return Report{}, fmt.Errorf("does not look like a %s JSON report (schema %q)", ToolName, m.Schema)
 	}
 	// Reject a prior schema version rather than decode it: v4 renamed every
@@ -360,4 +363,17 @@ func ParseReport(data []byte) (Report, error) {
 	}
 	normalizeModel(&m)
 	return m, nil
+}
+
+func legacySchema(data []byte) string {
+	var m struct {
+		Schema string `json:"schema"`
+	}
+	if json.Unmarshal(data, &m) != nil {
+		return ""
+	}
+	if !strings.HasPrefix(m.Schema, ToolName+"/") {
+		return ""
+	}
+	return m.Schema
 }

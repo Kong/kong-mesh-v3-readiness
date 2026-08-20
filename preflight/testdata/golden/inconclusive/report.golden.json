@@ -1,5 +1,5 @@
 {
-  "schema": "kuma3-preflight/v4",
+  "tool_schema": "kuma3-preflight/v5",
   "tool": "kuma3-preflight",
   "status": "inconclusive",
   "control_plane": {
@@ -21,12 +21,12 @@
   "findings": [
     {
       "severity": "blocker",
-      "group": "Other",
+      "group": "other",
       "category": "Unparseable resources",
       "title": "MeshAccessLog spec could not be parsed",
       "detail": "Could not parse this resource; audit it manually before upgrading.",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/bad-log"
       ]
     }

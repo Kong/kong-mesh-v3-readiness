@@ -353,6 +353,15 @@ const htmlTail = `
     info:'Informational'
   };
   var GLYPH = {blockers:'✕', failed:'✕', inconclusive:'!', clean:'✓'};
+  var GROUP_LABELS = {
+    control_plane: 'Control plane',
+    mesh_object: 'Mesh object',
+    policies: 'Policies',
+    removed_resources: 'Removed resources',
+    data_plane_and_workloads: 'Data plane & workloads',
+    other: 'Other'
+  };
+  function groupLabel(g){ return GROUP_LABELS[g] || g; }
 
   // Inline Kong logo (monochrome, inherits currentColor). Embedded as static
   // markup so the page stays fully self-contained — no external asset. The xmlns
@@ -393,7 +402,7 @@ const htmlTail = `
   function findingMeshes(f){
     if(!f._meshes){
       var seen = {};
-      (f.examples || []).forEach(function(e){ var m = meshOf(e); if(m) seen[m] = true; });
+      (f.example_resources || []).forEach(function(e){ var m = meshOf(e); if(m) seen[m] = true; });
       f._meshes = Object.keys(seen);
     }
     return f._meshes;
@@ -412,7 +421,7 @@ const htmlTail = `
   function findingZones(f){
     if(!f._zones){
       var seen = {};
-      (f.examples || []).forEach(function(e){ var z = zoneOf(e); if(z) seen[z] = true; });
+      (f.example_resources || []).forEach(function(e){ var z = zoneOf(e); if(z) seen[z] = true; });
       f._zones = Object.keys(seen);
     }
     return f._zones;
@@ -427,7 +436,7 @@ const htmlTail = `
   // The examples are a server-capped sample (exampleCap): once count exceeds the
   // held examples, an occurrence can fall outside it, so per-mesh/zone attribution
   // is no longer exact. exhaustive() gates the filtering that assumes exactness.
-  function isCapped(f){ return f.count > (f.examples || []).length; }
+  function isCapped(f){ return f.count > (f.example_resources || []).length; }
   function exhaustive(f){ return !isCapped(f); }
   // A capped sample may hide matching occurrences, so only narrow (filter examples
   // and recount) when the sample is exhaustive and a scoping filter is active.
@@ -440,7 +449,7 @@ const htmlTail = `
     return true;
   }
   function shownExamples(f){
-    var ex = f.examples || [];
+    var ex = f.example_resources || [];
     if(narrowed(f)) return ex.filter(function(e){ return exampleInFilters(f, e); });
     return ex;
   }
@@ -503,7 +512,7 @@ const htmlTail = `
       if(zoneFilter && isZoneScoped(f) && findingZones(f).indexOf(zoneFilter) < 0) return false;
     }
     if(!query) return true;
-    var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.examples||[]).join(' ')).toLowerCase();
+    var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.example_resources||[]).join(' ')).toLowerCase();
     return hay.indexOf(query) >= 0;
   }
   function shownFindings(){ return (data.findings || []).filter(matches); }
@@ -555,7 +564,7 @@ const htmlTail = `
         var gt = byG[g].reduce(function(a,f){ return a + shownCount(f); }, 0);
         nav.appendChild(el('button', {class:'nav-grp', type:'button', 'data-target':'g-' + sev + '-' + slug(g),
           onclick:function(){ scrollToId('g-' + sev + '-' + slug(g)); }}, [
-          el('span', {class:'nav-grp-lbl', text:g, title:g}),
+          el('span', {class:'nav-grp-lbl', text:groupLabel(g), title:groupLabel(g)}),
           el('span', {class:'nav-n sm num', text:fmtNum(gt)})
         ]));
       });
@@ -819,8 +828,8 @@ const htmlTail = `
     // untrusted --from-json payload, so only ever build an href from an https
     // developer.konghq.com URL — never an arbitrary scheme (guards against a
     // javascript: link or an external host); anything else is dropped.
-    if(f.doc && /^https:\/\/developer\.konghq\.com\//.test(f.doc)){
-      body.appendChild(el('a', {'class':'doclink', href:f.doc, target:'_blank', rel:'noopener noreferrer',
+    if(f.doc_url && /^https:\/\/developer\.konghq\.com\//.test(f.doc_url)){
+      body.appendChild(el('a', {'class':'doclink', href:f.doc_url, target:'_blank', rel:'noopener noreferrer',
         title:'Open the Kong Mesh migration docs for this item'},
         [document.createTextNode('Kong Mesh migration docs '), el('span', {class:'arr', text:'↗'})]));
     }
@@ -847,9 +856,9 @@ const htmlTail = `
     var gTotal = items.reduce(function(a,f){ return a + shownCount(f); }, 0);
     var block = el('div', {class:'grpblock', id:'g-' + sev + '-' + slug(group)});
     var head = el('button', {class:'grp-title' + (collapsed ? ' collapsed' : ''), type:'button',
-      'aria-expanded': String(!collapsed), title:(collapsed ? 'Expand ' : 'Collapse ') + group});
+      'aria-expanded': String(!collapsed), title:(collapsed ? 'Expand ' : 'Collapse ') + groupLabel(group)});
     head.appendChild(el('span', {class:'caret', text:'▸'}));
-    head.appendChild(el('span', {text:group}));
+    head.appendChild(el('span', {text:groupLabel(group)}));
     head.appendChild(el('span', {class:'grp-count num', text:fmtNum(gTotal)}));
     var body = el('div', {class:'grp-body'});
     if(collapsed) body.style.display = 'none';
@@ -859,7 +868,7 @@ const htmlTail = `
       body.style.display = now ? 'none' : '';
       head.classList.toggle('collapsed', now);
       head.setAttribute('aria-expanded', String(!now));
-      head.setAttribute('title', (now ? 'Expand ' : 'Collapse ') + group);
+      head.setAttribute('title', (now ? 'Expand ' : 'Collapse ') + groupLabel(group));
     });
     items.forEach(function(f){ body.appendChild(renderFinding(f)); });
     block.appendChild(head);

@@ -1,5 +1,5 @@
 {
-  "schema": "kuma3-preflight/v4",
+  "tool_schema": "kuma3-preflight/v5",
   "tool": "kuma3-preflight",
   "status": "blockers",
   "control_plane": {
@@ -21,24 +21,24 @@
   "findings": [
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Global control plane on Kubernetes",
       "detail": "Global CP on Kubernetes is dropped as a deployment mode in 3.0; migrate the global CP to Universal.",
-      "doc": "https://developer.konghq.com/mesh/universal/",
+      "doc_url": "https://developer.konghq.com/mesh/universal/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "mode=global"
       ]
     },
     {
       "severity": "info",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "No zones connected to the global control plane",
       "detail": "This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "zones=0"
       ]
     }

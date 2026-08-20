@@ -83,7 +83,7 @@ func TestExternalConsumerFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderJSON: %v", err)
 	}
-	if !strings.Contains(out, `"schema"`) || !strings.Contains(out, preflight.SchemaVersion) {
+	if !strings.Contains(out, `"tool_schema"`) || !strings.Contains(out, preflight.SchemaVersion) {
 		t.Errorf("rendered JSON missing expected schema field: %s", out)
 	}
 	if !strings.HasPrefix(strings.TrimSpace(out), "{") {

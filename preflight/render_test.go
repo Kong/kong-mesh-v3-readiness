@@ -131,6 +131,29 @@ func TestToModelGroups(t *testing.T) {
 // MeshGateway-targeted policies), the Mesh*Service kinds and `MeshHTTPRoute` stay
 // valid; only the subset/selector kinds and `MeshGateway` are removed. Flagging a
 // still-valid kind (e.g. `Mesh`) would be a false-positive blocker.
+func TestHTMLScriptMapsGroupIdentifiersToLabels(t *testing.T) {
+	m := sampleReport().toModel("2026-06-17T10:00:00Z")
+	html, err := m.RenderHTML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(html, "GROUP_LABELS") {
+		t.Fatal("page script missing GROUP_LABELS map for group identifiers")
+	}
+	for id, label := range map[string]string{
+		groupControlPlane:     "Control plane",
+		groupMeshObject:       "Mesh object",
+		groupPolicies:         "Policies",
+		groupRemovedResources: "Removed resources",
+		groupDataPlane:        "Data plane & workloads",
+		groupOther:            "Other",
+	} {
+		if !strings.Contains(html, id+": '"+label+"'") {
+			t.Errorf("page script does not map group identifier %q to label %q", id, label)
+		}
+	}
+}
+
 func TestAllowedToTargetRefKinds(t *testing.T) {
 	for _, k := range []string{"Mesh", "MeshService", "MeshExternalService", "MeshMultiZoneService", "MeshHTTPRoute"} {
 		if !allowedToTargetRefKinds[k] {
@@ -217,7 +240,7 @@ func TestRenderJSONUsesSnakeCaseKeys(t *testing.T) {
 	}
 	for _, key := range []string{
 		"generated_at", "control_plane", "coverage_gaps", "manual_checks",
-		"parse_errors", "system_findings",
+		"parse_errors", "system_findings", "tool_schema", "doc_url", "example_resources",
 	} {
 		if !strings.Contains(out, `"`+key+`"`) {
 			t.Errorf("rendered JSON missing snake_case key %q", key)
@@ -225,7 +248,7 @@ func TestRenderJSONUsesSnakeCaseKeys(t *testing.T) {
 	}
 	for _, key := range []string{
 		"generatedAt", "controlPlane", "coverageGaps", "manualChecks",
-		"parseErrors", "systemFindings",
+		"parseErrors", "systemFindings", "schema", "doc", "examples",
 	} {
 		if strings.Contains(out, `"`+key+`"`) {
 			t.Errorf("rendered JSON still emits camelCase key %q", key)
@@ -242,6 +265,7 @@ func TestHTMLScriptReadsSnakeCaseKeys(t *testing.T) {
 	for _, ref := range []string{
 		"data.control_plane", "data.coverage_gaps", "data.manual_checks",
 		"data.generated_at", "s.coverage_gaps", "s.parse_errors",
+		"f.example_resources", "f.doc_url",
 	} {
 		if !strings.Contains(page, ref) {
 			t.Errorf("page script does not read %q", ref)
@@ -249,7 +273,7 @@ func TestHTMLScriptReadsSnakeCaseKeys(t *testing.T) {
 	}
 	for _, key := range []string{
 		"generatedAt", "controlPlane", "coverageGaps", "manualChecks",
-		"parseErrors", "systemFindings",
+		"parseErrors", "systemFindings", "f.examples", "f.doc ",
 	} {
 		if strings.Contains(page, key) {
 			t.Errorf("page script still reads camelCase key %q", key)
@@ -261,7 +285,7 @@ func TestHTMLScriptReadsSnakeCaseKeys(t *testing.T) {
 // controlPlane, coverageGaps and manualChecks would all land empty and an
 // inconclusive audit would re-render as clean. ParseReport must refuse it.
 func TestParseReportRejectsOlderSchema(t *testing.T) {
-	for _, version := range []string{"kuma3-preflight/v2", "kuma3-preflight/v3"} {
+	for _, version := range []string{"kuma3-preflight/v2", "kuma3-preflight/v3", "kuma3-preflight/v4"} {
 		old := `{"schema":"` + version + `","tool":"kuma3-preflight","status":"inconclusive",` +
 			`"controlPlane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
 			`"summary":{"coverageGaps":1},"findings":[],` +
@@ -309,7 +333,7 @@ func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
 	// The renderer must gate doc hrefs to https developer.konghq.com URLs, so a
 	// hostile --from-json `doc` (e.g. a javascript: scheme or an external host) can
 	// never be turned into a clickable link. Lock the guard in by asserting it.
-	if !strings.Contains(html, `/^https:\/\/developer\.konghq\.com\//.test(f.doc)`) {
+	if !strings.Contains(html, `/^https:\/\/developer\.konghq\.com\//.test(f.doc_url)`) {
 		t.Error("doc-link href guard missing — an untrusted doc value could become a clickable href")
 	}
 	// Sanity: the sample's blocker carries a Kong Mesh doc link in the data block.

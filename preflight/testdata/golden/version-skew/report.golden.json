@@ -1,5 +1,5 @@
 {
-  "schema": "kuma3-preflight/v4",
+  "tool_schema": "kuma3-preflight/v5",
   "tool": "kuma3-preflight",
   "status": "blockers",
   "control_plane": {
@@ -19,13 +19,13 @@
   "findings": [
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane version",
       "title": "Control plane behind the latest 2.14 patch",
       "detail": "Upgrade to the latest 2.14 patch (2.14.0) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.",
-      "doc": "https://developer.konghq.com/mesh/upgrade/",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 2,
-      "examples": [
+      "example_resources": [
         "zone zone-b (2.13.5)",
         "zone zone-c (2.11.2)"
       ]

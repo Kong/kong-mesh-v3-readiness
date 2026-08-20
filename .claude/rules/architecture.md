@@ -47,13 +47,16 @@
   `preflight.ExampleCap` (10). Rendered as one bullet per `(severity, category, title)` with
   merged count + capped example list.
 - `preflight.Finding` (`preflight/model.go`) is the serialized form; JSON top-level contract
-  is `preflight.Report` (`preflight/model.go`): `schema`, `tool`, `status`, `control_plane`,
+  is `preflight.Report` (`preflight/model.go`): `tool_schema`, `tool`, `status`, `control_plane`,
   `summary`, `findings[]`, `coverage_gaps[]`, `manual_checks[]`. **Every emitted JSON key is
-  snake_case** — the contract is embedded verbatim in Konnect OpenAPI specs, which lint
-  field names with `properties-snake-case-aip-122`. A new multi-word field must be
-  snake_case. `ParseReport` accepts `preflight.SchemaVersion` only and rejects an older
-  vN outright: a pre-v4 capture would decode with an empty control plane and no coverage
-  gaps, re-rendering an inconclusive audit as clean.
+  snake_case** and matches `mink-vcp-manager`'s Konnect OpenAPI spec for this report, which
+  lints field names with `properties-snake-case-aip-122` — that spec still projects rather
+  than embeds this contract verbatim (it omits `coverage_gaps`/`warnings` and the
+  `inconclusive`/`warning` enum values), so a new field here is not guaranteed to appear
+  there. A new multi-word field must be snake_case. `ParseReport` accepts
+  `preflight.SchemaVersion` only and rejects an older vN outright: a pre-v5 capture would
+  decode with an empty control plane and no coverage gaps, re-rendering an inconclusive
+  audit as clean.
 
 ## Extensibility
 

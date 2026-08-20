@@ -351,14 +351,14 @@ func TestGlobalMigrationExtraction(t *testing.T) {
 
 func TestLoadModelValidatesSchema(t *testing.T) {
 	dir := t.TempDir()
-	writeFixture(t, dir, "good.json", `{"schema":"`+preflight.SchemaVersion+`","status":"clean","meshes":[],"findings":[],"coverage_gaps":[],"manual_checks":[]}`)
+	writeFixture(t, dir, "good.json", `{"tool_schema":"`+preflight.SchemaVersion+`","status":"clean","meshes":[],"findings":[],"coverage_gaps":[],"manual_checks":[]}`)
 	if _, err := loadModel(filepath.Join(dir, "good.json")); err != nil {
 		t.Errorf("a valid report schema must be accepted, got: %v", err)
 	}
 	// A non-empty but foreign schema (unrelated JSON, or a classification report fed
 	// where a report is expected, or a missing schema) must be rejected.
 	for name, payload := range map[string]string{
-		"foreign":        `{"schema":"unrelated/v1"}`,
+		"foreign":        `{"tool_schema":"unrelated/v1"}`,
 		"classification": `{"schema":"` + classificationSchema + `"}`,
 		"no-schema":      `{"foo":1}`,
 	} {
