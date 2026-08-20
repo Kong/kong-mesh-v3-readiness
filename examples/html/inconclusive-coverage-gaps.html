@@ -317,7 +317,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 <noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
 <script id="report-data" type="application/json">
 {
-  "schema": "kuma3-preflight/v4",
+  "tool_schema": "kuma3-preflight/v5",
   "tool": "kuma3-preflight",
   "generated_at": "2026-06-25T09:30:00Z",
   "status": "inconclusive",
@@ -343,12 +343,12 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   "findings": [
     {
       "severity": "info",
-      "group": "Data plane \u0026 workloads",
+      "group": "data_plane_and_workloads",
       "category": "Dataplane metrics",
       "title": "Sampled dataplane inspection coverage",
       "detail": "Inspection sampled a subset of dataplanes for per-proxy checks.",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "sampled 40/120"
       ]
     }
@@ -418,6 +418,15 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     info:'Informational'
   };
   var GLYPH = {blockers:'✕', failed:'✕', inconclusive:'!', clean:'✓'};
+  var GROUP_LABELS = {
+    control_plane: 'Control plane',
+    mesh_object: 'Mesh object',
+    policies: 'Policies',
+    removed_resources: 'Removed resources',
+    data_plane_and_workloads: 'Data plane & workloads',
+    other: 'Other'
+  };
+  function groupLabel(g){ return GROUP_LABELS[g] || g; }
 
   // Inline Kong logo (monochrome, inherits currentColor). Embedded as static
   // markup so the page stays fully self-contained — no external asset. The xmlns
@@ -458,7 +467,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   function findingMeshes(f){
     if(!f._meshes){
       var seen = {};
-      (f.examples || []).forEach(function(e){ var m = meshOf(e); if(m) seen[m] = true; });
+      (f.example_resources || []).forEach(function(e){ var m = meshOf(e); if(m) seen[m] = true; });
       f._meshes = Object.keys(seen);
     }
     return f._meshes;
@@ -477,7 +486,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   function findingZones(f){
     if(!f._zones){
       var seen = {};
-      (f.examples || []).forEach(function(e){ var z = zoneOf(e); if(z) seen[z] = true; });
+      (f.example_resources || []).forEach(function(e){ var z = zoneOf(e); if(z) seen[z] = true; });
       f._zones = Object.keys(seen);
     }
     return f._zones;
@@ -492,7 +501,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   // The examples are a server-capped sample (exampleCap): once count exceeds the
   // held examples, an occurrence can fall outside it, so per-mesh/zone attribution
   // is no longer exact. exhaustive() gates the filtering that assumes exactness.
-  function isCapped(f){ return f.count > (f.examples || []).length; }
+  function isCapped(f){ return f.count > (f.example_resources || []).length; }
   function exhaustive(f){ return !isCapped(f); }
   // A capped sample may hide matching occurrences, so only narrow (filter examples
   // and recount) when the sample is exhaustive and a scoping filter is active.
@@ -505,7 +514,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     return true;
   }
   function shownExamples(f){
-    var ex = f.examples || [];
+    var ex = f.example_resources || [];
     if(narrowed(f)) return ex.filter(function(e){ return exampleInFilters(f, e); });
     return ex;
   }
@@ -568,7 +577,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       if(zoneFilter && isZoneScoped(f) && findingZones(f).indexOf(zoneFilter) < 0) return false;
     }
     if(!query) return true;
-    var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.examples||[]).join(' ')).toLowerCase();
+    var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.example_resources||[]).join(' ')).toLowerCase();
     return hay.indexOf(query) >= 0;
   }
   function shownFindings(){ return (data.findings || []).filter(matches); }
@@ -620,7 +629,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
         var gt = byG[g].reduce(function(a,f){ return a + shownCount(f); }, 0);
         nav.appendChild(el('button', {class:'nav-grp', type:'button', 'data-target':'g-' + sev + '-' + slug(g),
           onclick:function(){ scrollToId('g-' + sev + '-' + slug(g)); }}, [
-          el('span', {class:'nav-grp-lbl', text:g, title:g}),
+          el('span', {class:'nav-grp-lbl', text:groupLabel(g), title:groupLabel(g)}),
           el('span', {class:'nav-n sm num', text:fmtNum(gt)})
         ]));
       });
@@ -884,8 +893,8 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     // untrusted --from-json payload, so only ever build an href from an https
     // developer.konghq.com URL — never an arbitrary scheme (guards against a
     // javascript: link or an external host); anything else is dropped.
-    if(f.doc && /^https:\/\/developer\.konghq\.com\//.test(f.doc)){
-      body.appendChild(el('a', {'class':'doclink', href:f.doc, target:'_blank', rel:'noopener noreferrer',
+    if(f.doc_url && /^https:\/\/developer\.konghq\.com\//.test(f.doc_url)){
+      body.appendChild(el('a', {'class':'doclink', href:f.doc_url, target:'_blank', rel:'noopener noreferrer',
         title:'Open the Kong Mesh migration docs for this item'},
         [document.createTextNode('Kong Mesh migration docs '), el('span', {class:'arr', text:'↗'})]));
     }
@@ -912,9 +921,9 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     var gTotal = items.reduce(function(a,f){ return a + shownCount(f); }, 0);
     var block = el('div', {class:'grpblock', id:'g-' + sev + '-' + slug(group)});
     var head = el('button', {class:'grp-title' + (collapsed ? ' collapsed' : ''), type:'button',
-      'aria-expanded': String(!collapsed), title:(collapsed ? 'Expand ' : 'Collapse ') + group});
+      'aria-expanded': String(!collapsed), title:(collapsed ? 'Expand ' : 'Collapse ') + groupLabel(group)});
     head.appendChild(el('span', {class:'caret', text:'▸'}));
-    head.appendChild(el('span', {text:group}));
+    head.appendChild(el('span', {text:groupLabel(group)}));
     head.appendChild(el('span', {class:'grp-count num', text:fmtNum(gTotal)}));
     var body = el('div', {class:'grp-body'});
     if(collapsed) body.style.display = 'none';
@@ -924,7 +933,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       body.style.display = now ? 'none' : '';
       head.classList.toggle('collapsed', now);
       head.setAttribute('aria-expanded', String(!now));
-      head.setAttribute('title', (now ? 'Expand ' : 'Collapse ') + group);
+      head.setAttribute('title', (now ? 'Expand ' : 'Collapse ') + groupLabel(group));
     });
     items.forEach(function(f){ body.appendChild(renderFinding(f)); });
     block.appendChild(head);

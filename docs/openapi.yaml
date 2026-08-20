@@ -160,25 +160,25 @@ components:
           type: integer
         detail:
           type: string
-        doc:
+        doc_url:
           description: |-
             Doc links to the Kong Mesh page explaining the 3.0 replacement API/feature.
             Optional: omitted for findings with no replacement to point at.
           format: uri
           type: string
-        examples:
+        example_resources:
           items:
             type: string
           maxItems: 10
           type: array
         group:
           enum:
-          - Control plane
-          - Mesh object
-          - Policies
-          - Removed resources
-          - Data plane & workloads
-          - Other
+          - control_plane
+          - mesh_object
+          - policies
+          - removed_resources
+          - data_plane_and_workloads
+          - other
           type: string
         severity:
           description: Severity "warning" stays in the enum; no current check emits one.
@@ -196,7 +196,7 @@ components:
       - title
       - detail
       - count
-      - examples
+      - example_resources
       type: object
     GlobalMigration:
       additionalProperties: false
@@ -273,11 +273,6 @@ components:
           items:
             type: string
           type: array
-        schema:
-          description: Schema is "kuma3-preflight/vN"; ParseReport accepts the current
-            vN only.
-          pattern: ^kuma3-preflight/v[0-9]+$
-          type: string
         status:
           description: |-
             Status reflects report trustworthiness first: an incomplete audit is
@@ -294,8 +289,13 @@ components:
           enum:
           - kuma3-preflight
           type: string
+        tool_schema:
+          description: Schema is "kuma3-preflight/vN"; ParseReport accepts the current
+            vN only.
+          pattern: ^kuma3-preflight/v[0-9]+$
+          type: string
       required:
-      - schema
+      - tool_schema
       - tool
       - status
       - control_plane

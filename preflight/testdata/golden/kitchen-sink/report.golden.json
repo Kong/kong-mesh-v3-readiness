@@ -1,5 +1,5 @@
 {
-  "schema": "kuma3-preflight/v4",
+  "tool_schema": "kuma3-preflight/v5",
   "tool": "kuma3-preflight",
   "status": "inconclusive",
   "control_plane": {
@@ -21,291 +21,291 @@
   "findings": [
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Delta xDS not enabled",
       "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
-      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "zone zone-1: experimental.deltaXds=false"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Global control plane on Kubernetes",
       "detail": "Global CP on Kubernetes is dropped as a deployment mode in 3.0; migrate the global CP to Universal.",
-      "doc": "https://developer.konghq.com/mesh/universal/",
+      "doc_url": "https://developer.konghq.com/mesh/universal/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "mode=global"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Inbound tags still enabled",
       "detail": "3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
-      "doc": "https://developer.konghq.com/mesh/meshservice/",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "zone zone-1: experimental.inboundTagsDisabled=false"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "KDS event-based watchdog not enabled",
       "detail": "The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
-      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "zone zone-1: experimental.kdsEventBasedWatchdog.enabled=false"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Native sidecar containers not enabled",
       "detail": "Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
-      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "zone zone-1: experimental.sidecarContainers=false"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Unified resource naming not enabled",
       "detail": "3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
-      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "zone zone-1: runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "autoReachableServices enabled",
       "detail": "`autoReachableServices` is removed entirely in 3.0; stop relying on it before upgrading.",
-      "doc": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "zone zone-1: experimental.autoReachableServices=true"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "eBPF transparent proxy enabled",
       "detail": "The eBPF transparent proxy is removed in 3.0; switch to the iptables transparent proxy.",
-      "doc": "https://developer.konghq.com/mesh/transparent-proxying/",
+      "doc_url": "https://developer.konghq.com/mesh/transparent-proxying/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "zone zone-1: runtime.kubernetes.injector.ebpf.enabled=true"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Control plane",
+      "group": "control_plane",
       "category": "Control plane version",
       "title": "Control plane behind the latest 2.14 patch",
       "detail": "Upgrade to the latest 2.14 patch (2.14.0) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.",
-      "doc": "https://developer.konghq.com/mesh/upgrade/",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "control plane (2.9.0)"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Mesh object",
+      "group": "mesh_object",
       "category": "Mesh object settings",
       "title": "Inline mTLS on Mesh",
       "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust.",
-      "doc": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
+      "doc_url": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default (mtls)"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Mesh object",
+      "group": "mesh_object",
       "category": "MeshService mode",
       "title": "meshServices.mode is not Exclusive",
       "detail": "3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: Disabled).",
-      "doc": "https://developer.konghq.com/mesh/meshservice/#exclusive",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/#exclusive",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Policies",
+      "group": "policies",
       "category": "Policy `from` field",
       "title": "MeshTrafficPermission uses `from`",
       "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
-      "doc": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
       "count": 2,
-      "examples": [
+      "example_resources": [
         "default/mtp-user",
         "default/mtp-system (system — CP-managed, update before 3.0)"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Policies",
+      "group": "policies",
       "category": "Removed policies",
       "title": "MeshGlobalRateLimit (removed in 3.0)",
       "detail": "MeshGlobalRateLimit is removed in 3.0 with no direct replacement (global rate limiting is dropped); remove these policies before upgrading.",
-      "doc": "https://developer.konghq.com/mesh/policies-introduction/",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/global-rl"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Policies",
+      "group": "policies",
       "category": "Removed policies",
       "title": "TrafficPermission (removed in 3.0)",
       "detail": "Replace with MeshTrafficPermission (rules + spiffeID).",
-      "doc": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/allow-all"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Policies",
+      "group": "policies",
       "category": "`to` targetRef kind",
       "title": "MeshTimeout to[].targetRef.kind=MeshSubset",
       "detail": "`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.",
-      "doc": "https://developer.konghq.com/mesh/policies-introduction/",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/mt-to-subset"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Data plane \u0026 workloads",
+      "group": "data_plane_and_workloads",
       "category": "Dataplane DNS",
       "title": "Dataplane uses the legacy embedded CoreDNS",
       "detail": "This proxy reports a bundled CoreDNS dependency; 3.0 removes the CoreDNS + Envoy DNS-filter path — upgrade kuma-dp.",
-      "doc": "https://developer.konghq.com/mesh/dns/",
+      "doc_url": "https://developer.konghq.com/mesh/dns/",
       "count": 2,
-      "examples": [
+      "example_resources": [
         "default/legacy-dp.kuma-demo [zone:east] (coredns 1.11.1)",
         "default/current-dp.kuma-demo [zone:west] (coredns 1.11.1)"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Data plane \u0026 workloads",
+      "group": "data_plane_and_workloads",
       "category": "Dataplane features",
       "title": "Dataplane is not using unified resource naming",
       "detail": "This proxy does not advertise the `feature-unified-resource-naming` capability, so it is not emitting the unified (KRI-based) resource names Kuma 3.0 requires. Enable `unifiedResourceNamingEnabled` on the control plane (if not already) and restart/re-inject the proxy so it adopts unified naming before upgrading.",
-      "doc": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/legacy-dp.kuma-demo [zone:east]"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Data plane \u0026 workloads",
+      "group": "data_plane_and_workloads",
       "category": "Dataplane metrics",
       "title": "Dataplane has a per-proxy metrics override",
       "detail": "`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.",
-      "doc": "https://developer.konghq.com/mesh/policies/meshmetric/",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshmetric/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/dp-1 [zone:east]"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Data plane \u0026 workloads",
+      "group": "data_plane_and_workloads",
       "category": "Dataplane probes",
       "title": "Dataplane has a probes section",
       "detail": "Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).",
-      "doc": "https://developer.konghq.com/mesh/data-plane-proxy/",
+      "doc_url": "https://developer.konghq.com/mesh/data-plane-proxy/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/dp-1 [zone:east]"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Data plane \u0026 workloads",
+      "group": "data_plane_and_workloads",
       "category": "Dataplane version",
       "title": "Dataplane is version-incompatible with the control plane",
       "detail": "The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
-      "doc": "https://developer.konghq.com/mesh/upgrade/",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Data plane \u0026 workloads",
+      "group": "data_plane_and_workloads",
       "category": "Workload grouping",
       "title": "Universal Dataplane missing kuma.io/workload label",
       "detail": "On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.",
-      "doc": "https://developer.konghq.com/mesh/annotations/",
+      "doc_url": "https://developer.konghq.com/mesh/annotations/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/dp-1 [zone:east]"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Data plane \u0026 workloads",
+      "group": "data_plane_and_workloads",
       "category": "reachableServices",
       "title": "Dataplane uses reachableServices",
       "detail": "Replace `reachableServices` with `reachableBackends` (MeshService-based).",
-      "doc": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/dp-1 [zone:east]"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Other",
+      "group": "other",
       "category": "Non-RFC-1035 names",
       "title": "MeshService name is not a valid RFC-1035 DNS label",
       "detail": "Rename to a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter); non-conforming names are deprecated in 3.0.",
-      "doc": "https://developer.konghq.com/mesh/hostnamegenerator/",
+      "doc_url": "https://developer.konghq.com/mesh/hostnamegenerator/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "default/My_Service"
       ]
     },
     {
       "severity": "blocker",
-      "group": "Other",
+      "group": "other",
       "category": "Zone proxies",
       "title": "zoneingresses present",
       "detail": "Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.",
-      "doc": "https://developer.konghq.com/mesh/zone-proxies/",
+      "doc_url": "https://developer.konghq.com/mesh/zone-proxies/",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "zi-1"
       ]
     }

@@ -1,5 +1,5 @@
 {
-  "schema": "kuma3-preflight/v4",
+  "tool_schema": "kuma3-preflight/v5",
   "tool": "kuma3-preflight",
   "generated_at": "2026-06-25T09:30:00Z",
   "status": "inconclusive",
@@ -25,12 +25,12 @@
   "findings": [
     {
       "severity": "info",
-      "group": "Data plane & workloads",
+      "group": "data_plane_and_workloads",
       "category": "Dataplane metrics",
       "title": "Sampled dataplane inspection coverage",
       "detail": "Inspection sampled a subset of dataplanes for per-proxy checks.",
       "count": 1,
-      "examples": [
+      "example_resources": [
         "sampled 40/120"
       ]
     }
