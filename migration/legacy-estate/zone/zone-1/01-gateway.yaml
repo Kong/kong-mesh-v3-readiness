@@ -1,0 +1,83 @@
+# ZONE-1 (k8s) — kubectl --context <zone-1> apply -f 01-gateway.yaml
+#
+# The BUILTIN gateway. 3.0 drops Kuma's gateway business entirely: MeshGateway,
+# MeshGatewayInstance, MeshGatewayRoute, the builtin gateway type, Gateway API and
+# GAMMA all go, and `proxyTypes` in policy targetRef goes with them.
+#
+# Where each piece has to be applied, and why:
+#   MeshGateway         zone — GlobalToZonesFlag | ZoneToGlobalFlag, so a federated
+#                       zone CP accepts it. Cluster-scoped CRD, no namespace.
+#                       Named per zone: the resource syncs zone->global, and two
+#                       zones both publishing `edge-gateway` would collide there.
+#   MeshGatewayInstance zone — k8s-only CRD, never synced. Namespaced.
+#   MeshGatewayRoute    GLOBAL — GlobalToZonesFlag only; the zone webhook rejects
+#                       it as read-only. It lives in global/01-removed-policies.yaml
+#                       and selects the shared `edge-gateway_kuma-demo_svc` tag, so
+#                       one route covers both zones.
+#
+# The instance takes no explicit tags: 2.14.3 already rejects a `kuma.io/service`
+# tag on MeshGatewayInstance ("must not be defined") and generates the service name
+# from <name>_<namespace>_svc. Both zones name it edge-gateway in kuma-demo, so both
+# publish the same edge-gateway_kuma-demo_svc tag — that is what makes the gateway a
+# cross-zone service and lets one MeshGatewayRoute cover both.
+#
+# The MeshHTTPRoute below is what actually serves traffic. Its top-level
+# targetRef.kind is MeshGateway, which 3.0 removes (top-level targetRef is
+# restricted to Mesh and Dataplane), so it is a fixture as much as a route.
+apiVersion: kuma.io/v1alpha1
+kind: MeshGateway
+mesh: default
+metadata:
+  name: edge-gateway-zone-1
+spec:
+  selectors:
+    - match:
+        kuma.io/service: edge-gateway_kuma-demo_svc
+  conf:
+    listeners:
+      - port: 8080
+        protocol: HTTP
+        hostname: '*'
+        tags:
+          port: http-8080
+---
+apiVersion: kuma.io/v1alpha1
+kind: MeshGatewayInstance
+metadata:
+  name: edge-gateway
+  namespace: kuma-demo
+spec:
+  replicas: 1
+  serviceType: LoadBalancer
+---
+apiVersion: kuma.io/v1alpha1
+kind: MeshHTTPRoute
+metadata:
+  name: demo-app-edge-gateway
+  namespace: kong-mesh-system
+  labels:
+    kuma.io/mesh: default
+    kuma.io/origin: zone
+spec:
+  targetRef:
+    kind: MeshGateway
+    name: edge-gateway-zone-1
+  to:
+    - targetRef:
+        kind: Mesh
+      rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /
+          default:
+            backendRefs:
+              # Legacy `kuma.io/service` tag, NOT the 2.9+ MeshService resource. A
+              # name/namespace/port backendRef only resolves where the mesh actually
+              # generates MeshServices; the live `default` mesh is missing the
+              # `meshServices.mode: Everywhere` that global/00-meshes.yaml declares,
+              # so that form binds to nothing and Envoy answers 500 with the NC
+              # (NoClusterFound) flag. The tag form resolves under both `Disabled`
+              # and `Everywhere`.
+              - kind: MeshService
+                name: demo-app_kuma-demo_svc_5050

@@ -1,0 +1,96 @@
+# GLOBAL (Konnect) — kumactl apply -f 04-services-and-names.yaml
+#
+# Cross-zone / external service resources, plus the two name deprecations.
+# MeshMultiZoneService is GlobalToZonesFlag — global-only.
+# MeshExternalService is Global+Zone, but the per-zone routing it does here
+# (kuma.io/zone) is exactly what 3.0 drops, so it belongs on global.
+#
+# Names: `httpbin.ext` has a dot, `demo-app-cross-...` is 66 chars. Both are valid RFC-1123
+# subdomains (so the 2.14 CP accepts them) and invalid RFC-1035 labels (so preflight
+# flags them). An underscore does NOT work — kumactl rejects it at meta validation,
+# before any 3.0 concern applies. A k8s zone CP could hold neither name, which is why
+# they can only be fixtured from a Universal/Konnect global.
+type: MeshExternalService
+name: httpbin.ext
+mesh: default
+labels:
+  kuma.io/zone: zone-1
+spec:
+  match:
+    type: HostnameGenerator
+    port: 443
+    protocol: tcp
+  endpoints:
+    - address: httpbin.org
+      port: 443
+  tls:
+    enabled: true
+    verification:
+      serverName: httpbin.org
+      mode: Secured
+---
+type: MeshExternalService
+name: legacy-soap-backend
+mesh: default
+spec:
+  match:
+    type: HostnameGenerator
+    port: 8080
+    protocol: http
+  endpoints:
+    - address: soap.internal.example.com
+      port: 8080
+---
+type: MeshMultiZoneService
+name: demo-app-cross-zone-aggregate-service-for-the-eu-region-rollout-v2
+mesh: default
+spec:
+  ports:
+    - port: 5050
+      appProtocol: http
+  selector:
+    meshService:
+      matchLabels:
+        kuma.io/display-name: demo-app
+---
+type: MeshMultiZoneService
+name: demo-app-mz
+mesh: default
+spec:
+  ports:
+    - port: 5050
+      appProtocol: http
+  selector:
+    meshService:
+      matchLabels:
+        kuma.io/display-name: demo-app
+        k8s.kuma.io/namespace: kuma-demo
+---
+type: HostnameGenerator
+name: legacy-ext-hostnames
+labels:
+  kuma.io/origin: global
+spec:
+  selector:
+    meshExternalService:
+      matchLabels:
+        kuma.io/managed-by: legacy-estate
+  template: '{{ .DisplayName }}.ext.mesh.local'
+---
+# MeshPassthrough is where mesh.networking.outbound.passthrough has to land.
+# Present here so the migration script has a target to merge into rather than
+# create from nothing.
+type: MeshPassthrough
+name: mpass-legacy
+mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  default:
+    passthroughMode: Matched
+    appendMatch:
+      - type: Domain
+        protocol: tls
+        value: metadata.google.internal
+      - type: CIDR
+        value: 169.254.169.254/32

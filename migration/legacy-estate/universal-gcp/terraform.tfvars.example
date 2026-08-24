@@ -1,0 +1,23 @@
+project_id = "my-gcp-project"
+gcp_region = "us-central1"
+gcp_zone   = "us-central1-a"
+
+# From the zone helm values used for the Kubernetes zones (zone-1/zone-1.yaml).
+konnect_cp_id       = "464be50f-964e-4dfa-8f19-c98a27b503b1"
+konnect_kds_address = "grpcs://us.mesh.sync.konghq.tech:443"
+konnect_cp_token    = "spat_..."
+
+# All four minted against the Konnect global CP, before apply. Each one reaches its
+# VM as instance metadata and goes into kuma-dp as KUMA_DATAPLANE_RUNTIME_TOKEN.
+#
+#   kumactl generate zone-token --zone uni-zone-3 --scope ingress --valid-for 720h
+#   kumactl generate zone-token --zone uni-zone-3 --scope egress  --valid-for 720h
+#   kumactl generate dataplane-token --mesh default --name uni-demo-app --valid-for 720h
+#   kumactl generate dataplane-token --mesh default --name uni-kv       --valid-for 720h
+zone_ingress_token = "eyJhbGciOi..."
+zone_egress_token  = "eyJhbGciOi..."
+demo_app_token     = "eyJhbGciOi..."
+kv_token           = "eyJhbGciOi..."
+
+# Narrow this to the egress addresses of the zones that dial in.
+ingress_source_ranges = ["0.0.0.0/0"]

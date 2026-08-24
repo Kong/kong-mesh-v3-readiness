@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${bootstrap}
+
+cat > /etc/kuma/dataplane.yaml <<'DATAPLANE'
+${dataplane_yaml}
+DATAPLANE
+chmod 0444 /etc/kuma/dataplane.yaml
+
+# A standalone zone proxy: --proxy-type plus a ZONE token, the shape 3.0 replaces
+# with one mesh-scoped ZoneProxy authenticated by a dataplane token. That is the
+# `Zone proxies` blocker kuma3-preflight reports.
+#
+# The zone token goes in as KUMA_DATAPLANE_RUNTIME_TOKEN, same as on the app VMs;
+# kuma-dp does not care which kind of token it is, the CP does.
+docker rm -f kuma-dp >/dev/null 2>&1 || true
+docker run -d --name kuma-dp --restart always --network host \
+  -e KUMA_DATAPLANE_RUNTIME_TOKEN="$(metadata dataplane-token)" \
+  -v /etc/kuma:/etc/kuma:ro \
+  ${dp_image} run \
+  --proxy-type=${proxy_type} \
+  --cp-address=${cp_address} \
+  --skip-verify \
+  --dataplane-file=/etc/kuma/dataplane.yaml

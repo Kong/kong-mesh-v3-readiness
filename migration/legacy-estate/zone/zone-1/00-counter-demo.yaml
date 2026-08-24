@@ -1,0 +1,192 @@
+# ZONE-1 (k8s) — kubectl --context <zone-1> apply -f 00-counter-demo.yaml
+#
+# kumahq/kuma-counter-demo in the `kuma-demo` namespace, mesh `default`.
+#
+# The namespace carries BOTH the sidecar-injection label and the deprecated
+# kuma.io/mesh annotation — 3.0 replaces that annotation with a label.
+#
+# Service tags this produces, which every policy in global/ targets:
+#   demo-app_kuma-demo_svc_5050 · demo-app-v1_kuma-demo_svc_5050
+#   demo-app-v2_kuma-demo_svc_5050 · kv_kuma-demo_svc_5050
+#   edge-gateway_kuma-demo_svc (from the MeshGatewayInstance in 01-gateway.yaml)
+#
+# zone-1 runs both versions so the weighted TrafficRoute / MeshHTTPRoute splits and
+# the MeshServiceSubset selectors have real endpoints on this side.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kuma-demo
+  labels:
+    kuma.io/sidecar-injection: enabled
+  annotations:
+    # Deprecated: 3.0 wants the kuma.io/mesh LABEL. The annotation still works in
+    # 2.14 and is what most existing estates carry, so it is the fixture. Value is
+    # `default` because that is the only mesh here.
+    kuma.io/mesh: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kv
+  namespace: kuma-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kv
+  template:
+    metadata:
+      labels:
+        app: kv
+      annotations:
+        prometheus.metrics.kuma.io/port: "5670"
+        prometheus.metrics.kuma.io/path: /metrics
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/kumahq/kuma-counter-demo:latest
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: kv
+          ports:
+            - name: http
+              containerPort: 5050
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kv
+  namespace: kuma-demo
+spec:
+  selector:
+    app: kv
+  ports:
+    - protocol: TCP
+      appProtocol: http
+      port: 5050
+      targetPort: 5050
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: kuma-demo
+  labels:
+    app: demo-app
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-app
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: demo-app
+        version: v1
+      annotations:
+        kuma.io/transparent-proxying-reachable-services: "kv_kuma-demo_svc_5050,es-httpbin-legacy"
+        prometheus.metrics.kuma.io/port: "5670"
+        prometheus.metrics.kuma.io/path: /metrics
+        kuma.io/virtual-probes: enabled
+        kuma.io/virtual-probes-port: "9000"
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/kumahq/kuma-counter-demo:latest
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: demo-app
+            - name: KV_URL
+              value: http://kv.kuma-demo.svc.cluster.local:5050
+            - name: APP_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['version']
+          ports:
+            - name: http
+              containerPort: 5050
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app-v2
+  namespace: kuma-demo
+  labels:
+    app: demo-app
+    version: v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-app
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: demo-app
+        version: v2
+      annotations:
+        kuma.io/transparent-proxying-reachable-services: "kv_kuma-demo_svc_5050"
+        prometheus.metrics.kuma.io/port: "5670"
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/kumahq/kuma-counter-demo:latest
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: demo-app
+            - name: KV_URL
+              value: http://kv.kuma-demo.svc.cluster.local:5050
+            - name: APP_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['version']
+          ports:
+            - name: http
+              containerPort: 5050
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app
+  namespace: kuma-demo
+spec:
+  selector:
+    app: demo-app
+  ports:
+    - protocol: TCP
+      appProtocol: http
+      port: 5050
+      targetPort: 5050
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app-v1
+  namespace: kuma-demo
+spec:
+  selector:
+    app: demo-app
+    version: v1
+  ports:
+    - protocol: TCP
+      appProtocol: http
+      port: 5050
+      targetPort: 5050
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app-v2
+  namespace: kuma-demo
+spec:
+  selector:
+    app: demo-app
+    version: v2
+  ports:
+    - protocol: TCP
+      appProtocol: http
+      port: 5050
+      targetPort: 5050

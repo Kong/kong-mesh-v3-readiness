@@ -1,0 +1,144 @@
+# ZONE (k8s) — apply to BOTH zones:
+#   kubectl --context <zone-1> apply -f 02-zone-policies.yaml
+#   kubectl --context <zone-2> apply -f 02-zone-policies.yaml
+#
+# Zone-originated policies. Only plugin-originated (targetRef) policies can be
+# created on a federated zone CP — every legacy selector policy is
+# GlobalToZonesFlag and the zone webhook rejects it as read-only.
+#
+# Two rules the webhook enforces, both of which a migration script has to preserve:
+#   1. In the system namespace `kuma.io/origin: zone` is MANDATORY. Without it the
+#      webhook returns 403 "Applying policies on Zone CP on a system namespace
+#      requires 'kuma.io/origin' label to be set to 'zone'".
+#   2. In an application namespace the CP computes a policy ROLE (producer /
+#      consumer) instead. 3.0 drops the role concept — mt-producer-demo-app below
+#      is the fixture for that.
+#
+# Namespace assumes the Kong Mesh chart in kong-mesh-system. Change it if not.
+apiVersion: kuma.io/v1alpha1
+kind: MeshFaultInjection
+metadata:
+  name: mfi-zone-from
+  namespace: kong-mesh-system
+  labels:
+    kuma.io/mesh: default
+    kuma.io/origin: zone
+spec:
+  targetRef:
+    kind: MeshSubset
+    # proxyTypes is required here, not decorative: without it the 2.14 validator
+    # rejects `from` on a MeshSubset that could include a gateway. It is also
+    # removed in 3.0, so the fix and the fixture are the same line.
+    proxyTypes:
+      - Sidecar
+    tags:
+      kuma.io/service: kv_kuma-demo_svc_5050
+  from:
+    - targetRef:
+        kind: Mesh
+      default:
+        http:
+          - abort:
+              httpStatus: 503
+              percentage: 1
+          - delay:
+              value: 100ms
+              percentage: 5
+---
+apiVersion: kuma.io/v1alpha1
+kind: MeshCircuitBreaker
+metadata:
+  name: mcb-zone-from
+  namespace: kong-mesh-system
+  labels:
+    kuma.io/mesh: default
+    kuma.io/origin: zone
+spec:
+  targetRef:
+    kind: Mesh
+  from:
+    - targetRef:
+        kind: Mesh
+      default:
+        connectionLimits:
+          maxConnections: 512
+          maxRetries: 3
+---
+# Top-level MeshServiceSubset: dropped in 3.0 (top-level targetRef is restricted
+# to Mesh and Dataplane). `version: v1` exists in both zones, so this one applies
+# on both.
+apiVersion: kuma.io/v1alpha1
+kind: MeshProxyPatch
+metadata:
+  name: mpp-zone-subset
+  namespace: kong-mesh-system
+  labels:
+    kuma.io/mesh: default
+    kuma.io/origin: zone
+spec:
+  targetRef:
+    kind: MeshServiceSubset
+    name: demo-app_kuma-demo_svc_5050
+    tags:
+      version: v1
+  default:
+    appendModifications:
+      - cluster:
+          operation: Patch
+          match:
+            origin: outbound
+          value: |
+            perConnectionBufferLimitBytes: 32768
+---
+# Sidecar-side canary, the MeshHTTPRoute twin of tr-app-canary in global/01. Both
+# a top-level MeshSubset and MeshServiceSubset backendRefs, all of which go.
+apiVersion: kuma.io/v1alpha1
+kind: MeshHTTPRoute
+metadata:
+  name: mhr-zone-canary
+  namespace: kong-mesh-system
+  labels:
+    kuma.io/mesh: default
+    kuma.io/origin: zone
+spec:
+  targetRef:
+    kind: MeshSubset
+    tags:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+  to:
+    - targetRef:
+        kind: MeshService
+        name: kv_kuma-demo_svc_5050
+      rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /
+          default:
+            backendRefs:
+              - kind: MeshServiceSubset
+                name: kv_kuma-demo_svc_5050
+                tags:
+                  app: kv
+                weight: 100
+---
+# Namespaced -> the CP computes a PRODUCER role. The role concept is gone in 3.0,
+# so this has to be re-expressed without it.
+apiVersion: kuma.io/v1alpha1
+kind: MeshTimeout
+metadata:
+  name: mt-producer-demo-app
+  namespace: kuma-demo
+  labels:
+    kuma.io/mesh: default
+spec:
+  targetRef:
+    kind: MeshService
+    name: demo-app
+  to:
+    - targetRef:
+        kind: Mesh
+      default:
+        connectionTimeout: 5s
+        http:
+          requestTimeout: 10s

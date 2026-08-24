@@ -1,0 +1,67 @@
+# ZONE-1 (k8s) — kubectl --context <zone-1> apply -f 02-uni-zone-route.yaml
+#
+# Sends `/uni` on zone-1's builtin gateway to demo-app in the UNIVERSAL zone
+# (uni-zone-3, see ../../universal-gcp). Everything else on that gateway keeps
+# going to the local demo-app through 01-gateway.yaml's catch-all `/` rule —
+# longest prefix wins, so the two routes coexist on the same MeshGateway.
+#
+# This is a route, not an HTTP redirect: a 301/302 would hand the browser an
+# address inside the Universal zone's VPC, which no external client can reach. The
+# hop stays inside the mesh — zone-1 Envoy -> zone-1 ZoneEgress -> uni-zone-3's
+# ZoneIngress (its external address) -> uni-demo-app. For a genuine redirect,
+# replace the filter below with:
+#
+#   - type: RequestRedirect
+#     requestRedirect: { hostname: <public host>, statusCode: 302 }
+#
+# Applied on the ZONE: MeshHTTPRoute is GlobalToZones | ZoneToGlobal, and in the
+# system namespace a zone CP demands `kuma.io/origin: zone` — without it the
+# webhook returns 403.
+#
+# Two things it needs to actually carry traffic:
+#   - uni-demo-app online in uni-zone-3, so the tag has endpoints on global
+#   - zone-1's egress address inside `ingress_source_ranges` on the Universal zone,
+#     or its ZoneIngress port is closed to this zone
+#
+# Fixture value, on top of being the cross-zone path: the top-level targetRef kind
+# is MeshGateway, which 3.0 removes along with the rest of Kuma's gateway business
+# (top-level targetRef is restricted to Mesh and Dataplane).
+apiVersion: kuma.io/v1alpha1
+kind: MeshHTTPRoute
+metadata:
+  name: uni-demo-app-edge-gateway
+  namespace: kong-mesh-system
+  labels:
+    kuma.io/mesh: default
+    kuma.io/origin: zone
+spec:
+  targetRef:
+    kind: MeshGateway
+    name: edge-gateway-zone-1
+  to:
+    - targetRef:
+        kind: Mesh
+      rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /uni
+          default:
+            filters:
+              # The counter demo serves from `/`, so strip the prefix that selected
+              # this rule before forwarding.
+              - type: URLRewrite
+                urlRewrite:
+                  path:
+                    type: ReplacePrefixMatch
+                    replacePrefixMatch: /
+            backendRefs:
+              # Legacy `kuma.io/service` tag form, same as 01-gateway.yaml uses and
+              # for the same reason: the live `default` mesh does not have
+              # `meshServices.mode: Everywhere`, so a name/namespace/port backendRef
+              # binds to nothing and Envoy answers 500 with the NC flag. Only the
+              # Universal zone publishes this tag, which is what makes the hop
+              # cross-zone — no kuma.io/zone subset selector needed, and a good
+              # thing too, since 3.0 removes that kind from `to` entirely.
+              - kind: MeshService
+                name: uni-demo-app

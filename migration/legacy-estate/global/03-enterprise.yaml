@@ -1,0 +1,79 @@
+# GLOBAL (Konnect) — kumactl apply -f 03-enterprise.yaml
+#
+# Kong Mesh enterprise policies. None of these appear in Kuma's UPGRADE.md, so a
+# migration script written against Kuma alone misses them entirely.
+#
+# MeshGlobalRateLimit is REMOVED in 3.0 with no replacement — preflight flags any
+# instance as a blocker (checkRemovedEnterprisePolicies).
+# MeshOPA survives, but breaks three ways at once: the top-level targetRef kind is
+# rejected, targetRef.name is pruned (silent scope widening from one service to the
+# whole mesh), and rego moves to the SecureDataSource shape.
+#
+# The rate-limit service URL is intentionally not deployed — the policy has to
+# exist, not function.
+type: MeshGlobalRateLimit
+name: mgrl-per-tenant
+mesh: default
+spec:
+  targetRef:
+    kind: MeshService
+    name: demo-app_kuma-demo_svc_5050
+  from:
+    - targetRef:
+        kind: Mesh
+      default:
+        mode: Limit
+        backend:
+          rateLimitService:
+            url: http://ratelimit.mesh-observability:8081
+            timeout: 100ms
+            limitOnServiceFail: true
+        http:
+          onRateLimit:
+            status: 429
+            headers:
+              set:
+                - name: x-kuma-global-rate-limited
+                  value: "true"
+          ratelimitOnRequest:
+            - kind: OnHeader
+              name: x-tenant
+              limits:
+                - value: gold
+                  requestRate:
+                    num: 5000
+                    interval: 1s
+                - value: free
+                  requestRate:
+                    num: 50
+                    interval: 1s
+---
+type: MeshOPA
+name: mopa-authz
+mesh: default
+spec:
+  targetRef:
+    kind: MeshService
+    name: demo-app_kuma-demo_svc_5050
+  default:
+    authConfig:
+      onAgentFailure: Deny
+      requestBody:
+        maxSize: 8192
+        sendRawBody: false
+    appendPolicies:
+      - rego:
+          inlineString: |
+            # GET and POST both allowed. GET alone left the counter-demo's
+            # increment button dead: POST /api/counter came back 403 with an empty
+            # body and the frontend died on `Response is not JSON`. The fixture
+            # only needs a non-trivial rego document, not a broken demo.
+            package envoy.authz
+            import input.attributes.request.http as http_request
+            default allow = false
+            allow {
+              http_request.method == "GET"
+            }
+            allow {
+              http_request.method == "POST"
+            }

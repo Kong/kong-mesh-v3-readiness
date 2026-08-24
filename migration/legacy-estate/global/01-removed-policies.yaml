@@ -1,0 +1,301 @@
+# GLOBAL (Konnect) — kumactl apply -f 01-removed-policies.yaml
+#
+# The 13 removed legacy selector policies + ExternalService + MeshGatewayRoute.
+# Every one of these is GlobalToZonesFlag (ProvidedByGlobal only), so a federated
+# zone CP rejects them as read-only — global is the only place they can exist.
+#
+# Topology they describe (kuma-counter-demo, both zones):
+#   edge-gateway_kuma-demo_svc  ->  demo-app_kuma-demo_svc_5050  (canary by `version`)
+#   demo-app_kuma-demo_svc_5050 ->  kv_kuma-demo_svc_5050
+#   demo-app_kuma-demo_svc_5050 ->  es-httpbin-legacy            (external)
+#
+# preflight: `Removed policies` / `Removed resources`, one finding per kind.
+type: TrafficPermission
+name: tp-allow-all
+mesh: default
+sources:
+  - match:
+      kuma.io/service: "*"
+destinations:
+  - match:
+      kuma.io/service: "*"
+---
+type: TrafficPermission
+name: tp-app-to-kv
+mesh: default
+sources:
+  - match:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+destinations:
+  - match:
+      kuma.io/service: kv_kuma-demo_svc_5050
+---
+type: TrafficRoute
+name: tr-all-default
+mesh: default
+sources:
+  - match:
+      kuma.io/service: "*"
+destinations:
+  - match:
+      kuma.io/service: "*"
+conf:
+  destination:
+    kuma.io/service: "*"
+---
+# Weighted split across a tag subset that only fully exists in zone-1 (`version: v2`
+# has no endpoint in zone-2). The hardest TrafficRoute shape to hand-port to
+# MeshHTTPRoute, and the one a migration script must not silently drop.
+type: TrafficRoute
+name: tr-app-canary
+mesh: default
+sources:
+  - match:
+      kuma.io/service: edge-gateway_kuma-demo_svc
+destinations:
+  - match:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+conf:
+  split:
+    - weight: 90
+      destination:
+        kuma.io/service: demo-app_kuma-demo_svc_5050
+        version: v1
+    - weight: 10
+      destination:
+        kuma.io/service: demo-app_kuma-demo_svc_5050
+        version: v2
+  loadBalancer:
+    roundRobin: {}
+---
+type: TrafficLog
+name: tl-all
+mesh: default
+sources:
+  - match:
+      kuma.io/service: "*"
+destinations:
+  - match:
+      kuma.io/service: "*"
+conf:
+  backend: logstash-1
+---
+type: TrafficTrace
+name: tt-all
+mesh: default
+selectors:
+  - match:
+      kuma.io/service: "*"
+conf:
+  backend: zipkin-1
+---
+type: FaultInjection
+name: fi-kv-delay
+mesh: default
+sources:
+  - match:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+destinations:
+  - match:
+      kuma.io/service: kv_kuma-demo_svc_5050
+      kuma.io/protocol: http
+conf:
+  delay:
+    percentage: 5
+    value: 100ms
+  abort:
+    percentage: 1
+    httpStatus: 503
+  responseBandwidth:
+    percentage: 5
+    limit: 50 kbps
+---
+type: HealthCheck
+name: hc-kv
+mesh: default
+sources:
+  - match:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+destinations:
+  - match:
+      kuma.io/service: kv_kuma-demo_svc_5050
+conf:
+  interval: 10s
+  timeout: 2s
+  unhealthyThreshold: 3
+  healthyThreshold: 1
+  failTrafficOnPanic: true
+  noTrafficInterval: 60s
+  healthyPanicThreshold: 60
+  reuseConnection: true
+---
+type: CircuitBreaker
+name: cb-kv
+mesh: default
+sources:
+  - match:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+destinations:
+  - match:
+      kuma.io/service: kv_kuma-demo_svc_5050
+conf:
+  interval: 5s
+  baseEjectionTime: 30s
+  maxEjectionPercent: 20
+  detectors:
+    totalErrors:
+      consecutive: 5
+    gatewayErrors:
+      consecutive: 3
+    localErrors:
+      consecutive: 2
+    standardDeviation:
+      requestVolume: 10
+      minimumHosts: 5
+      factor: 1.9
+---
+type: Retry
+name: rt-kv
+mesh: default
+sources:
+  - match:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+destinations:
+  - match:
+      kuma.io/service: kv_kuma-demo_svc_5050
+conf:
+  http:
+    numRetries: 5
+    perTryTimeout: 200ms
+    backOff:
+      baseInterval: 25ms
+      maxInterval: 250ms
+    retriableStatusCodes:
+      - 500
+      - 502
+      - 503
+  tcp:
+    maxConnectAttempts: 3
+---
+# The `grpc` section and http.grpc.* are separately deprecated: 3.0 folds them
+# into `timeout.http.*`. Nothing maps them automatically.
+type: Timeout
+name: to-kv
+mesh: default
+sources:
+  - match:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+destinations:
+  - match:
+      kuma.io/service: kv_kuma-demo_svc_5050
+conf:
+  connectTimeout: 5s
+  tcp:
+    idleTimeout: 1h
+  http:
+    requestTimeout: 15s
+    idleTimeout: 1h
+  grpc:
+    streamIdleTimeout: 5m
+    maxStreamDuration: 30m
+---
+type: RateLimit
+name: rl-app
+mesh: default
+sources:
+  - match:
+      kuma.io/service: edge-gateway_kuma-demo_svc
+destinations:
+  - match:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+conf:
+  http:
+    requests: 100
+    interval: 1s
+    onRateLimit:
+      status: 429
+      headers:
+        - key: x-kuma-rate-limited
+          value: "true"
+          append: false
+---
+# ProxyTemplate is the only removed policy with no mechanical mapping to a Mesh*
+# equivalent. Real modifications, not a stub — this is the migration script's
+# hardest case and it must fail loudly rather than emit an empty MeshProxyPatch.
+type: ProxyTemplate
+name: pt-outbound-tuning
+mesh: default
+selectors:
+  - match:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+conf:
+  imports:
+    - default-proxy
+  modifications:
+    - cluster:
+        operation: patch
+        match:
+          origin: outbound
+        value: |
+          connectTimeout: 9s
+          perConnectionBufferLimitBytes: 32768
+    - networkFilter:
+        operation: addFirst
+        match:
+          origin: inbound
+          name: envoy.filters.network.rbac
+        value: |
+          name: envoy.filters.network.local_ratelimit
+          typedConfig:
+            '@type': type.googleapis.com/envoy.extensions.filters.network.local_ratelimit.v3.LocalRateLimit
+            statPrefix: legacy_local_rl
+            tokenBucket:
+              maxTokens: 100
+              tokensPerFill: 100
+              fillInterval: 1s
+---
+type: VirtualOutbound
+name: vo-legacy-hostnames
+mesh: default
+selectors:
+  - match:
+      kuma.io/service: "*"
+conf:
+  host: "{{.svc}}.legacy.mesh"
+  port: "8080"
+  parameters:
+    - name: svc
+      tagKey: kuma.io/service
+---
+type: ExternalService
+name: es-httpbin-legacy
+mesh: default
+tags:
+  kuma.io/service: es-httpbin-legacy
+  kuma.io/protocol: http
+networking:
+  address: httpbin.org:443
+  tls:
+    enabled: true
+    allowRenegotiation: false
+---
+# MeshGatewayRoute is GlobalToZonesFlag — global-only, even though the MeshGateway
+# it selects is created on each zone (see zone/zone-*/01-gateway.yaml). Both zones
+# publish the same kuma.io/service tag, so one route covers both.
+type: MeshGatewayRoute
+name: edge-route-legacy
+mesh: default
+selectors:
+  - match:
+      kuma.io/service: edge-gateway_kuma-demo_svc
+conf:
+  http:
+    rules:
+      - matches:
+          - path:
+              match: PREFIX
+              value: /legacy
+        backends:
+          - destination:
+              kuma.io/service: demo-app_kuma-demo_svc_5050
+            weight: 100

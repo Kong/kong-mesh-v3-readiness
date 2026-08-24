@@ -1,0 +1,48 @@
+# GLOBAL (Konnect) — kumactl apply -f 00-meshes.yaml
+#
+# Mesh is GlobalToZonesFlag: read-only on a federated zone CP. It can only be
+# created here, and it has to exist before anything else in global/ is applied.
+#
+# One mesh, `default`, carrying every inline section 3.0 removes — mtls, metrics,
+# tracing, logging, routing, networking.outbound.passthrough, constraints.
+#
+# meshServices.mode is `Everywhere`, not `Disabled`: any value other than
+# `Exclusive` is the same single blocker either way, and `Everywhere` is both the
+# realistic mid-migration position and the one that actually generates
+# MeshServices — which the producer-role policy and the MeshMultiZoneServices need
+# in order to resolve to anything.
+#
+# The zipkin and logstash endpoints are intentionally not deployed. Envoy builds
+# STRICT_DNS clusters with no endpoints, which is harmless but produces continuous
+# resolution failures in every proxy log — worth remembering when reading them.
+type: Mesh
+name: default
+mtls:
+  enabledBackend: ca-builtin
+  backends:
+    - name: ca-builtin
+      type: builtin
+      dpCert:
+        rotation:
+          expiration: 720h
+      conf:
+        caCert:
+          RSAbits: 2048
+          expiration: 10y
+meshServices:
+  mode: Everywhere
+routing:
+  localityAwareLoadBalancing: true
+  zoneEgress: true
+  defaultForbidMeshExternalServiceAccess: true
+networking:
+  outbound:
+    passthrough: false
+constraints:
+  dataplaneProxy:
+    requirements:
+      - tags:
+          kuma.io/service: "*"
+    restrictions:
+      - tags:
+          kuma.io/service: restricted-backend_kuma-demo_svc_5050

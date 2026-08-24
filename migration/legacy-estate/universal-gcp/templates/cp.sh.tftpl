@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+${bootstrap}
+
+# Zone mode against Konnect. The two KMESH_ variables are the Universal spelling of
+# `controlPlane.konnect.cpId` and the `cp-token` secret in the zone helm values.
+# Memory store: this zone owns no state a restart needs to keep — meshes and
+# policies live on the global CP and arrive over KDS.
+#
+# Token authn is left at the default on both proxy types. Every proxy in this zone
+# carries a real token; they are minted against the global CP before apply, so the
+# zone CP never has to hand one out.
+docker rm -f kuma-cp >/dev/null 2>&1 || true
+docker run -d --name kuma-cp --restart always --network host \
+  -e KUMA_MODE=zone \
+  -e KUMA_MULTIZONE_ZONE_NAME=${zone_name} \
+  -e KUMA_MULTIZONE_ZONE_GLOBAL_ADDRESS=${kds_address} \
+  -e KMESH_MULTIZONE_ZONE_KONNECT_CP_ID=${konnect_cp_id} \
+  -e KMESH_MULTIZONE_ZONE_KDS_AUTH_CP_TOKEN_INLINE="$(metadata konnect-cp-token)" \
+  -e KUMA_STORE_TYPE=memory \
+  -e KUMA_GENERAL_ADVERTISED_HOSTNAME=${cp_ip} \
+  ${cp_image} run
+
+until curl -sf http://127.0.0.1:5681/ >/dev/null 2>&1; do sleep 3; done

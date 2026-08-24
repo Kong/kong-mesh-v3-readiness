@@ -1,0 +1,354 @@
+# GLOBAL (Konnect) — kumactl apply -f 02-targetref-deprecated.yaml
+#
+# targetRef policies that survive into 3.0 but carry a shape that does not.
+# These are the interesting migration-script cases: the KIND stays, the SPEC has
+# to be rewritten.
+#
+# preflight categories tripped here:
+#   Policy `from` field · Top-level targetRef kind · targetRef proxyTypes ·
+#   `to` targetRef kind · OpenTelemetry endpoint · Relocated policy fields
+# from[] -> rules[] with spiffeID. The single most common rewrite in the estate.
+type: MeshTrafficPermission
+name: mtp-from-service
+mesh: default
+spec:
+  targetRef:
+    kind: MeshSubset
+    tags:
+      kuma.io/service: demo-app_kuma-demo_svc_5050
+  from:
+    - targetRef:
+        kind: MeshService
+        name: edge-gateway_kuma-demo_svc
+      default:
+        action: Allow
+    - targetRef:
+        kind: MeshSubset
+        tags:
+          kuma.io/zone: zone-2
+      default:
+        action: Deny
+---
+# Baseline allow for kv, the targetRef replacement for the legacy TrafficPermission
+# tp-allow-all / tp-app-to-kv in global/01. With mTLS on and no permission matching
+# an inbound, Kuma denies it - including the active health check from mhc-panic-threshold,
+# which then reports every kv endpoint unhealthy and, with failTrafficOnPanic, drops
+# all traffic to the service. from[] is still the only shape 2.14 accepts here; 3.0
+# rewrites it to rules[] with spiffeID, same as mtp-from-service above.
+type: MeshTrafficPermission
+name: mtp-allow-kv
+mesh: default
+spec:
+  targetRef:
+    kind: MeshSubset
+    tags:
+      kuma.io/service: kv_kuma-demo_svc_5050
+  from:
+    - targetRef:
+        kind: Mesh
+      default:
+        action: Allow
+---
+# Lets zone-1's builtin gateway reach uni-demo-app in the Universal zone, the
+# destination of zone/zone-1/02-uni-zone-route.yaml's `/uni` rule. Nothing else
+# grants that inbound, and with mTLS on and no matching permission Kuma denies it:
+# without this the hop dies at zone-1's ZoneEgress with 403 "RBAC: access denied",
+# never reaching uni-zone-3.
+#
+# GLOBAL, not zone-1: the enforcement point is uni-demo-app's own inbound in
+# uni-zone-3, and a zone-origin policy in zone-1 never syncs there.
+type: MeshTrafficPermission
+name: mtp-allow-uni-demo-app
+mesh: default
+spec:
+  targetRef:
+    kind: MeshSubset
+    tags:
+      kuma.io/service: uni-demo-app
+  from:
+    - targetRef:
+        kind: MeshService
+        name: edge-gateway_kuma-demo_svc
+      default:
+        action: Allow
+---
+# uni-demo-app's own dependency, the Universal counterpart of mtp-allow-kv above.
+# Without it `/uni/api/counter` answers 500 "failed to retrieve zone": the page
+# renders, then every kv call from uni-demo-app is denied.
+type: MeshTrafficPermission
+name: mtp-allow-uni-kv
+mesh: default
+spec:
+  targetRef:
+    kind: MeshSubset
+    tags:
+      kuma.io/service: uni-kv
+  from:
+    - targetRef:
+        kind: Mesh
+      default:
+        action: Allow
+---
+type: MeshTimeout
+name: mt-from-mesh
+mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  from:
+    - targetRef:
+        kind: Mesh
+      default:
+        connectionTimeout: 5s
+        idleTimeout: 1h
+        http:
+          requestTimeout: 15s
+          streamIdleTimeout: 1h
+---
+type: MeshTLS
+name: mtls-from
+mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  from:
+    - targetRef:
+        kind: Mesh
+      default:
+        mode: Permissive
+        tlsVersion:
+          min: TLS12
+          max: TLS13
+---
+type: MeshRateLimit
+name: mrl-from
+mesh: default
+spec:
+  targetRef:
+    kind: MeshService
+    name: demo-app_kuma-demo_svc_5050
+  from:
+    - targetRef:
+        kind: Mesh
+      default:
+        local:
+          http:
+            requestRate:
+              num: 100
+              interval: 1s
+            onRateLimit:
+              status: 429
+---
+# proxyTypes is removed outright with gateway support. Top-level MeshGateway kind
+# goes with it.
+type: MeshCircuitBreaker
+name: mcb-gateway-proxytypes
+mesh: default
+spec:
+  targetRef:
+    kind: MeshSubset
+    tags:
+      kuma.io/service: edge-gateway_kuma-demo_svc
+    proxyTypes:
+      - Gateway
+  to:
+    - targetRef:
+        kind: Mesh
+      default:
+        connectionLimits:
+          maxConnections: 1024
+          maxPendingRequests: 1024
+        outlierDetection:
+          interval: 5s
+          baseEjectionTime: 30s
+          detectors:
+            totalFailures:
+              consecutive: 5
+---
+type: MeshRetry
+name: mretry-sidecar-proxytypes
+mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+    proxyTypes:
+      - Sidecar
+  to:
+    - targetRef:
+        kind: Mesh
+      default:
+        http:
+          numRetries: 3
+          perTryTimeout: 200ms
+---
+# to[] loses the subset/selector kinds. MeshServiceSubset here, MeshSubset below.
+type: MeshLoadBalancingStrategy
+name: mlbs-ringhash-sourceip
+mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  to:
+    # Deliberately an inert target: Kuma 2.14 translates `type: SourceIP` into an
+    # Envoy hash policy with no policy_specifier, and a RingHash/Maglev cluster whose
+    # endpoints are cross-zone-only (priority 1) segfaults Envoy 1.38.2 outright.
+    # preflight reads to[].default.loadBalancer.*.hashPolicies and ignores the target,
+    # so pointing at a service that does not exist keeps the finding and spares the mesh.
+    - targetRef:
+        kind: MeshService
+        name: legacy-hash-sink_kuma-demo_svc_5050
+      default:
+        loadBalancer:
+          type: RingHash
+          ringHash:
+            minRingSize: 64
+            maxRingSize: 1024
+            hashFunction: MurmurHash2
+            hashPolicies:
+              - type: SourceIP
+                connection:
+                  sourceIP: true
+              - type: Header
+                header:
+                  name: x-tenant
+---
+type: MeshLoadBalancingStrategy
+name: mlbs-maglev-subset
+mesh: default
+spec:
+  targetRef:
+    kind: MeshSubset
+    tags:
+      kuma.io/service: edge-gateway_kuma-demo_svc
+  to:
+    # Inert target for the same reason as mlbs-ringhash-sourceip above.
+    - targetRef:
+        kind: MeshService
+        name: legacy-hash-sink_kuma-demo_svc_5050
+      default:
+        loadBalancer:
+          type: Maglev
+          maglev:
+            tableSize: 65537
+            hashPolicies:
+              - type: SourceIP
+                connection:
+                  sourceIP: true
+---
+# healthyPanicThreshold moves to MeshCircuitBreaker in 3.0 — a cross-policy move,
+# not a rename. A migration script has to merge it into a different resource.
+type: MeshHealthCheck
+name: mhc-panic-threshold
+mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  to:
+    # kv runs only in zone-2, so this stays an in-zone health check. `kind: Mesh`
+    # here would also cover demo-app, whose cluster mixes local endpoints with
+    # cross-zone ones that all collapse onto the ZoneEgress address - three
+    # "hosts" sharing one address make per-endpoint health status meaningless.
+    - targetRef:
+        kind: MeshService
+        name: kv_kuma-demo_svc_5050
+      default:
+        interval: 10s
+        timeout: 2s
+        unhealthyThreshold: 3
+        healthyThreshold: 1
+        failTrafficOnPanic: true
+        healthyPanicThreshold: 60
+        http:
+          # kuma-counter-demo serves its API under /api (/api/version, /api/counter,
+          # /api/key-value) and the UI at /. There is no /health: checking it 404s,
+          # every endpoint goes unhealthy, and failTrafficOnPanic then drops all
+          # traffic to the service.
+          path: /api/version
+          expectedStatuses:
+            - 200
+---
+# OpenTelemetry `endpoint` -> `backendRef` (MeshOpenTelemetryBackend). Three
+# different spec shapes carry it: to[].default (MeshAccessLog), spec.default
+# (MeshTrace, MeshMetric).
+type: MeshAccessLog
+name: mal-otel-endpoint
+mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  to:
+    - targetRef:
+        kind: Mesh
+      default:
+        backends:
+          - type: OpenTelemetry
+            openTelemetry:
+              endpoint: otel-collector.mesh-observability:4317
+              attributes:
+                - key: mesh
+                  value: default
+          - type: File
+            file:
+              path: /dev/stdout
+---
+type: MeshTrace
+name: mtrace-otel-endpoint
+mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  default:
+    backends:
+      - type: OpenTelemetry
+        openTelemetry:
+          endpoint: otel-collector.mesh-observability:4317
+    sampling:
+      overall: 100
+      random: 100
+      client: 100
+---
+type: MeshMetric
+name: mmetric-otel-endpoint
+mesh: default
+spec:
+  targetRef:
+    kind: Mesh
+  default:
+    backends:
+      - type: OpenTelemetry
+        openTelemetry:
+          endpoint: otel-collector.mesh-observability:4317
+          refreshInterval: 30s
+    sidecar:
+      includeUnused: false
+    applications:
+      - name: demo-app
+        path: /metrics
+        port: 5050
+---
+# MeshTrust.spec.origin -> status.origin. Only reachable when the CP serves
+# meshtrusts; on a CP that does not, preflight records nothing (listIfServed).
+type: MeshTrust
+name: trust-legacy-origin
+mesh: default
+spec:
+  # Deprecated: 3.0 moves this to status.origin. It is an object, not a string —
+  # `origin: Global` is rejected by the 2.14 schema.
+  origin:
+    kri: kri_mid_default_zone-1__legacy-identity_
+  trustDomain: default.mesh.local
+  caBundles:
+    - type: Pem
+      pem:
+        value: |
+          -----BEGIN CERTIFICATE-----
+          MIIBjDCCATGgAwIBAgIUTOlXawGhP+cA0KRzaZ7kaPdqDaEwCgYIKoZIzj0EAwIw
+          GzEZMBcGA1UEAwwQbGVnYWN5LWVzdGF0ZS1jYTAeFw0yNjA4MjQxNDI2MjFaFw0z
+          NjA4MjExNDI2MjFaMBsxGTAXBgNVBAMMEGxlZ2FjeS1lc3RhdGUtY2EwWTATBgcq
+          hkjOPQIBBggqhkjOPQMBBwNCAAQD9R9cQZ6CvigxrGqg0JYMUn4H0wlqtZmFrf20
+          9ACAutCeamEg1pNT2WX/WQ9z7AcbRvukomW/5hK39bBXuaP8o1MwUTAdBgNVHQ4E
+          FgQU5vOJkAT8uHxiaNJlFtHkMH04drAwHwYDVR0jBBgwFoAU5vOJkAT8uHxiaNJl
+          FtHkMH04drAwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNJADBGAiEAiCRk
+          e/2iZ06cCJORxfNeuQCYvLOKCsZnvblZWAGIqv0CIQCNDvy/7XLsiRvI7TCeYpOA
+          GjCUjG0RUESD8e7PFW6fgw==
+          -----END CERTIFICATE-----

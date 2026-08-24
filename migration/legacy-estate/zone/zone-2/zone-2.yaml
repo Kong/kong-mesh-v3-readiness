@@ -1,0 +1,28 @@
+kuma:
+  cni:
+    enabled: true
+    chained: true
+    netDir: /etc/cni/net.d
+    binDir: /home/kubernetes/bin
+    confName: 10-gke-cni.conflist
+  ingress:
+    enabled: true
+  egress:
+    enabled: true
+  controlPlane:
+    mode: zone
+    zone: zone-2
+    kdsGlobalAddress: grpcs://us.mesh.sync.konghq.tech:443
+    konnect:
+      cpId: 464be50f-964e-4dfa-8f19-c98a27b503b1
+    secrets:
+      - Env: KMESH_MULTIZONE_ZONE_KDS_AUTH_CP_TOKEN_INLINE
+        Secret: cp-token
+        Key: token
+  dataPlane:
+    features:
+      unifiedResourceNaming: false
+  experimental:
+    autoReachableServices: false
+    sidecarContainers: true
+    deltaXds: false

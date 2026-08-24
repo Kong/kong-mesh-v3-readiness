@@ -1,0 +1,21 @@
+# Shared prologue: docker, and the metadata reader every VM pulls its token with.
+#
+# Tokens travel as instance metadata rather than through Secret Manager: they are
+# all minted up front against the global CP, so there is nothing for the zone to
+# hand out at boot and nothing that has to be created before the VMs exist.
+
+exec > >(tee -a /var/log/kmesh-bootstrap.log) 2>&1
+
+export DEBIAN_FRONTEND=noninteractive
+if ! command -v docker >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+  apt-get update -qq
+  apt-get install -y -qq docker.io jq curl ca-certificates
+fi
+systemctl enable --now docker
+
+mkdir -p /etc/kuma
+
+metadata() {
+  curl -sf -H 'Metadata-Flavor: Google' \
+    "http://metadata.google.internal/computeMetadata/v1/instance/attributes/$1"
+}
