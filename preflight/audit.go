@@ -919,7 +919,7 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 			return nil
 		}
 		a.rep.add(info, cpConfigCategory, "No zones connected to the global control plane",
-			cpConfigDetail("zones", "0", "one or more connected zones"),
+			"This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
 			"zones=0")
 		return nil
 	}
