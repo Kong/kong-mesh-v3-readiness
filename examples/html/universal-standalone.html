@@ -344,7 +344,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Inbound tags still enabled",
-      "detail": "3.0 runs with inbound tags disabled; set `inboundTagsDisabled: true` and validate first.",
+      "detail": "the field experimental.inboundTagsDisabled value has to be changed from false to true",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
@@ -356,7 +356,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Unified resource naming not enabled",
-      "detail": "Unified resource naming is mandatory in 3.0; enable it and validate first.",
+      "detail": "the field runtime.kubernetes.injector.unifiedResourceNamingEnabled value has to be changed from false to true",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [

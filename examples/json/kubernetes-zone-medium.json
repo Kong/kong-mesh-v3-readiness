@@ -30,7 +30,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Unified resource naming not enabled",
-      "detail": "Unified resource naming is mandatory in 3.0; enable it and validate first.",
+      "detail": "the field runtime.kubernetes.injector.unifiedResourceNamingEnabled value has to be changed from false to true",
       "count": 1,
       "example_resources": [
         "experimental.unifiedResourceNaming=false"
@@ -42,7 +42,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Delta xDS not enabled",
-      "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
+      "detail": "the field experimental.deltaXds value has to be changed from false to true",
       "count": 1,
       "example_resources": [
         "experimental.deltaXds=false"

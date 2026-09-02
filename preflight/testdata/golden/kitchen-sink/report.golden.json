@@ -24,7 +24,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Delta xDS not enabled",
-      "detail": "Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
+      "detail": "the field experimental.deltaXds value has to be changed from false to true",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
@@ -36,7 +36,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Global control plane on Kubernetes",
-      "detail": "Global CP on Kubernetes is dropped as a deployment mode in 3.0; migrate the global CP to Universal.",
+      "detail": "the field mode value has to be changed from global to universal",
       "doc_url": "https://developer.konghq.com/mesh/universal/",
       "count": 1,
       "example_resources": [
@@ -48,7 +48,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Inbound tags still enabled",
-      "detail": "3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
+      "detail": "the field experimental.inboundTagsDisabled value has to be changed from false to true",
       "doc_url": "https://developer.konghq.com/mesh/meshservice/",
       "count": 1,
       "example_resources": [
@@ -60,7 +60,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "KDS event-based watchdog not enabled",
-      "detail": "The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
+      "detail": "the field experimental.kdsEventBasedWatchdog.enabled value has to be changed from false to true",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
@@ -72,7 +72,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Native sidecar containers not enabled",
-      "detail": "Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
+      "detail": "the field experimental.sidecarContainers value has to be changed from false to true",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
@@ -84,7 +84,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Unified resource naming not enabled",
-      "detail": "3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
+      "detail": "the field runtime.kubernetes.injector.unifiedResourceNamingEnabled value has to be changed from false to true",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
@@ -96,7 +96,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "autoReachableServices enabled",
-      "detail": "`autoReachableServices` is removed entirely in 3.0; stop relying on it before upgrading.",
+      "detail": "the field experimental.autoReachableServices value has to be changed from true to false",
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 1,
       "example_resources": [
@@ -108,7 +108,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "eBPF transparent proxy enabled",
-      "detail": "The eBPF transparent proxy is removed in 3.0; switch to the iptables transparent proxy.",
+      "detail": "the field runtime.kubernetes.injector.ebpf.enabled value has to be changed from true to false",
       "doc_url": "https://developer.konghq.com/mesh/transparent-proxying/",
       "count": 1,
       "example_resources": [
