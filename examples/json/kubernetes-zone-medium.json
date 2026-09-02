@@ -33,7 +33,7 @@
       "detail": "the field runtime.kubernetes.injector.unifiedResourceNamingEnabled value has to be changed from false to true",
       "count": 1,
       "example_resources": [
-        "experimental.unifiedResourceNaming=false"
+        "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
