@@ -36,7 +36,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "No zones connected to the global control plane",
-      "detail": "the field zones value has to be changed from 0 to one or more connected zones",
+      "detail": "This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
       "count": 1,
       "example_resources": [
         "zones=0"

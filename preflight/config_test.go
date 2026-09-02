@@ -141,9 +141,11 @@ func TestControlPlaneConfigMissingIsCoverageGap(t *testing.T) {
 }
 
 // TestControlPlaneConfigDetailsShareOneShape guards the contract downstream
-// consumers rely on: every Control plane configuration finding — including the
-// informational no-zones one a global emits — states its remediation as the same
-// sentence, so none of them can drift back into free-form phrasing.
+// consumers rely on: every actionable Control plane configuration finding states
+// its remediation as the same sentence, so none of them can drift back into
+// free-form phrasing. The informational no-zones finding a global emits is
+// exempt — it reports an observation, not a field to change, and the template
+// reads as nonsense there.
 func TestControlPlaneConfigDetailsShareOneShape(t *testing.T) {
 	shape := regexp.MustCompile(`^the field \S+ value has to be changed from .+ to .+$`)
 
@@ -177,6 +179,9 @@ func TestControlPlaneConfigDetailsShareOneShape(t *testing.T) {
 					continue
 				}
 				got++
+				if f.Severity != SeverityBlocker {
+					continue
+				}
 				if !shape.MatchString(f.Detail) {
 					t.Errorf("finding %q detail %q does not match the unified shape", f.Title, f.Detail)
 				}
