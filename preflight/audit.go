@@ -712,6 +712,14 @@ type cpConfig struct {
 
 const cpConfigCategory = "Control plane configuration"
 
+// cpConfigDetail renders every Control plane configuration finding as one fixed
+// sentence, so the report reads the same way for an operator and stays parseable
+// for downstream consumers (e.g. the Konnect console) instead of each check
+// phrasing its own remediation. The finding's doc link carries the "why".
+func cpConfigDetail(field, from, to string) string {
+	return fmt.Sprintf("the field %s value has to be changed from %s to %s", field, from, to)
+}
+
 // checkControlPlaneConfig audits the live CP settings exposed by GET /config for
 // 3.0 readiness. The data-plane-relevant settings (injector + experimental flags)
 // only govern the CP that actually runs proxies, so they are audited on the CP we
@@ -773,7 +781,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
 	if strings.EqualFold(cfg.Environment, "kubernetes") && strings.EqualFold(cfg.Mode, "global") {
 		a.rep.addDoc(blocker, cpConfigCategory, "Global control plane on Kubernetes",
-			"Global CP on Kubernetes is dropped as a deployment mode in 3.0; migrate the global CP to Universal.",
+			cpConfigDetail("mode", "global", "universal"),
 			docUniversal, "mode=global")
 	}
 }
@@ -803,12 +811,12 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	// Hard removals — the upgrade breaks while these are in use.
 	if cfg.Experimental.AutoReachableServices {
 		a.rep.addDoc(blocker, cpConfigCategory, "autoReachableServices enabled",
-			"`autoReachableServices` is removed entirely in 3.0; stop relying on it before upgrading.",
+			cpConfigDetail("experimental.autoReachableServices", "true", "false"),
 			docReachableBackends, ref("experimental.autoReachableServices=true"))
 	}
 	if onK8s && cfg.Runtime.Kubernetes.Injector.Ebpf.Enabled {
 		a.rep.addDoc(blocker, cpConfigCategory, "eBPF transparent proxy enabled",
-			"The eBPF transparent proxy is removed in 3.0; switch to the iptables transparent proxy.",
+			cpConfigDetail("runtime.kubernetes.injector.ebpf.enabled", "true", "false"),
 			docTransparentProxy, ref("runtime.kubernetes.injector.ebpf.enabled=true"))
 	}
 
@@ -816,29 +824,29 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	// with meshServices.mode: Exclusive), so an estate without them is broken on 3.0.
 	if onK8s && !cfg.Runtime.Kubernetes.Injector.UnifiedResourceNamingEnabled {
 		a.rep.addDoc(blocker, cpConfigCategory, "Unified resource naming not enabled",
-			"3.0 assumes the unified (KRI-based) resource naming model; enable `unifiedResourceNamingEnabled` and validate before upgrading.",
+			cpConfigDetail("runtime.kubernetes.injector.unifiedResourceNamingEnabled", "false", "true"),
 			docKumaCPReference, ref("runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"))
 	}
 	if !cfg.Experimental.InboundTagsDisabled {
 		a.rep.addDoc(blocker, cpConfigCategory, "Inbound tags still enabled",
-			"3.0 runs with inbound tags disabled (label-based MeshService selection); set `inboundTagsDisabled: true` and validate before upgrading.",
+			cpConfigDetail("experimental.inboundTagsDisabled", "false", "true"),
 			docMeshService, ref("experimental.inboundTagsDisabled=false"))
 	}
 
 	// Settings that become the default in 3.0 — enable and validate before upgrading.
 	if !cfg.Experimental.DeltaXds {
 		a.rep.addDoc(blocker, cpConfigCategory, "Delta xDS not enabled",
-			"Delta xDS becomes the only xDS mode in 3.0; enable `deltaXds` and validate first.",
+			cpConfigDetail("experimental.deltaXds", "false", "true"),
 			docKumaCPReference, ref("experimental.deltaXds=false"))
 	}
 	if !cfg.Experimental.KdsEventBasedWatchdog.Enabled {
 		a.rep.addDoc(blocker, cpConfigCategory, "KDS event-based watchdog not enabled",
-			"The KDS event-based watchdog moves to the default in 3.0; enable it and validate first.",
+			cpConfigDetail("experimental.kdsEventBasedWatchdog.enabled", "false", "true"),
 			docKumaCPReference, ref("experimental.kdsEventBasedWatchdog.enabled=false"))
 	}
 	if !cfg.Experimental.SidecarContainers {
 		a.rep.addDoc(blocker, cpConfigCategory, "Native sidecar containers not enabled",
-			"Native sidecar containers move to the default in 3.0; enable `sidecarContainers` and validate first.",
+			cpConfigDetail("experimental.sidecarContainers", "false", "true"),
 			docKumaCPReference, ref("experimental.sidecarContainers=false"))
 	}
 }
@@ -911,7 +919,7 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 			return nil
 		}
 		a.rep.add(info, cpConfigCategory, "No zones connected to the global control plane",
-			"This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
+			cpConfigDetail("zones", "0", "one or more connected zones"),
 			"zones=0")
 		return nil
 	}

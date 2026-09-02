@@ -5,55 +5,80 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 	"time"
 )
 
 // TestControlPlaneConfigDeprecatedSettingReported checks that each removed or
-// soon-to-be-default CP setting in GET /config surfaces as the expected finding.
+// soon-to-be-default CP setting in GET /config surfaces as the expected finding,
+// with the detail rendered in the single fixed shape every config check shares.
 func TestControlPlaneConfigDeprecatedSettingReported(t *testing.T) {
 	cases := []struct {
 		name     string
 		config   string
 		severity string
 		title    string
+		detail   string
 	}{
 		{
 			name:     "global on kubernetes",
 			config:   `{"environment":"kubernetes","mode":"global","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Global control plane on Kubernetes",
+			detail: cpConfigDetail("mode", "global", "universal"),
 		},
 		{
 			name:     "autoReachableServices",
 			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"autoReachableServices":true,"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "autoReachableServices enabled",
+			detail: cpConfigDetail("experimental.autoReachableServices", "true", "false"),
 		},
 		{
 			name:     "ebpf transparent proxy",
 			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true,"ebpf":{"enabled":true}}}}}`,
 			severity: "blocker", title: "eBPF transparent proxy enabled",
+			detail: cpConfigDetail("runtime.kubernetes.injector.ebpf.enabled", "true", "false"),
 		},
 		{
 			name:     "unified naming off",
 			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":false}}}}`,
 			severity: "blocker", title: "Unified resource naming not enabled",
+			detail: cpConfigDetail("runtime.kubernetes.injector.unifiedResourceNamingEnabled", "false", "true"),
 		},
 		{
 			name:     "delta xds off",
 			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":false,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Delta xDS not enabled",
+			detail: cpConfigDetail("experimental.deltaXds", "false", "true"),
 		},
 		{
 			name:     "inbound tags enabled",
 			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":false,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Inbound tags still enabled",
+			detail: cpConfigDetail("experimental.inboundTagsDisabled", "false", "true"),
+		},
+		{
+			name:     "kds event-based watchdog off",
+			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":false}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "KDS event-based watchdog not enabled",
+			detail: cpConfigDetail("experimental.kdsEventBasedWatchdog.enabled", "false", "true"),
+		},
+		{
+			name:     "sidecar containers off",
+			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":false,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "Native sidecar containers not enabled",
+			detail: cpConfigDetail("experimental.sidecarContainers", "false", "true"),
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditResponses(t, map[string]string{"/config": tc.config})
-			if _, ok := findFinding(m, tc.severity, cpConfigCategory, tc.title); !ok {
-				t.Errorf("expected %s finding %q, got %+v", tc.severity, tc.title, m.Findings)
+			f, ok := findFinding(m, tc.severity, cpConfigCategory, tc.title)
+			if !ok {
+				t.Fatalf("expected %s finding %q, got %+v", tc.severity, tc.title, m.Findings)
+			}
+			if f.Detail != tc.detail {
+				t.Errorf("detail = %q, want %q", f.Detail, tc.detail)
 			}
 		})
 	}
@@ -112,5 +137,53 @@ func TestControlPlaneConfigMissingIsCoverageGap(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected a /config coverage gap, got %+v", m.Coverage)
+	}
+}
+
+// TestControlPlaneConfigDetailsShareOneShape guards the contract downstream
+// consumers rely on: every Control plane configuration finding — including the
+// informational no-zones one a global emits — states its remediation as the same
+// sentence, so none of them can drift back into free-form phrasing.
+func TestControlPlaneConfigDetailsShareOneShape(t *testing.T) {
+	shape := regexp.MustCompile(`^the field \S+ value has to be changed from .+ to .+$`)
+
+	for _, tc := range []struct {
+		name      string
+		responses map[string]string
+		want      int
+	}{
+		{
+			name: "zone control plane tripping every config check",
+			responses: map[string]string{
+				"/config": `{"environment":"kubernetes","mode":"zone","experimental":{"autoReachableServices":true,"deltaXds":false,"sidecarContainers":false,"inboundTagsDisabled":false,"kdsEventBasedWatchdog":{"enabled":false}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":false,"ebpf":{"enabled":true}}}}}`,
+			},
+			want: 7,
+		},
+		{
+			name: "global control plane with no zones connected",
+			responses: map[string]string{
+				"/config":         `{"environment":"kubernetes","mode":"global","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+				"/zones+insights": `{"total":0,"items":[],"next":null}`,
+			},
+			want: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := auditResponses(t, tc.responses)
+
+			var got int
+			for _, f := range m.Findings {
+				if f.Category != cpConfigCategory {
+					continue
+				}
+				got++
+				if !shape.MatchString(f.Detail) {
+					t.Errorf("finding %q detail %q does not match the unified shape", f.Title, f.Detail)
+				}
+			}
+			if got != tc.want {
+				t.Errorf("config findings = %d, want %d (%+v)", got, tc.want, m.Findings)
+			}
+		})
 	}
 }
