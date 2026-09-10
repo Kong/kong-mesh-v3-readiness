@@ -350,7 +350,7 @@
       "group": "data_plane_and_workloads",
       "category": "Gateway in Dataplane",
       "title": "Dataplane marks a gateway with networking.gateway",
-      "detail": "3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy carries the marker only in its spec, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Add the label before upgrading.",
+      "detail": "3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy still carries the marker in its spec and does not carry the label, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Set the `kuma.io/gateway` label to `\"true\"` before upgrading.",
       "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
       "count": 1,
       "example_resources": [

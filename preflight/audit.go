@@ -756,7 +756,7 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 					docDelegatedGateway, qualified(it))
 			case it.Labels[gatewayLabel] != "true":
 				a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway",
-					"3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy carries the marker only in its spec, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Add the label before upgrading.",
+					"3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy still carries the marker in its spec and does not carry the label, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Set the `kuma.io/gateway` label to `\"true\"` before upgrading.",
 					docDelegatedGateway, qualified(it))
 			}
 		}
@@ -1663,11 +1663,14 @@ type httpRouteMatch struct {
 	Headers     []json.RawMessage `json:"headers"`
 }
 
-// hasCatchAllRule reports whether any rule matches every request: a match on the
-// `/` path prefix with no method, query-parameter or header matcher narrowing it.
-// A rule with an empty `matches` list is NOT a catch-all — route generation
-// iterates the matches, so it emits no routes at all (handled separately as a
-// blocker by the caller).
+// hasCatchAllRule reports whether any rule matches every request: a match that no
+// method, query-parameter or header matcher narrows, and whose path is either the
+// `/` prefix or absent (an unset path constrains nothing, so `matches: [{}]`
+// matches everything just as `PathPrefix: /` does).
+//
+// A rule with an empty `matches` LIST is a different thing and is NOT a catch-all
+// — route generation iterates the matches, so it emits no routes at all (handled
+// separately as a blocker by the caller).
 func hasCatchAllRule(rules []httpRouteRule) bool {
 	for _, r := range rules {
 		for _, m := range r.Matches {
