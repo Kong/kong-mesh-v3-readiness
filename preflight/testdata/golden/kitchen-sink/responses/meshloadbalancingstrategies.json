@@ -1,0 +1,18 @@
+{
+  "total": 1,
+  "items": [
+    {
+      "type": "MeshLoadBalancingStrategy",
+      "mesh": "default",
+      "name": "mlbs-crosszone",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [ {
+          "targetRef": { "kind": "MeshService", "name": "backend" },
+          "default": { "localityAwareness": { "crossZone": { "failoverThreshold": { "percentage": 50 } } } }
+        } ]
+      }
+    }
+  ],
+  "next": null
+}

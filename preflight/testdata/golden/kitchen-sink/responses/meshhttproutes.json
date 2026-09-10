@@ -1,0 +1,33 @@
+{
+  "total": 2,
+  "items": [
+    {
+      "type": "MeshHTTPRoute",
+      "mesh": "default",
+      "name": "anchor-only",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [ {
+          "targetRef": { "kind": "MeshService", "name": "backend" },
+          "rules": [ { "matches": [ { "path": { "type": "PathPrefix", "value": "/api" } } ], "default": {} } ]
+        } ]
+      }
+    },
+    {
+      "type": "MeshHTTPRoute",
+      "mesh": "default",
+      "name": "catch-all",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [ {
+          "targetRef": { "kind": "MeshService", "name": "frontend" },
+          "rules": [
+            { "matches": [ { "path": { "type": "PathPrefix", "value": "/api" } } ], "default": {} },
+            { "matches": [ { "path": { "type": "PathPrefix", "value": "/" } } ], "default": {} }
+          ]
+        } ]
+      }
+    }
+  ],
+  "next": null
+}

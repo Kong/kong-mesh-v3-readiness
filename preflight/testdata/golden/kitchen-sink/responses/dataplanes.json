@@ -1,16 +1,93 @@
 {
-  "total": 1,
+  "total": 3,
   "items": [
     {
       "type": "Dataplane",
       "mesh": "default",
       "name": "dp-1",
-      "labels": { "kuma.io/env": "universal", "kuma.io/zone": "east" },
-      "networking": {
-        "transparentProxying": { "reachableServices": [ "svc-a", "svc-b" ] }
+      "labels": {
+        "kuma.io/env": "universal",
+        "kuma.io/zone": "east"
       },
-      "metrics": { "type": "prometheus", "conf": { "port": 5670, "path": "/metrics" } },
-      "probes": { "port": 9000, "endpoints": [ { "inboundPort": 8080, "path": "/healthz" } ] }
+      "networking": {
+        "transparentProxying": {
+          "reachableServices": [
+            "svc-a",
+            "svc-b"
+          ]
+        }
+      },
+      "metrics": {
+        "type": "prometheus",
+        "conf": {
+          "port": 5670,
+          "path": "/metrics"
+        }
+      },
+      "probes": {
+        "port": 9000,
+        "endpoints": [
+          {
+            "inboundPort": 8080,
+            "path": "/healthz"
+          }
+        ]
+      }
+    },
+    {
+      "type": "Dataplane",
+      "mesh": "default",
+      "name": "dp-legacy-universal",
+      "labels": {
+        "kuma.io/env": "universal",
+        "kuma.io/zone": "east",
+        "kuma.io/workload": "backend",
+        "kuma.io/gateway": "enabled",
+        "k8s.kuma.io/service-account": "backend"
+      },
+      "networking": {
+        "advertisedAddress": "10.0.0.9",
+        "inbound": [
+          {
+            "port": 8080,
+            "tags": {
+              "kuma.io/service": "backend"
+            }
+          }
+        ],
+        "outbound": [
+          {
+            "port": 10001,
+            "tags": {
+              "kuma.io/service": "frontend"
+            }
+          }
+        ],
+        "transparentProxying": {
+          "directAccessServices": [
+            "frontend"
+          ]
+        }
+      }
+    },
+    {
+      "type": "Dataplane",
+      "mesh": "default",
+      "name": "dp-gateway",
+      "labels": {
+        "kuma.io/env": "universal",
+        "kuma.io/zone": "west",
+        "kuma.io/workload": "gw"
+      },
+      "networking": {
+        "address": "192.168.0.1",
+        "gateway": {
+          "type": "DELEGATED",
+          "tags": {
+            "kuma.io/service": "gw"
+          }
+        }
+      }
     }
   ],
   "next": null

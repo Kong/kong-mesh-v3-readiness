@@ -40,9 +40,21 @@ const readyConfigJSON = `{
 // in-memory report.
 func auditResponses(t *testing.T, responses map[string]string) Report {
 	t.Helper()
+	return auditResponsesFunc(t, func(path string) (string, int, bool) {
+		body, ok := responses[path]
+		return body, http.StatusOK, ok
+	})
+}
+
+// auditResponsesFunc is the general form of auditResponses: serve resolves a
+// request path to (body, status, handled); an unhandled path falls back to the
+// Kuma index, the 3.0-ready config, or an empty collection.
+func auditResponsesFunc(t *testing.T, serve func(path string) (string, int, bool)) Report {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if body, ok := responses[r.URL.Path]; ok {
+		if body, status, ok := serve(r.URL.Path); ok {
+			w.WriteHeader(status)
 			_, _ = io.WriteString(w, body)
 			return
 		}
@@ -75,6 +87,24 @@ func auditResponses(t *testing.T, responses map[string]string) Report {
 		t.Fatalf("unmarshal rendered JSON: %v", err)
 	}
 	return m
+}
+
+// auditWithNotFound audits a mock control plane like auditResponses, except the
+// given paths answer 404 — for the collections whose "not served by this CP"
+// handling a test needs to exercise.
+func auditWithNotFound(t *testing.T, responses map[string]string, notFound ...string) Report {
+	t.Helper()
+	missing := map[string]bool{}
+	for _, p := range notFound {
+		missing[p] = true
+	}
+	return auditResponsesFunc(t, func(path string) (string, int, bool) {
+		if missing[path] {
+			return "", http.StatusNotFound, true
+		}
+		body, ok := responses[path]
+		return body, http.StatusOK, ok
+	})
 }
 
 // listBody marshals items into a single-page resource-list response body.

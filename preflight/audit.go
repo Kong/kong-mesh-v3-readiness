@@ -135,6 +135,17 @@ const ExampleCap = 10
 // 3.0, so the audit still flags them — marked as system-managed.
 const policyRoleLabel = "kuma.io/policy-role"
 
+// Dataplane labels the checks read. envLabel/zoneLabel are stamped by the control
+// plane; gatewayLabel and serviceAccountLabel change meaning in 3.0 (see
+// checkDataplaneLabels), and listenerZoneIngressLabel marks a unified Zone Proxy.
+const (
+	envLabel                 = "kuma.io/env"
+	zoneLabel                = "kuma.io/zone"
+	gatewayLabel             = "kuma.io/gateway"
+	serviceAccountLabel      = "k8s.kuma.io/service-account"
+	listenerZoneIngressLabel = "kuma.io/listener-zoneingress"
+)
+
 func isSystem(it resourceItem) bool {
 	return it.Labels[policyRoleLabel] == "system"
 }
@@ -172,6 +183,14 @@ type auditor struct {
 	zonesCached bool
 
 	resourceLimitGapRecorded bool
+
+	// zoneProxyZones is the set of Universal zones observed terminating cross-zone
+	// traffic (a ZoneIngress, or a Dataplane already carrying a ZoneIngress
+	// listener). checkMeshZoneAddresses requires a MeshZoneAddress for each.
+	zoneProxyZones map[string]bool
+	// meshZones maps each mesh to the zones its Dataplanes were observed in, so
+	// checkMeshZoneAddresses can tell a zone-spanning mesh from a zone-local one.
+	meshZones map[string]map[string]bool
 }
 
 // zoneInsights fetches /zones+insights once and caches the result (items, whether
@@ -232,7 +251,8 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 
 	for _, check := range []func(context.Context) error{
 		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkNewPolicies, a.checkDataplanes,
-		a.checkZoneProxies, a.checkResourceNames, a.checkMeshTrust,
+		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
+		a.checkResourceNames, a.checkMeshTrust,
 		a.checkControlPlaneConfig, a.checkControlPlaneVersions,
 		a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
 	} {
@@ -547,14 +567,51 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 				break
 			}
 		}
+	case "MeshHTTPRoute":
+		var s struct {
+			To []struct {
+				Rules []httpRouteRule `json:"rules"`
+			} `json:"to"`
+		}
+		if json.Unmarshal(spec, &s) != nil {
+			return
+		}
+		var emptyMatches, noCatchAll bool
+		for _, t := range s.To {
+			if len(t.Rules) == 0 {
+				continue
+			}
+			for _, r := range t.Rules {
+				if len(r.Matches) == 0 {
+					emptyMatches = true
+				}
+			}
+			if !hasCatchAllRule(t.Rules) {
+				noCatchAll = true
+			}
+		}
+		switch {
+		case emptyMatches:
+			a.rep.addDoc(blocker, "MeshHTTPRoute routing", "MeshHTTPRoute rule has no matches",
+				"A rule with an empty `matches` list generates no Envoy routes at all — the Universal API accepts it, but nothing is emitted for it. In 3.0 a request that matches no rule of an applicable MeshHTTPRoute gets a `404` instead of falling through to the destination, so every request to this destination fails after the upgrade. Give the rule at least one match (`path: {type: PathPrefix, value: /}` matches everything).",
+				docMeshHTTPRoute, ref)
+		case noCatchAll:
+			a.rep.addDoc(info, "MeshHTTPRoute routing", "MeshHTTPRoute has no catch-all rule",
+				"In 3.0 a request that matches no rule of an applicable MeshHTTPRoute gets a `404` instead of falling through to the destination. This route matches only some requests, so if it exists to anchor a MeshTimeout/MeshRetry/MeshAccessLog the unmatched traffic starts failing after the upgrade. Review it and add a catch-all rule (`path: {type: PathPrefix, value: /}` with no other matchers) if the fall-through is intended.",
+				docMeshHTTPRoute, ref)
+		}
 	case "MeshLoadBalancingStrategy":
 		var s struct {
 			To []struct {
-				Default struct {
+				TargetRef targetRef `json:"targetRef"`
+				Default   struct {
 					LoadBalancer *struct {
 						RingHash *hashContainer `json:"ringHash"`
 						Maglev   *hashContainer `json:"maglev"`
 					} `json:"loadBalancer"`
+					LocalityAwareness *struct {
+						CrossZone *json.RawMessage `json:"crossZone"`
+					} `json:"localityAwareness"`
 				} `json:"default"`
 			} `json:"to"`
 		}
@@ -563,6 +620,13 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 		}
 		var relocated, sourceIP bool
 		for _, t := range s.To {
+			// An empty crossZone object still fails 3.0 validation, so test for the
+			// key's presence rather than hasJSON (which treats `{}` as absent).
+			if la := t.Default.LocalityAwareness; la != nil && la.CrossZone != nil && string(*la.CrossZone) != "null" && t.TargetRef.Kind != "MeshMultiZoneService" {
+				a.rep.addDoc(blocker, "Cross-zone load balancing", "MeshLoadBalancingStrategy crossZone targets a non-MeshMultiZoneService",
+					"3.0 accepts `localityAwareness.crossZone` only when the `to[].targetRef.kind` is MeshMultiZoneService; this policy would be rejected on write. Retarget it at a MeshMultiZoneService (kind: "+targetRefKindOrEmpty(t.TargetRef)+").",
+					docMeshLoadBalancing, ref)
+			}
 			lb := t.Default.LoadBalancer
 			if lb == nil {
 				continue
@@ -604,20 +668,28 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 		}
 		// A k8s-injected proxy proves Kubernetes is in the estate even when /config
 		// is gated (Kong Mesh RBAC) and could not report the environment.
-		if it.Labels["kuma.io/env"] == "kubernetes" {
+		onK8s := it.Labels[envLabel] == "kubernetes"
+		if onK8s {
 			a.rep.k8sObserved = true
 		}
+		// A proxy already carrying a ZoneIngress listener is a unified Zone Proxy;
+		// like a standalone ZoneIngress it makes its zone a cross-zone destination,
+		// which 3.0 addresses through MeshZoneAddress (checkMeshZoneAddresses).
+		if it.Labels[listenerZoneIngressLabel] != "" && !onK8s {
+			a.noteZoneProxy(it.Labels[zoneLabel])
+		}
+		a.noteMeshZone(it.Mesh, it.Labels[zoneLabel])
 		// Universal-only: the kuma.io/workload label drives Workload generation (the
 		// 3.0 metrics/traces grouping dimension); without it the CP generates no
 		// Workload for this proxy. On Kubernetes the injector sets it from the pod,
 		// so only flag non-k8s dataplanes that are missing it.
-		if it.Labels["kuma.io/env"] != "kubernetes" && it.Labels["kuma.io/workload"] == "" {
+		if !onK8s && it.Labels["kuma.io/workload"] == "" {
 			a.rep.addDoc(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label",
 				"On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.", docAnnotations, qualified(it))
 		}
 		// Universal-only: spec.probes is removed in 3.0. On Kubernetes probes are
 		// derived from the pod and need no action, so only flag non-k8s dataplanes.
-		if hasJSON(spec.Probes) && it.Labels["kuma.io/env"] != "kubernetes" {
+		if hasJSON(spec.Probes) && !onK8s {
 			a.rep.addDoc(blocker, "Dataplane probes", "Dataplane has a probes section",
 				"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", docDataPlaneProxy, qualified(it))
 		}
@@ -627,26 +699,266 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 			a.rep.addDoc(blocker, "Dataplane metrics", "Dataplane has a per-proxy metrics override",
 				"`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.", docMeshMetric, qualified(it))
 		}
-		if spec.Networking == nil {
-			continue
-		}
-		if tp := spec.Networking.TransparentProxying; tp != nil && len(tp.ReachableServices) > 0 {
-			a.rep.addDoc(blocker, "reachableServices", "Dataplane uses reachableServices",
-				"Replace `reachableServices` with `reachableBackends` (MeshService-based).", docReachableBackends, qualified(it))
-		}
+		a.checkDataplaneLabels(it, onK8s)
+		a.checkDataplaneNetworking(it, spec, onK8s)
 	}
 	return nil
+}
+
+// checkDataplaneLabels flags the two Dataplane labels whose meaning changes in
+// 3.0: the delegated-gateway marker (only "true" marks a gateway now) and the
+// Kubernetes ServiceAccount label, which 3.0 treats as control-plane-owned.
+func (a *auditor) checkDataplaneLabels(it resourceItem, onK8s bool) {
+	// 3.0 marks a delegated gateway with the kuma.io/gateway *label* and reads it
+	// as a boolean: only "true" is a gateway. Universal-only: on Kubernetes the
+	// label is recomputed from the Pod's kuma.io/gateway annotation on every
+	// reconcile (and deleted when the Pod is not a gateway), so a stray value
+	// there fixes itself — and "set it to true" would be actively wrong advice.
+	if v, ok := it.Labels[gatewayLabel]; !onK8s && ok && v != "true" && v != "false" {
+		a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane kuma.io/gateway label is not a boolean",
+			"3.0 marks a delegated gateway with the `kuma.io/gateway` label and accepts only `true`/`false`; any other value (e.g. the 2.x `enabled` annotation value) leaves the proxy silently unmarked as a gateway. Set the label to `true` (current: "+v+").",
+			docDelegatedGateway, qualified(it))
+	}
+	// k8s.kuma.io/service-account is computed by the control plane from the Pod and
+	// feeds the proxy's identity. In 3.0 the admission webhook rejects a
+	// user-applied resource carrying it, and xDS auth refuses a proxy whose label
+	// does not match its Pod's ServiceAccount. On Kubernetes the label is
+	// legitimate on every CP-created Dataplane and the API cannot tell those from
+	// GitOps-applied copies (a manual check covers that); on Universal there is no
+	// ServiceAccount at all, so the label can only be a copied leftover.
+	if !onK8s && it.Labels[serviceAccountLabel] != "" {
+		a.rep.addDoc(blocker, "Dataplane identity", "Universal Dataplane carries the k8s.kuma.io/service-account label",
+			"`k8s.kuma.io/service-account` is a control-plane-computed Kubernetes identity label; on Universal it has no source and 3.0 rejects user-applied resources that carry it. Remove the label from this Dataplane before upgrading.",
+			docMeshIdentity, qualified(it))
+	}
+}
+
+// checkDataplaneNetworking flags networking fields 3.0 rejects on write, drops
+// from the proto, or silently ignores. The hand-written-Universal-only ones are
+// gated on env: on Kubernetes the control plane generates the Dataplane and a 3.0
+// control plane regenerates it, so there is nothing for an operator to migrate.
+func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, onK8s bool) {
+	net := spec.Networking
+	if net == nil {
+		return
+	}
+	if !onK8s {
+		// 3.0 reserves networking.gateway and marks a delegated gateway with the
+		// kuma.io/gateway label instead. A 2.x Universal gateway carries the marker
+		// only in the spec (2.x never computes the label), so on 3.0 it silently
+		// becomes a proxy with no inbounds and no gateway marking, selected by no
+		// policy. Builtin gateways have no replacement at all.
+		if g := net.Gateway; g != nil {
+			switch {
+			case strings.EqualFold(g.Type, "BUILTIN"):
+				a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane is a builtin gateway",
+					"`networking.gateway.type: BUILTIN` is removed in 3.0 along with the rest of Kuma's own gateway support; migrate this proxy to a delegated gateway (Kong or another third-party) before upgrading.",
+					docDelegatedGateway, qualified(it))
+			case it.Labels[gatewayLabel] != "true":
+				a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway",
+					"3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy still carries the marker in its spec and does not carry the label, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Set the `kuma.io/gateway` label to `\"true\"` before upgrading.",
+					docDelegatedGateway, qualified(it))
+			}
+		}
+		if net.AdvertisedAddress != "" {
+			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.advertisedAddress",
+				"`networking.advertisedAddress` is removed in 3.0 (the proto field is reserved); drop it and advertise the address through the zone proxy configuration instead.",
+				docDataPlaneProxy, qualified(it))
+		}
+		for _, in := range net.Inbound {
+			if len(in.Tags) > 0 {
+				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.inbound[].tags",
+					"`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService. This pairs with `experimental.inboundTagsDisabled: true` on the control plane.",
+					docMeshService, qualified(it))
+				break
+			}
+		}
+		for _, out := range net.Outbound {
+			if !hasJSON(out.BackendRef) {
+				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane outbound has no backendRef",
+					"3.0 rejects `networking.outbound[]` entries without a `backendRef` on write and NACKs them over KDS; replace tag-based outbounds with a `backendRef` pointing at a MeshService, MeshExternalService or MeshMultiZoneService.",
+					docMeshService, qualified(it))
+				break
+			}
+		}
+	}
+	tp := net.TransparentProxying
+	if tp == nil {
+		return
+	}
+	if len(tp.ReachableServices) > 0 {
+		a.rep.addDoc(blocker, "reachableServices", "Dataplane uses reachableServices",
+			"Replace `reachableServices` with `reachableBackends` (MeshService-based).", docReachableBackends, qualified(it))
+	}
+	// Only the named entries matter: a list that also carries `*` already grants
+	// direct access to everything, so 3.0 dropping per-service matching changes
+	// nothing for it.
+	if !slices.Contains(tp.DirectAccessServices, "*") && len(tp.DirectAccessServices) > 0 {
+		a.rep.addDoc(blocker, "Dataplane networking", "Dataplane names individual directAccessServices",
+			"3.0 honors only the `*` entry in `networking.transparentProxying.directAccessServices` — per-service matching relied on a removed tag and is silently ignored, so this proxy loses direct access entirely. Replace the named services with `*`, or drop direct access for this proxy.",
+			docTransparentProxy, qualified(it))
+	}
 }
 
 func (a *auditor) checkZoneProxies(ctx context.Context) error {
 	for _, wsPath := range []string{"zoneingresses", "zoneegresses"} {
 		items := a.listColl(ctx, "/"+wsPath)
 		for _, it := range items {
+			// A ZoneIngress makes its zone a cross-zone destination, which is what
+			// MeshZoneAddress has to advertise in 3.0 (checkMeshZoneAddresses).
+			if wsPath == "zoneingresses" && it.Labels[envLabel] == "universal" {
+				a.noteZoneProxy(zoneOf(it))
+			}
 			a.rep.addDoc(blocker, "Zone proxies", wsPath+" present",
 				"Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.", docZoneProxies, it.Name)
 		}
 	}
 	return nil
+}
+
+// noteZoneProxy records that a zone terminates cross-zone traffic on Universal.
+// An unnamed zone (a standalone CP, or a resource with no zone attribution) is
+// dropped: MeshZoneAddress is a per-zone requirement and cannot be checked
+// without one.
+func (a *auditor) noteZoneProxy(zone string) {
+	if zone == "" {
+		return
+	}
+	if a.zoneProxyZones == nil {
+		a.zoneProxyZones = map[string]bool{}
+	}
+	a.zoneProxyZones[zone] = true
+}
+
+// noteMeshZone records that a mesh has proxies in a zone. A mesh present in two
+// or more zones is one whose services can be consumed across zones, which is the
+// precondition for needing a MeshZoneAddress (see checkMeshZoneAddresses).
+func (a *auditor) noteMeshZone(mesh, zone string) {
+	if mesh == "" || zone == "" {
+		return
+	}
+	if a.meshZones == nil {
+		a.meshZones = map[string]map[string]bool{}
+	}
+	if a.meshZones[mesh] == nil {
+		a.meshZones[mesh] = map[string]bool{}
+	}
+	a.meshZones[mesh][zone] = true
+}
+
+// zoneOf attributes a resource to a zone: the kuma.io/zone label a global stamps
+// on every KDS-synced resource, falling back to the ZoneIngress/ZoneEgress `zone`
+// spec field (which a zone CP serves without the label).
+func zoneOf(it resourceItem) string {
+	if z := it.Labels[zoneLabel]; z != "" {
+		return z
+	}
+	var spec struct {
+		Zone string `json:"zone"`
+	}
+	if json.Unmarshal(it.specBytes(), &spec) != nil {
+		return ""
+	}
+	return spec.Zone
+}
+
+// checkZoneNames flags Zone names that are not RFC-1035 DNS labels. In 3.0 a zone
+// control plane refuses to start unless its name is a label and the global rejects
+// it on connect, while the Helm chart still accepts dots — so a zone named
+// `eu.west` passes `helm upgrade` and then crash-loops. Only a global stores Zone
+// resources (they are not synced down to zones), so a 404 means "no zones here",
+// not a coverage gap; a directly audited zone CP is covered by its own
+// `multizone.zone.name` in checkControlPlaneConfig instead.
+func (a *auditor) checkZoneNames(ctx context.Context) error {
+	for _, it := range a.listIfServed(ctx, "/zones") {
+		a.addZoneNameFinding(displayName(it), it.Name)
+	}
+	return nil
+}
+
+// addZoneNameFinding records the non-RFC-1035 zone-name blocker for one zone. ref
+// names the zone as the report should show it (the resource name on a global, the
+// configured name on a directly audited zone CP).
+func (a *auditor) addZoneNameFinding(name, ref string) {
+	if name == "" || validRFC1035(name) {
+		return
+	}
+	a.rep.addDoc(blocker, "Non-RFC-1035 names", "Zone name is not a valid RFC-1035 DNS label",
+		"A 3.0 zone control plane refuses to start unless its name is a lowercase RFC-1035 DNS label (\u226463 chars, starting with a letter), and the global rejects the zone on connect. The Helm chart still accepts dots, so such a zone upgrades cleanly and then crash-loops \u2014 rename it before upgrading.",
+		docUpgrade, ref)
+}
+
+// checkMeshZoneAddresses flags a mesh/zone pair that needs a MeshZoneAddress and
+// has none. In 3.0 cross-zone MeshService traffic to a zone stays down until a
+// MeshZoneAddress advertises that zone's ingress address, and the resource is
+// mesh-scoped: every mesh whose services are consumed from another zone needs its
+// own in the zone that serves them. Three preconditions keep this off estates
+// that cannot be affected: a multi-zone global (a single zone has no cross-zone
+// traffic to lose), a mesh with proxies in two or more zones (a zone-local mesh
+// is never consumed across zones), and a Universal zone proxy — on Kubernetes the
+// 3.0 control plane creates the resource itself from the zone-proxy Service, so
+// there is nothing for an operator to do.
+func (a *auditor) checkMeshZoneAddresses(ctx context.Context) error {
+	if len(a.zoneProxyZones) == 0 {
+		return nil
+	}
+	zones, found, err := a.zoneInsights(ctx)
+	if err != nil || !found || len(zones) < 2 {
+		// Not a multi-zone global (or the zones overview already gapped out in
+		// checkControlPlaneConfig, which reports it once).
+		return nil
+	}
+	required := a.requiredZoneAddresses()
+	if len(required) == 0 {
+		return nil
+	}
+	path := a.scopedPath("meshzoneaddresses")
+	addrs, served, err := a.c.list(ctx, path)
+	if err != nil {
+		a.rep.addGap(path, collectionReadGapReason(err))
+		return nil
+	}
+	if !served {
+		// The CP does not serve MeshZoneAddress, so cross-zone 3.0 readiness cannot
+		// be observed here at all. That is a coverage gap, not an implicit pass.
+		a.rep.addGap(path, "endpoint returned 404 — this control plane does not serve MeshZoneAddress; per-zone cross-zone readiness NOT audited (upgrade to the latest 2.14 patch, which registers the resource)")
+		return nil
+	}
+	covered := map[string]bool{}
+	for _, it := range addrs {
+		if z := zoneOf(it); z != "" && it.Mesh != "" {
+			covered[it.Mesh+"/"+z] = true
+		}
+	}
+	for _, mz := range required {
+		if covered[mz] {
+			continue
+		}
+		mesh, zone, _ := strings.Cut(mz, "/")
+		a.rep.addDoc(blocker, "Zone proxies", "Mesh has no MeshZoneAddress for a zone it spans",
+			"MeshZoneAddress is mesh-scoped: every mesh whose services are consumed from another zone needs its own resource in the zone that serves them, or cross-zone MeshService traffic to that mesh is down on 3.0. This mesh has proxies in more than one zone and this zone terminates cross-zone traffic on Universal, but no MeshZoneAddress in the mesh advertises it. 2.14 already registers the type, so create it before upgrading. (Kubernetes zones are not flagged — there the 3.0 control plane creates the resource from the zone-proxy Service.)",
+			docZoneProxies, "mesh "+mesh+", zone "+zone)
+	}
+	return nil
+}
+
+// requiredZoneAddresses returns the sorted "<mesh>/<zone>" pairs that need a
+// MeshZoneAddress: each zone-spanning mesh crossed with the Universal zones that
+// terminate cross-zone traffic and hold proxies of that mesh.
+func (a *auditor) requiredZoneAddresses() []string {
+	var required []string
+	for mesh, zones := range a.meshZones {
+		if len(zones) < 2 {
+			continue
+		}
+		for zone := range zones {
+			if a.zoneProxyZones[zone] {
+				required = append(required, mesh+"/"+zone)
+			}
+		}
+	}
+	slices.Sort(required)
+	return required
 }
 
 // checkResourceNames flags resource names that are not valid RFC-1035 DNS labels
@@ -687,8 +999,16 @@ func (a *auditor) checkMeshTrust(ctx context.Context) error {
 // password); decode just these fields (cf. the resource decode anti-pattern) so
 // unknown fields are ignored and the body never has to be echoed.
 type cpConfig struct {
-	Mode         string `json:"mode"`
-	Environment  string `json:"environment"`
+	Mode        string `json:"mode"`
+	Environment string `json:"environment"`
+	// Multizone carries the zone CP's own configured name — the only place a
+	// directly audited zone CP exposes it (Zone resources live on the global and
+	// are not synced down), so it is what checkZoneNames falls back to there.
+	Multizone struct {
+		Zone struct {
+			Name string `json:"name"`
+		} `json:"zone"`
+	} `json:"multizone"`
 	Experimental struct {
 		AutoReachableServices bool `json:"autoReachableServices"`
 		DeltaXds              bool `json:"deltaXds"`
@@ -806,6 +1126,13 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 			return "zone " + zone + ": " + s
 		}
 		return s
+	}
+
+	// Only for the CP we connected to: on a global, /zones is authoritative for
+	// every zone name (checkZoneNames), so checking the fanned-out zone configs
+	// too would double-count the same zone.
+	if zone == "" {
+		a.addZoneNameFinding(cfg.Multizone.Zone.Name, "multizone.zone.name="+cfg.Multizone.Zone.Name)
 	}
 
 	// Hard removals — the upgrade breaks while these are in use.
@@ -1278,12 +1605,27 @@ type ruleEntry struct {
 	TargetRef targetRef `json:"targetRef"`
 }
 
+// gatewaySection is the Dataplane's 2.x networking.gateway block: the field 3.0
+// reserves in favor of the kuma.io/gateway label. Type defaults to DELEGATED.
+type gatewaySection struct {
+	Type string `json:"type"`
+}
+
 type dataplaneSpec struct {
 	Probes     json.RawMessage `json:"probes"`
 	Metrics    json.RawMessage `json:"metrics"`
 	Networking *struct {
+		AdvertisedAddress string          `json:"advertisedAddress"`
+		Gateway           *gatewaySection `json:"gateway"`
+		Inbound           []struct {
+			Tags map[string]string `json:"tags"`
+		} `json:"inbound"`
+		Outbound []struct {
+			BackendRef json.RawMessage `json:"backendRef"`
+		} `json:"outbound"`
 		TransparentProxying *struct {
-			ReachableServices []string `json:"reachableServices"`
+			ReachableServices    []string `json:"reachableServices"`
+			DirectAccessServices []string `json:"directAccessServices"`
 		} `json:"transparentProxying"`
 	} `json:"networking"`
 }
@@ -1304,6 +1646,54 @@ type hashContainer struct {
 	} `json:"hashPolicies"`
 }
 
+// httpRouteRule is one MeshHTTPRoute routing rule; only its matches matter here.
+type httpRouteRule struct {
+	Matches []httpRouteMatch `json:"matches"`
+}
+
+// httpRouteMatch is the subset of a MeshHTTPRoute match the catch-all test needs:
+// the path plus the three matchers that, when present, narrow a rule.
+type httpRouteMatch struct {
+	Path *struct {
+		Type  string `json:"type"`
+		Value string `json:"value"`
+	} `json:"path"`
+	Method      *string           `json:"method"`
+	QueryParams []json.RawMessage `json:"queryParams"`
+	Headers     []json.RawMessage `json:"headers"`
+}
+
+// hasCatchAllRule reports whether any rule matches every request: a match that no
+// method, query-parameter or header matcher narrows, and whose path is either the
+// `/` prefix or absent (an unset path constrains nothing, so `matches: [{}]`
+// matches everything just as `PathPrefix: /` does).
+//
+// A rule with an empty `matches` LIST is a different thing and is NOT a catch-all
+// — route generation iterates the matches, so it emits no routes at all (handled
+// separately as a blocker by the caller).
+func hasCatchAllRule(rules []httpRouteRule) bool {
+	for _, r := range rules {
+		for _, m := range r.Matches {
+			if m.Method != nil || len(m.QueryParams) > 0 || len(m.Headers) > 0 {
+				continue
+			}
+			if m.Path == nil || (m.Path.Type == "PathPrefix" && m.Path.Value == "/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// targetRefKindOrEmpty renders a targetRef kind for a finding message, naming an
+// unset kind explicitly rather than leaving a dangling "kind: ".
+func targetRefKindOrEmpty(tr targetRef) string {
+	if tr.Kind == "" {
+		return "unset"
+	}
+	return tr.Kind
+}
+
 func hasOtelEndpoint(confs ...backendConf) bool {
 	for _, c := range confs {
 		for _, b := range c.Backends {
@@ -1318,10 +1708,12 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // manualChecks are 3.0 drops that cannot be detected from CP resources alone.
 // Settings exposed by GET /config (unified naming, inbound tags, experimental
 // flags, autoReachableServices, global-on-k8s, eBPF transparent proxy, k8s
-// workloadLabels) are audited automatically by checkControlPlaneConfig,
-// Universal proxies missing the kuma.io/workload label by checkDataplanes, and
-// the legacy CoreDNS path by checkDataplaneVersions (a reported `coredns`
-// dependency) plus the --inspect-dataplanes deep check, so none is repeated here.
+// workloadLabels, the zone CP's own name) are audited automatically by
+// checkControlPlaneConfig, Universal Dataplane labels and networking fields by
+// checkDataplanes, zone names and per-zone MeshZoneAddress coverage by
+// checkZoneNames/checkMeshZoneAddresses, and the legacy CoreDNS path by
+// checkDataplaneVersions (a reported `coredns` dependency) plus the
+// --inspect-dataplanes deep check, so none is repeated here.
 var manualChecks = []ManualCheck{
 	{
 		Title: "Old inspect APIs removed (switch to the new inspect API)",
@@ -1412,6 +1804,30 @@ if command -v kumactl >/dev/null 2>&1; then
   done
 fi`,
 	},
+	{
+		Title: "Re-check kumactl access on a Helm-installed Universal control plane",
+		Detail: "A Universal control plane installed from the Helm chart no longer treats " +
+			"loopback callers as admin: the chart sets " +
+			"`KUMA_API_SERVER_AUTHN_LOCALHOST_IS_ADMIN=false` in 3.0, where 2.x left the " +
+			"built-in default of `true`. Operators who reach the API with `kubectl exec` or " +
+			"`kubectl port-forward` plus kumactl and no token lose access the moment the " +
+			"upgrade rolls out. The control-plane API cannot tell you how the CP was " +
+			"installed or how your operators authenticate, so the tool cannot detect this " +
+			"for you. The catch is the ordering: the bootstrap admin token can only be read " +
+			"over loopback *while the old default is still in effect*, so issue and store a " +
+			"real admin user token BEFORE upgrading. The commands below do that against the " +
+			"running 2.x CP; skip this item entirely on Kubernetes-mode control planes.",
+		Command: `# Run against the 2.x Universal CP, over loopback, BEFORE the upgrade.
+# 1. Confirm loopback is still admin (should print the admin user).
+kumactl get global-secrets >/dev/null && echo "loopback admin still works"
+
+# 2. Mint a long-lived admin token and store it in your secret manager.
+kumactl generate user-token --name upgrade-admin --group mesh-system:admin --valid-for 8760h
+
+# 3. Point kumactl at the CP with that token and verify it works without loopback.
+kumactl config control-planes add --name upgraded --address https://<cp-host>:5682 --auth-type=tokens --auth-conf token=<token>
+kumactl get meshes`,
+	},
 }
 
 // kubernetesManualChecks are appended only when the audit observed Kubernetes in
@@ -1430,6 +1846,36 @@ var kubernetesManualChecks = []ManualCheck{
 			"resource. The command below lists offenders; empty output means there is " +
 			"nothing left to fix.",
 		Command: `kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != "")) | join("/")'`,
+	},
+	{
+		Title: "Drop the `kuma.io/tags` Pod annotation",
+		Detail: "`kuma.io/tags` let a Pod add arbitrary tags to its Dataplane inbounds. " +
+			"Kuma 3.0 has no reader for the annotation at all — it is not deprecated with a " +
+			"warning, it is simply ignored — and inbound tags themselves are gone " +
+			"(`networking.inbound[].tags` is a reserved proto field). Anything selecting or " +
+			"routing on a tag that only existed because of this annotation stops matching " +
+			"after the upgrade. The control-plane API exposes the resulting tags but not " +
+			"which annotation produced them, so the tool cannot attribute them for you. " +
+			"Find the Pods still setting it, then move the values to Pod labels and select " +
+			"the workloads through MeshService instead. Empty output means there is nothing " +
+			"left to fix.",
+		Command: `kubectl get pods -A -o json | jq -r '.items[] | select(.metadata.annotations["kuma.io/tags"]) | [.metadata.namespace, .metadata.name, .metadata.annotations["kuma.io/tags"]] | @tsv'`,
+	},
+	{
+		Title: "Remove `k8s.kuma.io/service-account` from hand-applied Dataplanes",
+		Detail: "The `k8s.kuma.io/service-account` label is computed by the control plane " +
+			"from the Pod and feeds the proxy's identity. In 3.0 the admission webhook " +
+			"rejects any Dataplane create or update that carries it unless the caller is the " +
+			"control plane itself or is listed in `runtime.kubernetes.allowedUsers`, and xDS " +
+			"auth refuses a proxy whose label does not match its Pod's ServiceAccount. A " +
+			"GitOps pipeline that captured a live Dataplane and replays it — label included — " +
+			"starts failing to apply, and the proxies stop connecting. Every Dataplane the " +
+			"control plane created is owned by its Pod, so the ones with no ownerReference " +
+			"are the hand-applied copies; the API alone cannot make that distinction, which " +
+			"is why this is a manual check. The command lists them: drop the label (and the " +
+			"matching annotation) from the manifests in your repository. Empty output means " +
+			"there is nothing left to fix.",
+		Command: `kubectl get dataplanes.kuma.io -A -o json | jq -r '.items[] | select((.metadata.ownerReferences // []) | length == 0) | select(.metadata.labels["k8s.kuma.io/service-account"] // .metadata.annotations["k8s.kuma.io/service-account"]) | [.metadata.namespace, .metadata.name] | @tsv'`,
 	},
 }
 

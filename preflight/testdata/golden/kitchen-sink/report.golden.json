@@ -11,9 +11,9 @@
     "default"
   ],
   "summary": {
-    "blockers": 26,
+    "blockers": 36,
     "warnings": 0,
-    "info": 0,
+    "info": 1,
     "coverage_gaps": 3,
     "parse_errors": 0,
     "system_findings": 1
@@ -154,6 +154,18 @@
     {
       "severity": "blocker",
       "group": "policies",
+      "category": "Cross-zone load balancing",
+      "title": "MeshLoadBalancingStrategy crossZone targets a non-MeshMultiZoneService",
+      "detail": "3.0 accepts `localityAwareness.crossZone` only when the `to[].targetRef.kind` is MeshMultiZoneService; this policy would be rejected on write. Retarget it at a MeshMultiZoneService (kind: MeshService).",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshloadbalancingstrategy/",
+      "count": 1,
+      "example_resources": [
+        "default/mlbs-crosszone"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
       "category": "Policy `from` field",
       "title": "MeshTrafficPermission uses `from`",
       "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
@@ -228,6 +240,18 @@
     {
       "severity": "blocker",
       "group": "data_plane_and_workloads",
+      "category": "Dataplane identity",
+      "title": "Universal Dataplane carries the k8s.kuma.io/service-account label",
+      "detail": "`k8s.kuma.io/service-account` is a control-plane-computed Kubernetes identity label; on Universal it has no source and 3.0 rejects user-applied resources that carry it. Remove the label from this Dataplane before upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
+      "count": 1,
+      "example_resources": [
+        "default/dp-legacy-universal [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
       "category": "Dataplane metrics",
       "title": "Dataplane has a per-proxy metrics override",
       "detail": "`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.",
@@ -235,6 +259,54 @@
       "count": 1,
       "example_resources": [
         "default/dp-1 [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane networking",
+      "title": "Dataplane names individual directAccessServices",
+      "detail": "3.0 honors only the `*` entry in `networking.transparentProxying.directAccessServices` — per-service matching relied on a removed tag and is silently ignored, so this proxy loses direct access entirely. Replace the named services with `*`, or drop direct access for this proxy.",
+      "doc_url": "https://developer.konghq.com/mesh/transparent-proxying/",
+      "count": 1,
+      "example_resources": [
+        "default/dp-legacy-universal [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane networking",
+      "title": "Dataplane outbound has no backendRef",
+      "detail": "3.0 rejects `networking.outbound[]` entries without a `backendRef` on write and NACKs them over KDS; replace tag-based outbounds with a `backendRef` pointing at a MeshService, MeshExternalService or MeshMultiZoneService.",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/",
+      "count": 1,
+      "example_resources": [
+        "default/dp-legacy-universal [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane networking",
+      "title": "Dataplane uses networking.advertisedAddress",
+      "detail": "`networking.advertisedAddress` is removed in 3.0 (the proto field is reserved); drop it and advertise the address through the zone proxy configuration instead.",
+      "doc_url": "https://developer.konghq.com/mesh/data-plane-proxy/",
+      "count": 1,
+      "example_resources": [
+        "default/dp-legacy-universal [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane networking",
+      "title": "Dataplane uses networking.inbound[].tags",
+      "detail": "`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService. This pairs with `experimental.inboundTagsDisabled: true` on the control plane.",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/",
+      "count": 1,
+      "example_resources": [
+        "default/dp-legacy-universal [zone:east]"
       ]
     },
     {
@@ -259,6 +331,30 @@
       "count": 1,
       "example_resources": [
         "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Gateway in Dataplane",
+      "title": "Dataplane kuma.io/gateway label is not a boolean",
+      "detail": "3.0 marks a delegated gateway with the `kuma.io/gateway` label and accepts only `true`/`false`; any other value (e.g. the 2.x `enabled` annotation value) leaves the proxy silently unmarked as a gateway. Set the label to `true` (current: enabled).",
+      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
+      "count": 1,
+      "example_resources": [
+        "default/dp-legacy-universal [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Gateway in Dataplane",
+      "title": "Dataplane marks a gateway with networking.gateway",
+      "detail": "3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy still carries the marker in its spec and does not carry the label, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Set the `kuma.io/gateway` label to `\"true\"` before upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
+      "count": 1,
+      "example_resources": [
+        "default/dp-gateway [zone:west]"
       ]
     },
     {
@@ -300,6 +396,30 @@
     {
       "severity": "blocker",
       "group": "other",
+      "category": "Non-RFC-1035 names",
+      "title": "Zone name is not a valid RFC-1035 DNS label",
+      "detail": "A 3.0 zone control plane refuses to start unless its name is a lowercase RFC-1035 DNS label (≤63 chars, starting with a letter), and the global rejects the zone on connect. The Helm chart still accepts dots, so such a zone upgrades cleanly and then crash-loops — rename it before upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
+      "count": 1,
+      "example_resources": [
+        "eu.west"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "other",
+      "category": "Zone proxies",
+      "title": "Mesh has no MeshZoneAddress for a zone it spans",
+      "detail": "MeshZoneAddress is mesh-scoped: every mesh whose services are consumed from another zone needs its own resource in the zone that serves them, or cross-zone MeshService traffic to that mesh is down on 3.0. This mesh has proxies in more than one zone and this zone terminates cross-zone traffic on Universal, but no MeshZoneAddress in the mesh advertises it. 2.14 already registers the type, so create it before upgrading. (Kubernetes zones are not flagged — there the 3.0 control plane creates the resource from the zone-proxy Service.)",
+      "doc_url": "https://developer.konghq.com/mesh/zone-proxies/",
+      "count": 1,
+      "example_resources": [
+        "mesh default, zone east"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "other",
       "category": "Zone proxies",
       "title": "zoneingresses present",
       "detail": "Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.",
@@ -307,6 +427,18 @@
       "count": 1,
       "example_resources": [
         "zi-1"
+      ]
+    },
+    {
+      "severity": "info",
+      "group": "policies",
+      "category": "MeshHTTPRoute routing",
+      "title": "MeshHTTPRoute has no catch-all rule",
+      "detail": "In 3.0 a request that matches no rule of an applicable MeshHTTPRoute gets a `404` instead of falling through to the destination. This route matches only some requests, so if it exists to anchor a MeshTimeout/MeshRetry/MeshAccessLog the unmatched traffic starts failing after the upgrade. Review it and add a catch-all rule (`path: {type: PathPrefix, value: /}` with no other matchers) if the fall-through is intended.",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshhttproute/",
+      "count": 1,
+      "example_resources": [
+        "default/anchor-only"
       ]
     }
   ],
@@ -336,9 +468,24 @@
       "command": "# Detect pre-1.4.x HMAC256 token signing keys (must be asymmetric RSA before 3.0).\n# Needs: jq, openssl + secret-read access. Never prints key material.\n# Safe to paste whole: each section runs only if its CLI is present.\n\nclassify() {  # reads a base64 key on stdin, prints a verdict\n  b64=$(cat)\n  if printf %s \"$b64\" | base64 -d 2\u003e/dev/null | openssl rsa -noout 2\u003e/dev/null; then\n    echo \"OK (RSA PEM)\"\n  elif printf %s \"$b64\" | base64 -d 2\u003e/dev/null | openssl rsa -inform DER -noout 2\u003e/dev/null; then\n    echo \"OK (RSA DER)\"\n  else\n    echo \"LEGACY HMAC256 -\u003e ROTATE\"\n  fi\n}\n\n# --- Kubernetes (CP namespace; set NS=kuma-system for open-source Kuma) ---\nif command -v kubectl \u003e/dev/null 2\u003e\u00261; then\n  NS=kong-mesh-system\n  kubectl -n \"$NS\" get secret -o json \\\n    | jq -r '.items[]\n        | select(.type | test(\"kuma.io/(global-)?secret\"))\n        | select(.metadata.name | test(\"token-signing-key\"))\n        | select(.data.value != null)\n        | [.metadata.name, .data.value] | @tsv' \\\n    | while read -r name val; do\n        printf '%-45s %s\\n' \"$name\" \"$(printf %s \"$val\" | classify)\"\n      done\nfi\n\n# --- Universal (point kumactl at the CP) ---\nif command -v kumactl \u003e/dev/null 2\u003e\u00261; then\n  kumactl get global-secrets -o json \\\n    | jq -r '.items[]\n        | select(.name | test(\"token-signing-key\"))\n        | select(.data != null)\n        | [.name, .data] | @tsv' \\\n    | while read -r name data; do\n        printf '%-45s %s\\n' \"$name\" \"$(printf %s \"$data\" | classify)\"\n      done\n  for mesh in $(kumactl get meshes -o json | jq -r '.items[].name'); do\n    kumactl get secrets --mesh \"$mesh\" -o json \\\n      | jq -r '.items[]\n          | select(.name | test(\"token-signing-key\"))\n          | select(.data != null)\n          | [.name, .data] | @tsv' \\\n      | while read -r name data; do\n          printf '%-25s %-30s %s\\n' \"$mesh\" \"$name\" \"$(printf %s \"$data\" | classify)\"\n        done\n  done\nfi"
     },
     {
+      "title": "Re-check kumactl access on a Helm-installed Universal control plane",
+      "detail": "A Universal control plane installed from the Helm chart no longer treats loopback callers as admin: the chart sets `KUMA_API_SERVER_AUTHN_LOCALHOST_IS_ADMIN=false` in 3.0, where 2.x left the built-in default of `true`. Operators who reach the API with `kubectl exec` or `kubectl port-forward` plus kumactl and no token lose access the moment the upgrade rolls out. The control-plane API cannot tell you how the CP was installed or how your operators authenticate, so the tool cannot detect this for you. The catch is the ordering: the bootstrap admin token can only be read over loopback *while the old default is still in effect*, so issue and store a real admin user token BEFORE upgrading. The commands below do that against the running 2.x CP; skip this item entirely on Kubernetes-mode control planes.",
+      "command": "# Run against the 2.x Universal CP, over loopback, BEFORE the upgrade.\n# 1. Confirm loopback is still admin (should print the admin user).\nkumactl get global-secrets \u003e/dev/null \u0026\u0026 echo \"loopback admin still works\"\n\n# 2. Mint a long-lived admin token and store it in your secret manager.\nkumactl generate user-token --name upgrade-admin --group mesh-system:admin --valid-for 8760h\n\n# 3. Point kumactl at the CP with that token and verify it works without loopback.\nkumactl config control-planes add --name upgraded --address https://\u003ccp-host\u003e:5682 --auth-type=tokens --auth-conf token=\u003ctoken\u003e\nkumactl get meshes"
+    },
+    {
       "title": "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
       "detail": "On Kubernetes a Pod or Namespace is bound to a non-default mesh through `kuma.io/mesh`, which can be set as either an annotation or a label. Kuma 2.x still reads the annotation but logs a deprecation warning; 3.0 honors only the label. The control-plane API exposes only the resolved mesh name, not which metadata field set it, so the tool cannot detect this for you. You have to inspect the cluster objects directly. Move every `kuma.io/mesh` annotation to a label with the same value on Pods, Namespaces, and any other namespaced Kuma resource. The command below lists offenders; empty output means there is nothing left to fix.",
       "command": "kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations[\"kuma.io/mesh\"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != \"\")) | join(\"/\")'"
+    },
+    {
+      "title": "Drop the `kuma.io/tags` Pod annotation",
+      "detail": "`kuma.io/tags` let a Pod add arbitrary tags to its Dataplane inbounds. Kuma 3.0 has no reader for the annotation at all — it is not deprecated with a warning, it is simply ignored — and inbound tags themselves are gone (`networking.inbound[].tags` is a reserved proto field). Anything selecting or routing on a tag that only existed because of this annotation stops matching after the upgrade. The control-plane API exposes the resulting tags but not which annotation produced them, so the tool cannot attribute them for you. Find the Pods still setting it, then move the values to Pod labels and select the workloads through MeshService instead. Empty output means there is nothing left to fix.",
+      "command": "kubectl get pods -A -o json | jq -r '.items[] | select(.metadata.annotations[\"kuma.io/tags\"]) | [.metadata.namespace, .metadata.name, .metadata.annotations[\"kuma.io/tags\"]] | @tsv'"
+    },
+    {
+      "title": "Remove `k8s.kuma.io/service-account` from hand-applied Dataplanes",
+      "detail": "The `k8s.kuma.io/service-account` label is computed by the control plane from the Pod and feeds the proxy's identity. In 3.0 the admission webhook rejects any Dataplane create or update that carries it unless the caller is the control plane itself or is listed in `runtime.kubernetes.allowedUsers`, and xDS auth refuses a proxy whose label does not match its Pod's ServiceAccount. A GitOps pipeline that captured a live Dataplane and replays it — label included — starts failing to apply, and the proxies stop connecting. Every Dataplane the control plane created is owned by its Pod, so the ones with no ownerReference are the hand-applied copies; the API alone cannot make that distinction, which is why this is a manual check. The command lists them: drop the label (and the matching annotation) from the manifests in your repository. Empty output means there is nothing left to fix.",
+      "command": "kubectl get dataplanes.kuma.io -A -o json | jq -r '.items[] | select((.metadata.ownerReferences // []) | length == 0) | select(.metadata.labels[\"k8s.kuma.io/service-account\"] // .metadata.annotations[\"k8s.kuma.io/service-account\"]) | [.metadata.namespace, .metadata.name] | @tsv'"
     }
   ]
 }

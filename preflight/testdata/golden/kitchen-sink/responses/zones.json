@@ -1,0 +1,8 @@
+{
+  "total": 2,
+  "items": [
+    { "type": "Zone", "name": "eu.west", "enabled": true },
+    { "type": "Zone", "name": "east", "enabled": true }
+  ],
+  "next": null
+}
