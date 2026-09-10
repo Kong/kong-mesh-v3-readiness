@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 35,
+    "blockers": 36,
     "warnings": 0,
     "info": 1,
     "coverage_gaps": 3,
@@ -348,6 +348,18 @@
     {
       "severity": "blocker",
       "group": "data_plane_and_workloads",
+      "category": "Gateway in Dataplane",
+      "title": "Dataplane marks a gateway with networking.gateway",
+      "detail": "3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy carries the marker only in its spec, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Add the label before upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
+      "count": 1,
+      "example_resources": [
+        "default/dp-gateway [zone:west]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
       "category": "Workload grouping",
       "title": "Universal Dataplane missing kuma.io/workload label",
       "detail": "On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.",
@@ -397,12 +409,12 @@
       "severity": "blocker",
       "group": "other",
       "category": "Zone proxies",
-      "title": "Zone has no MeshZoneAddress",
-      "detail": "This zone terminates cross-zone traffic but no MeshZoneAddress advertises its address. In 3.0 cross-zone MeshService traffic to a zone is down until one exists; create it on 2.14 (which already ships the resource) before upgrading.",
+      "title": "Mesh has no MeshZoneAddress for a zone it spans",
+      "detail": "MeshZoneAddress is mesh-scoped: every mesh whose services are consumed from another zone needs its own resource in the zone that serves them, or cross-zone MeshService traffic to that mesh is down on 3.0. This mesh has proxies in more than one zone and this zone terminates cross-zone traffic on Universal, but no MeshZoneAddress in the mesh advertises it. 2.14 already registers the type, so create it before upgrading. (Kubernetes zones are not flagged — there the 3.0 control plane creates the resource from the zone-proxy Service.)",
       "doc_url": "https://developer.konghq.com/mesh/zone-proxies/",
       "count": 1,
       "example_resources": [
-        "zone east"
+        "mesh default, zone east"
       ]
     },
     {

@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -131,6 +132,72 @@ func TestGatewayLabelValue(t *testing.T) {
 	}
 }
 
+// TestGatewayLabelCheckSkipsKubernetes guards against advice that would be wrong
+// on Kubernetes: 2.14 merges Pod labels onto the Dataplane, so a stray
+// kuma.io/gateway lands there, and the 3.0 pod controller recomputes the label
+// from the Pod annotation (deleting it for a non-gateway). Telling an operator to
+// set it to "true" would convert a sidecar into a gateway.
+func TestGatewayLabelCheckSkipsKubernetes(t *testing.T) {
+	m := auditDataplane(t, map[string]any{"labels": map[string]any{
+		"kuma.io/env": "kubernetes", "kuma.io/gateway": "enabled",
+	}})
+	if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane kuma.io/gateway label is not a boolean"); ok {
+		t.Errorf("k8s dataplane wrongly flagged for a stray gateway label\nfindings: %+v", m.Findings)
+	}
+	if m.Status != StatusClean {
+		t.Errorf("status = %q, want %q", m.Status, StatusClean)
+	}
+}
+
+// TestUniversalGatewaySpecMigration covers the marker a real 2.14 Universal
+// gateway actually carries: networking.gateway in the spec. 2.14 never computes
+// the kuma.io/gateway label, so without this the whole delegated-gateway
+// migration is invisible to the audit.
+func TestUniversalGatewaySpecMigration(t *testing.T) {
+	dp := func(gateway map[string]any, labels map[string]any) map[string]any {
+		l := map[string]any{"kuma.io/env": "universal", "kuma.io/workload": "gw"}
+		maps.Copy(l, labels)
+		return map[string]any{"labels": l, "networking": map[string]any{"gateway": gateway}}
+	}
+	delegated := map[string]any{"type": "DELEGATED", "tags": map[string]any{"kuma.io/service": "gw"}}
+
+	t.Run("delegated gateway without the label is flagged", func(t *testing.T) {
+		m := auditDataplane(t, dp(delegated, nil))
+		if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway"); !ok {
+			t.Fatalf("universal delegated gateway not flagged\nfindings: %+v", m.Findings)
+		}
+	})
+	t.Run("gateway with no explicit type defaults to delegated", func(t *testing.T) {
+		m := auditDataplane(t, dp(map[string]any{"tags": map[string]any{"kuma.io/service": "gw"}}, nil))
+		if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway"); !ok {
+			t.Fatalf("gateway with no type not flagged\nfindings: %+v", m.Findings)
+		}
+	})
+	t.Run("already migrated gateway is not flagged", func(t *testing.T) {
+		m := auditDataplane(t, dp(delegated, map[string]any{"kuma.io/gateway": "true"}))
+		if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway"); ok {
+			t.Errorf("gateway already carrying the label wrongly flagged\nfindings: %+v", m.Findings)
+		}
+	})
+	t.Run("builtin gateway is flagged as removed", func(t *testing.T) {
+		m := auditDataplane(t, dp(map[string]any{"type": "BUILTIN", "tags": map[string]any{"kuma.io/service": "gw"}}, nil))
+		if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane is a builtin gateway"); !ok {
+			t.Fatalf("builtin gateway not flagged\nfindings: %+v", m.Findings)
+		}
+	})
+	t.Run("kubernetes gateway is not flagged", func(t *testing.T) {
+		m := auditDataplane(t, map[string]any{
+			"labels":     map[string]any{"kuma.io/env": "kubernetes"},
+			"networking": map[string]any{"gateway": delegated},
+		})
+		for _, f := range m.Findings {
+			if f.Category == "Gateway in Dataplane" {
+				t.Errorf("k8s gateway wrongly flagged: %q", f.Title)
+			}
+		}
+	})
+}
+
 // TestServiceAccountLabelIsUniversalOnly checks the identity label: on Universal
 // it can only be a copied leftover, on Kubernetes it is on every control-plane
 // created Dataplane and a manual check covers the GitOps case instead.
@@ -214,56 +281,131 @@ func TestZoneNameNotDoubleCountedOnGlobal(t *testing.T) {
 	}
 }
 
-// TestMeshZoneAddressPerZone covers the cross-zone readiness rule: a zone that
-// terminates cross-zone traffic on a multi-zone global needs a MeshZoneAddress.
-func TestMeshZoneAddressPerZone(t *testing.T) {
-	const title = "Zone has no MeshZoneAddress"
+// TestMeshZoneAddressPerMeshAndZone covers the cross-zone readiness rule.
+// MeshZoneAddress is mesh-scoped, so coverage in one mesh must not satisfy
+// another; and the rule applies only to a zone-spanning mesh whose zone
+// terminates cross-zone traffic on Universal.
+func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
+	const title = "Mesh has no MeshZoneAddress for a zone it spans"
+	// Two meshes, both spanning east+west, with a Universal zone proxy in east.
 	globalResponses := func(extra map[string]string) map[string]string {
 		r := map[string]string{
 			"/config": `{"mode": "global", "environment": "universal"}`,
+			"/meshes": listBody(t,
+				map[string]any{"type": "Mesh", "name": "default", "meshServices": map[string]any{"mode": "Exclusive"}},
+				map[string]any{"type": "Mesh", "name": "payments", "meshServices": map[string]any{"mode": "Exclusive"}},
+			),
 			"/zones+insights": listBody(t,
 				map[string]any{"type": "ZoneOverview", "name": "east"},
 				map[string]any{"type": "ZoneOverview", "name": "west"},
 			),
-			"/zoneingresses": listBody(t, map[string]any{"type": "ZoneIngress", "name": "zi-east", "zone": "east"}),
+			"/zoneingresses": listBody(t, map[string]any{
+				"type": "ZoneIngress", "name": "zi-east", "zone": "east",
+				"labels": map[string]any{"kuma.io/env": "universal"},
+			}),
+			"/dataplanes": listBody(t,
+				universalDP("default", "dp-e", "east"), universalDP("default", "dp-w", "west"),
+				universalDP("payments", "pay-e", "east"), universalDP("payments", "pay-w", "west"),
+			),
 		}
 		maps.Copy(r, extra)
 		return r
 	}
-
-	t.Run("zone proxy without a MeshZoneAddress is flagged", func(t *testing.T) {
-		m := auditResponses(t, globalResponses(nil))
+	examples := func(m Report) []string {
 		f, ok := findFinding(m, "blocker", "Zone proxies", title)
 		if !ok {
-			t.Fatalf("missing blocker %q\nfindings: %+v", title, m.Findings)
+			return nil
 		}
-		if len(f.Examples) != 1 || f.Examples[0] != "zone east" {
-			t.Errorf("examples = %v, want [zone east]", f.Examples)
+		return f.Examples
+	}
+
+	t.Run("every zone-spanning mesh is required to cover the zone", func(t *testing.T) {
+		got := examples(auditResponses(t, globalResponses(nil)))
+		want := []string{"mesh default, zone east", "mesh payments, zone east"}
+		if !slices.Equal(got, want) {
+			t.Errorf("examples = %v, want %v", got, want)
 		}
 	})
 
-	t.Run("covered zone is not flagged", func(t *testing.T) {
-		m := auditResponses(t, globalResponses(map[string]string{
+	t.Run("coverage in one mesh does not satisfy another", func(t *testing.T) {
+		got := examples(auditResponses(t, globalResponses(map[string]string{
 			"/meshzoneaddresses": listBody(t, map[string]any{
 				"type": "MeshZoneAddress", "mesh": "default", "name": "east-ingress",
 				"labels": map[string]any{"kuma.io/zone": "east"},
 			}),
-		}))
-		if _, ok := findFinding(m, "blocker", "Zone proxies", title); ok {
-			t.Errorf("zone with a MeshZoneAddress wrongly flagged\nfindings: %+v", m.Findings)
+		})))
+		want := []string{"mesh payments, zone east"}
+		if !slices.Equal(got, want) {
+			t.Errorf("examples = %v, want %v — a MeshZoneAddress in one mesh covered another", got, want)
+		}
+	})
+
+	t.Run("fully covered estate is not flagged", func(t *testing.T) {
+		got := examples(auditResponses(t, globalResponses(map[string]string{
+			"/meshzoneaddresses": listBody(t,
+				map[string]any{
+					"type": "MeshZoneAddress", "mesh": "default", "name": "east-ingress",
+					"labels": map[string]any{"kuma.io/zone": "east"},
+				},
+				map[string]any{
+					"type": "MeshZoneAddress", "mesh": "payments", "name": "east-ingress",
+					"labels": map[string]any{"kuma.io/zone": "east"},
+				},
+			),
+		})))
+		if got != nil {
+			t.Errorf("covered estate flagged: %v", got)
+		}
+	})
+
+	t.Run("zone-local mesh is not required to cover the zone", func(t *testing.T) {
+		got := examples(auditResponses(t, globalResponses(map[string]string{
+			"/dataplanes": listBody(t,
+				universalDP("default", "dp-e", "east"), universalDP("default", "dp-w", "west"),
+				universalDP("payments", "pay-e", "east"),
+			),
+			"/meshzoneaddresses": listBody(t, map[string]any{
+				"type": "MeshZoneAddress", "mesh": "default", "name": "east-ingress",
+				"labels": map[string]any{"kuma.io/zone": "east"},
+			}),
+		})))
+		if got != nil {
+			t.Errorf("mesh confined to one zone wrongly flagged: %v", got)
+		}
+	})
+
+	t.Run("kubernetes zone proxy is not flagged", func(t *testing.T) {
+		got := examples(auditResponses(t, globalResponses(map[string]string{
+			"/zoneingresses": listBody(t, map[string]any{
+				"type": "ZoneIngress", "name": "zi-east", "zone": "east",
+				"labels": map[string]any{"kuma.io/env": "kubernetes"},
+			}),
+		})))
+		if got != nil {
+			t.Errorf("kubernetes zone flagged, but the 3.0 CP creates the resource itself: %v", got)
 		}
 	})
 
 	t.Run("single-zone estate is not checked", func(t *testing.T) {
-		m := auditResponses(t, map[string]string{
-			"/config":         `{"mode": "global", "environment": "universal"}`,
+		got := examples(auditResponses(t, globalResponses(map[string]string{
 			"/zones+insights": listBody(t, map[string]any{"type": "ZoneOverview", "name": "east"}),
-			"/zoneingresses":  listBody(t, map[string]any{"type": "ZoneIngress", "name": "zi-east", "zone": "east"}),
-		})
-		if _, ok := findFinding(m, "blocker", "Zone proxies", title); ok {
-			t.Errorf("single-zone estate wrongly flagged\nfindings: %+v", m.Findings)
+		})))
+		if got != nil {
+			t.Errorf("single-zone estate wrongly flagged: %v", got)
 		}
 	})
+}
+
+// universalDP is a migrated Universal Dataplane in a mesh and zone, carrying no
+// deprecated construct of its own so it contributes only its mesh/zone presence.
+func universalDP(mesh, name, zone string) map[string]any {
+	return map[string]any{
+		"type": "Dataplane", "mesh": mesh, "name": name,
+		"labels": map[string]any{
+			"kuma.io/env": "universal", "kuma.io/zone": zone, "kuma.io/workload": name,
+		},
+		"networking": map[string]any{"inbound": []any{map[string]any{"port": 8080}}},
+	}
 }
 
 // TestMeshZoneAddressUnservedIsCoverageGap guards the "not observed is not
@@ -277,10 +419,14 @@ func TestMeshZoneAddressUnservedIsCoverageGap(t *testing.T) {
 			map[string]any{"type": "ZoneOverview", "name": "east"},
 			map[string]any{"type": "ZoneOverview", "name": "west"},
 		),
-		"/zoneingresses": listBody(t, map[string]any{"type": "ZoneIngress", "name": "zi-east", "zone": "east"}),
+		"/zoneingresses": listBody(t, map[string]any{
+			"type": "ZoneIngress", "name": "zi-east", "zone": "east",
+			"labels": map[string]any{"kuma.io/env": "universal"},
+		}),
+		"/dataplanes": listBody(t, universalDP("default", "dp-e", "east"), universalDP("default", "dp-w", "west")),
 	}, "/meshzoneaddresses")
 
-	if _, ok := findFinding(m, "blocker", "Zone proxies", "Zone has no MeshZoneAddress"); ok {
+	if _, ok := findFinding(m, "blocker", "Zone proxies", "Mesh has no MeshZoneAddress for a zone it spans"); ok {
 		t.Errorf("an unserved collection must not produce a per-zone blocker\nfindings: %+v", m.Findings)
 	}
 	gapped := false
