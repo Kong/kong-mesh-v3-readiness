@@ -14,7 +14,7 @@ Reference list of features deprecated, replaced, or slated for removal. Used as 
 | **Shadow policies** | — | kept **internal-only** | can't drop (too much e2e coverage); remove only public docs |
 | **Policy direction** | `from[]` arrays | `to[]` / `rules[]` | `from` deprecated across many policies (see below), removal targeted for **3.0** |
 | **mTLS config** | `Mesh.spec.mtls` backends | `MeshIdentity` + `MeshTrust` | MeshIdentity provisions identity/certs (Bundled / SPIRE / Extension), auto-generates MeshTrust CA bundles. Requires `meshServices.mode: Exclusive` |
-| **Zone proxies** | separate `ZoneIngress` + `ZoneEgress` resources | unified **Zone Proxy** (Listener types embedded in Dataplane) | `ZoneIngress`/`ZoneEgress` listener types in `dataplane.proto`. Functions only in Exclusive mode; egress needs WorkloadIdentity |
+| **Zone proxies** | separate `ZoneIngress` + `ZoneEgress` resources | unified **Zone Proxy** (Listener types embedded in Dataplane) | `ZoneIngress`/`ZoneEgress` listener types in `dataplane.proto`. Functions only in Exclusive mode; egress needs WorkloadIdentity. Cross-zone `MeshService` traffic to a zone is down until a **MeshZoneAddress** advertises that zone's address; 2.14 already ships the resource, so create it before upgrading. Preflight requires one per zone that terminates cross-zone traffic |
 | **MeshTrafficPermission matching** | `from[].targetRef` (MeshService/MeshSubset) | `rules[]` with `matches[].spiffeID` (Exact/Prefix) + SNI match | Requires MeshIdentity. `from` deprecated, removed in 3.0 |
 | **Gateways (ALL types)** | `MeshGateway`, `MeshGatewayInstance`, `MeshGatewayRoute`, builtin gateway, Gateway API / GAMMA support | delegated gateway (Kong/third-party) only | 3.0 drops Kuma's gateway business entirely — not just builtin. See Gateway section below |
 | **Reachable services** | `kuma.io/transparent-proxying-reachable-services` / `reachableServices` (kuma.io/service based) | `reachableBackends` (MeshService based) | Tied to Exclusive mode + MeshService migration |
@@ -89,6 +89,8 @@ every kind from `to[].targetRef` (the destination), which keeps `Mesh` / `Mesh*S
 - **MeshTrust**: `spec.origin` → `status.origin`
 - **Timeout (legacy)**: `timeout.http.grpc.streamIdleTimeout` / `maxStreamDuration` / whole `grpc` section → `timeout.http.*`
 - **MeshInsight**: `policyStat` → `resources`
+- **MeshLoadBalancingStrategy**: `localityAwareness.crossZone` is accepted only when `to[].targetRef.kind` is `MeshMultiZoneService` (`meshloadbalancingstrategy/api/v1alpha1/validator.go`)
+- **MeshHTTPRoute**: a request matching no rule of an applicable route now returns `404` instead of falling through to the destination. A route written only to anchor a MeshTimeout/MeshRetry/MeshAccessLog silently changes traffic; preflight surfaces routes with no catch-all rule as **info** (a heuristic — the narrowing may well be intended — so it must not gate CI)
 
 ## Resources dropped
 
@@ -97,6 +99,20 @@ every kind from `to[].targetRef` (the destination), which keeps `Mesh` / `Mesh*S
 - **VirtualOutbound** → unified naming + MeshService hostnames
 - **ServiceInsight** → dropped (already not computed in Exclusive mode)
 - **Tags on dataplanes** → dropped (label-based selection + MeshService; broader than inbound tags)
+
+### Dataplane `networking` fields (Universal, hand-written)
+
+Reserved or re-validated in `api/mesh/v1alpha1/dataplane.proto`; a 3.0 CP rejects or ignores them. On Kubernetes the CP
+generates the Dataplane and a 3.0 CP regenerates it, so preflight flags these only for non-Kubernetes proxies
+(`directAccessServices` excepted — it is honored on both).
+
+| Field | 3.0 behavior | Replacement |
+|---|---|---|
+| `networking.advertisedAddress` | proto field reserved | advertise through the zone proxy config |
+| `networking.inbound[].tags` | proto field reserved | Dataplane labels + MeshService selection (pairs with `experimental.inboundTagsDisabled: true`) |
+| `networking.outbound[]` without `backendRef` | rejected on write, NACKed over KDS (`dataplane_validator.go`) | `backendRef` to a MeshService / MeshExternalService / MeshMultiZoneService |
+| `networking.transparentProxying.directAccessServices` | only `*` is honored; named services silently ignored (`direct_access_proxy_generator.go`) | `*`, or drop direct access |
+| `networking.transparentProxying.reachableServices` | removed | `reachableBackends` (see core table) |
 
 ## Gateway — Kuma exits the gateway business
 
@@ -126,14 +142,18 @@ All gateway functionality delegated to Kong / third-party (delegated gateway). D
 - **Pod resources** instead of container resources
 - **`KUMA_RUNTIME_KUBERNETES_INJECTOR_BUILTIN_DNS_LOGGING`** (embedded DNS logging) → dropped
 - Routing MeshExternalService through a specific zone → dropped
+- **Universal Helm loopback admin** → the chart sets `KUMA_API_SERVER_AUTHN_LOCALHOST_IS_ADMIN=false` in 3.0 (2.x left the built-in default `true`). `kubectl exec`/`port-forward` + kumactl without a token stops working, and the bootstrap admin token can only be read over loopback *before* the upgrade. Not observable from the API — manual check
 
 ## Naming / identity / misc
 
 - **Legacy `kuma.io/service` tag routing** → MeshService resources + explicit BackendRef (`LegacyOutbound` in `pkg/core/xds/types/outbound.go`)
-- **Non-RFC-1035 resource names** deprecated for Mesh, Zone, MeshService, MeshExternalService, MeshMultiZoneService (`deprecated.go` per resource)
+- **Non-RFC-1035 resource names** deprecated for Mesh, Zone, MeshService, MeshExternalService, MeshMultiZoneService (`deprecated.go` per resource). For **Zone** it is stricter than a deprecation: a 3.0 zone CP refuses to start on a non-label name (`pkg/config/multizone/multicluster.go`) and the global rejects it on connect (`pkg/core/resources/apis/system/zone_validator.go`), while the Helm chart still accepts dots — so `eu.west` passes `helm upgrade` and then crash-loops. Preflight reads `/zones` on a global, falling back to `multizone.zone.name` in `/config` on a directly audited zone CP
 - **MeshMultiZoneService**: names > 63 chars deprecated
 - **`kuma.io/mesh` annotation** → use label
 - **MeshGatewayInstance**: `kuma.io/service` tag → auto-generated `serviceName`
 - **Dataplane `spec.probes`** → removed for Universal; not needed on Kubernetes
+- **`kuma.io/gateway`** moved from Pod annotation to Dataplane **label**, and the value is now a boolean: only `"true"` marks a delegated gateway (`mesh_proto.IsDelegatedGateway`). The 2.x annotation value `enabled` carried over as a label silently stops marking the proxy
+- **`k8s.kuma.io/service-account`** is control-plane-owned in 3.0: the admission webhook rejects a user-applied resource carrying it (unless the caller is the CP or in `runtime.kubernetes.allowedUsers`) and xDS auth refuses a proxy whose label does not match its Pod's ServiceAccount. Preflight flags it on Universal Dataplanes (where it has no source at all); the GitOps-on-Kubernetes case is a manual check, since a CP-created Dataplane legitimately carries it
+- **`kuma.io/tags` Pod annotation** → no reader in 3.0 (`pkg/plugins/runtime/k8s/metadata/annotations.go`); it is ignored rather than warned about. Manual check
 - **Legacy HMAC256 signing keys** (pre-1.4.x) → asymmetric RSA/ECDSA (`pkg/core/tokens/signing_key_accessor.go`)
 
