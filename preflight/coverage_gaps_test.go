@@ -80,15 +80,19 @@ func TestDataplaneNetworkingChecksSkipKubernetes(t *testing.T) {
 }
 
 // TestDirectAccessServicesWildcardIsClean guards the one value 3.0 still honors.
+// A list that also carries `*` already grants access to everything, so dropping
+// per-service matching changes nothing for it either.
 func TestDirectAccessServicesWildcardIsClean(t *testing.T) {
-	m := auditDataplane(t, map[string]any{
-		"labels": map[string]any{"kuma.io/env": "universal", "kuma.io/workload": "backend"},
-		"networking": map[string]any{
-			"transparentProxying": map[string]any{"directAccessServices": []any{"*"}},
-		},
-	})
-	if _, ok := findFinding(m, "blocker", "Dataplane networking", "Dataplane names individual directAccessServices"); ok {
-		t.Errorf("`*` directAccessServices wrongly flagged\nfindings: %+v", m.Findings)
+	for _, services := range [][]any{{"*"}, {"*", "frontend"}, {}} {
+		m := auditDataplane(t, map[string]any{
+			"labels": map[string]any{"kuma.io/env": "universal", "kuma.io/workload": "backend"},
+			"networking": map[string]any{
+				"transparentProxying": map[string]any{"directAccessServices": services},
+			},
+		})
+		if _, ok := findFinding(m, "blocker", "Dataplane networking", "Dataplane names individual directAccessServices"); ok {
+			t.Errorf("directAccessServices %v wrongly flagged\nfindings: %+v", services, m.Findings)
+		}
 	}
 }
 

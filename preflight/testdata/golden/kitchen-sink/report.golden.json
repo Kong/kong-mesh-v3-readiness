@@ -266,7 +266,7 @@
       "group": "data_plane_and_workloads",
       "category": "Dataplane networking",
       "title": "Dataplane names individual directAccessServices",
-      "detail": "3.0 honors only the `*` entry in `networking.transparentProxying.directAccessServices` — per-service matching relied on a removed tag and is silently ignored. Replace the named services with `*`, or drop direct access for this proxy.",
+      "detail": "3.0 honors only the `*` entry in `networking.transparentProxying.directAccessServices` — per-service matching relied on a removed tag and is silently ignored, so this proxy loses direct access entirely. Replace the named services with `*`, or drop direct access for this proxy.",
       "doc_url": "https://developer.konghq.com/mesh/transparent-proxying/",
       "count": 1,
       "example_resources": [

@@ -790,13 +790,13 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		a.rep.addDoc(blocker, "reachableServices", "Dataplane uses reachableServices",
 			"Replace `reachableServices` with `reachableBackends` (MeshService-based).", docReachableBackends, qualified(it))
 	}
-	for _, s := range tp.DirectAccessServices {
-		if s != "*" {
-			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane names individual directAccessServices",
-				"3.0 honors only the `*` entry in `networking.transparentProxying.directAccessServices` — per-service matching relied on a removed tag and is silently ignored. Replace the named services with `*`, or drop direct access for this proxy.",
-				docTransparentProxy, qualified(it))
-			break
-		}
+	// Only the named entries matter: a list that also carries `*` already grants
+	// direct access to everything, so 3.0 dropping per-service matching changes
+	// nothing for it.
+	if !slices.Contains(tp.DirectAccessServices, "*") && len(tp.DirectAccessServices) > 0 {
+		a.rep.addDoc(blocker, "Dataplane networking", "Dataplane names individual directAccessServices",
+			"3.0 honors only the `*` entry in `networking.transparentProxying.directAccessServices` — per-service matching relied on a removed tag and is silently ignored, so this proxy loses direct access entirely. Replace the named services with `*`, or drop direct access for this proxy.",
+			docTransparentProxy, qualified(it))
 	}
 }
 
