@@ -152,7 +152,7 @@ var categoryToGroup = map[string]string{
 	"Dataplane version":         groupDataPlane,
 	"Dataplane features":        groupDataPlane,
 	"Dataplane DNS":             groupDataPlane,
-	categoryOutboundDefaults:    groupDataPlane,
+	"Outbound defaults":         groupDataPlane,
 	"Non-RFC-1035 names":        groupOther,
 	"Unparseable resources":     groupOther,
 	"Zone proxies":              groupOther,

@@ -7,6 +7,8 @@ import (
 )
 
 const (
+	categoryOutboundDefaults = "Outbound defaults"
+
 	titleUniversalDeny     = "Universal Dataplanes have no reachableBackends"
 	titleKubernetesDeny    = "Kubernetes dataplanes have no reachableBackends"
 	titleNoMeshPassthrough = "Mesh has no MeshPassthrough policy"

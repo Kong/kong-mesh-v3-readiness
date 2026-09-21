@@ -95,16 +95,9 @@ const (
 	categoryRemovedResources = "Removed resources"
 )
 
-// categoryOutboundDefaults groups the two 3.0 outbound-deny default flips:
-// `reachableBackends` unset stops meaning "every destination in the mesh", and a
-// proxy matched by no MeshPassthrough stops getting a passthrough cluster. Both
-// are absence-triggered — they fire on a proxy/mesh that carries no
-// configuration at all — so both are reported in summary form.
-const categoryOutboundDefaults = "Outbound defaults"
-
 // allowAllOutboundSetting names the 3.0 control-plane escape hatch that restores
-// the 2.x all-destinations default for both flips, quoted in the remediation of
-// every finding in categoryOutboundDefaults.
+// the 2.x all-destinations default for both outbound-deny flips, quoted in the
+// remediation of every "Outbound defaults" finding.
 const allowAllOutboundSetting = "`defaults.allowAllOutbound: true` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`)"
 
 // removedCategory picks the finding category (and thus display group) for a
@@ -966,7 +959,7 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 
 // addOutboundDenyFinding records one environment's reachable-backends summary.
 func (a *auditor) addOutboundDenyFinding(subject, env, fix string, denied, total int, refs []string) {
-	a.rep.addSummary(blocker, categoryOutboundDefaults, subject+" have no reachableBackends",
+	a.rep.addSummary(blocker, "Outbound defaults", subject+" have no reachableBackends",
 		fmt.Sprintf("%d of %d transparent-proxy %s data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. "+
 			"In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. "+
 			"%s — or set %s on the 3.0 control plane to keep the 2.x behavior while you roll it out.",
@@ -1006,7 +999,7 @@ func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
 			refs = append(refs, m)
 		}
 	}
-	a.rep.addSummary(blocker, categoryOutboundDefaults, "Mesh has no MeshPassthrough policy",
+	a.rep.addSummary(blocker, "Outbound defaults", "Mesh has no MeshPassthrough policy",
 		fmt.Sprintf("%d of %d meshes with transparent-proxy proxies have no MeshPassthrough policy. "+
 			"In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. "+
 			"Add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap — or set %s on the 3.0 control plane to keep the 2.x behavior while you roll it out.",
