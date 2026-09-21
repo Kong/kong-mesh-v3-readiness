@@ -116,7 +116,7 @@ generates the Dataplane and a 3.0 CP regenerates it, so preflight flags these on
 
 ## Outbound denied by default
 
-Two 2.x defaults flip together in 3.0 (kumahq/kuma#18798), behind one control-plane switch: `defaults.allowAllOutbound` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`, default `false`) restores the 2.x behavior for both. The goal is that a workload which configures nothing can neither receive traffic (already true — `MeshTLS` defaults to `Strict`) nor send it. Unlike every other item here these are **absence**-triggered: the proxy or mesh that breaks is the one carrying no configuration at all, so preflight reports each as a single summary blocker ("N of M") rather than one finding per resource.
+Two 2.x defaults flip together in 3.0 (kumahq/kuma#18798) so a workload that configures nothing can neither receive traffic (already true — `MeshTLS` defaults to `Strict`) nor send it. One switch restores both: `defaults.allowAllOutbound` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`, default `false`). Unlike every other item here these are **absence**-triggered — the resource that breaks carries no configuration at all — so preflight reports each as one summary blocker ("N of M").
 
 | Default | 2.x behavior | 3.0 behavior | What to do before upgrading |
 |---|---|---|---|

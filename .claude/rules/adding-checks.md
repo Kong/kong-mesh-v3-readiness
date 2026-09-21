@@ -54,19 +54,10 @@ HTML report no longer renders a warnings section — do not add new warnings.
 
 ## Absence-triggered checks
 
-Most checks fire on a resource that *has* a deprecated construct. A few fire on
-one that has nothing — the 3.0 outbound-deny defaults (`checkOutboundDefaults`,
-`checkPassthroughDefault`) flag a proxy with no `reachableBackends` and a mesh
-with no MeshPassthrough. Such a check would otherwise hit almost every resource
-in an estate, so it carries three extra obligations:
+A check that fires on a resource having *nothing* (the 3.0 outbound-deny
+defaults: `checkOutboundDefaults`, `checkPassthroughDefault`) would otherwise hit
+almost every resource in an estate. Three extra obligations:
 
-- **Record it in summary form.** Tally the affected and eligible resources, then
-  emit one finding through `collector.addSummary` (`preflight/report.go`) whose
-  detail states the "N of M" ratio — not one `addDoc` per resource.
-- **Never conclude absence from a coverage gap.** Read the collection with
-  `listCollObserved` and return early when it was not observed; an unreadable
-  collection is already an inconclusive run, and "not observed" is not "absent".
-- **Carry a remediation, per environment where it differs.** A blocker that fires
-  on everything with no fix to point at is noise; the two reachable-backends
-  findings are split Kubernetes/Universal exactly because the fix is a Pod
-  annotation on one and a Dataplane field on the other.
+- **Summary form.** Tally affected/eligible, then emit one `collector.addSummary` finding whose detail states the "N of M" ratio — not one `addDoc` per resource.
+- **Read with `listCollObserved`** and return early when the collection was not observed. "Not observed" is not "absent".
+- **Carry a remediation**, split per environment where the fix differs (Pod annotation on Kubernetes, Dataplane field on Universal). A blocker firing on everything with nowhere to go is noise.
