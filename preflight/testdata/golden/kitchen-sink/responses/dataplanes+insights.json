@@ -1,5 +1,5 @@
 {
-  "total": 2,
+  "total": 5,
   "items": [
     {
       "type": "DataplaneOverview",
@@ -37,6 +37,65 @@
           }
         ],
         "metadata": { "features": ["feature-bind-outbounds", "feature-unified-resource-naming"] }
+      }
+    },
+    {
+      "type": "DataplaneOverview",
+      "mesh": "default",
+      "name": "frontend.kuma-demo",
+      "labels": { "kuma.io/env": "kubernetes", "kuma.io/zone": "east" },
+      "dataplane": {
+        "networking": {
+          "address": "10.42.0.8",
+          "transparentProxying": {
+            "redirectPortInbound": 15006,
+            "redirectPortOutbound": 15001
+          }
+        }
+      },
+      "dataplaneInsight": {
+        "metadata": {
+          "features": ["feature-unified-resource-naming"],
+          "transparentProxy": {
+            "redirect": {
+              "inbound": { "enabled": true, "port": 15006 },
+              "outbound": { "enabled": true, "port": 15001 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "DataplaneOverview",
+      "mesh": "default",
+      "name": "dp-tproxy-universal",
+      "labels": { "kuma.io/env": "universal", "kuma.io/zone": "east" },
+      "dataplane": {
+        "networking": {
+          "address": "10.0.0.11",
+          "transparentProxying": {
+            "redirectPortInbound": 15006,
+            "redirectPortOutbound": 15001
+          }
+        }
+      }
+    },
+    {
+      "type": "DataplaneOverview",
+      "mesh": "default",
+      "name": "dp-reachable-universal",
+      "labels": { "kuma.io/env": "universal", "kuma.io/zone": "east" },
+      "dataplane": {
+        "networking": {
+          "address": "10.0.0.12",
+          "transparentProxying": {
+            "redirectPortInbound": 15006,
+            "redirectPortOutbound": 15001,
+            "reachableBackends": {
+              "refs": [{ "kind": "MeshService", "name": "backend" }]
+            }
+          }
+        }
       }
     }
   ],

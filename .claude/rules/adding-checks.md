@@ -49,5 +49,24 @@ HTML report no longer renders a warnings section — do not add new warnings.
 
 | Severity  | Meaning | Use for |
 |-----------|---------|---------|
-| `blocker` | Anything the operator must act on before 3.0; gates CI (exit 1) | removed resources, inline mTLS/metrics/tracing/logging on Mesh, `routing.*`, `reachableServices`, policy `from`, non-Mesh/Dataplane top-level `targetRef.kind`, **`meshServices.mode != Exclusive`**, CP-config **unified naming off** / **inbound tags still enabled** / global-on-k8s / autoReachableServices / eBPF; `proxyTypes`, removed `to` kinds (subset/selector + MeshGateway; `Mesh`/`Mesh*Service`/`MeshHTTPRoute` stay valid), OTel `endpoint`, relocated fields, non-RFC-1035 names, Universal Dataplane `probes`, per-proxy `spec.metrics`, version-incompatible dataplanes, **Dataplane not yet on unified resource naming** (advertised features omit `feature-unified-resource-naming` — CP flag off, or on but the proxy has not reconnected; `checkDataplaneVersions` reads `dataplaneInsight.metadata.features`), **control plane (or any connected zone CP) not on the latest 2.14 patch**, CP-config deltaXds/KDS-watchdog/sidecar-containers off, unparseable specs; **Universal Dataplane missing the `kuma.io/workload` label**; **`ZoneIngress`/`ZoneEgress` present** (separate resources replaced by the unified Zone Proxy); **`MeshGlobalRateLimit` present** (enterprise policy removed in 3.0, no replacement — `checkRemovedEnterprisePolicies`, listed via `listIfServed` so an OSS-Kuma 404 is not a coverage gap) |
+| `blocker` | Anything the operator must act on before 3.0; gates CI (exit 1) | removed resources, inline mTLS/metrics/tracing/logging on Mesh, `routing.*`, `reachableServices`, policy `from`, non-Mesh/Dataplane top-level `targetRef.kind`, **`meshServices.mode != Exclusive`**, CP-config **unified naming off** / **inbound tags still enabled** / global-on-k8s / autoReachableServices / eBPF; `proxyTypes`, removed `to` kinds (subset/selector + MeshGateway; `Mesh`/`Mesh*Service`/`MeshHTTPRoute` stay valid), OTel `endpoint`, relocated fields, non-RFC-1035 names, Universal Dataplane `probes`, per-proxy `spec.metrics`, version-incompatible dataplanes, **Dataplane not yet on unified resource naming** (advertised features omit `feature-unified-resource-naming` — CP flag off, or on but the proxy has not reconnected; `checkDataplaneVersions` reads `dataplaneInsight.metadata.features`), **control plane (or any connected zone CP) not on the latest 2.14 patch**, CP-config deltaXds/KDS-watchdog/sidecar-containers off, unparseable specs; **Universal Dataplane missing the `kuma.io/workload` label**; **`ZoneIngress`/`ZoneEgress` present** (separate resources replaced by the unified Zone Proxy); **`MeshGlobalRateLimit` present** (enterprise policy removed in 3.0, no replacement — `checkRemovedEnterprisePolicies`, listed via `listIfServed` so an OSS-Kuma 404 is not a coverage gap); the outbound-deny defaults (`checkOutboundDefaults` / `checkPassthroughDefault`, see below) |
 | `info`    | Informational, no action mandated | sampled-dataplane inspection coverage, no-zones-connected coverage note |
+
+## Absence-triggered checks
+
+Most checks fire on a resource that *has* a deprecated construct. A few fire on
+one that has nothing — the 3.0 outbound-deny defaults (`checkOutboundDefaults`,
+`checkPassthroughDefault`) flag a proxy with no `reachableBackends` and a mesh
+with no MeshPassthrough. Such a check would otherwise hit almost every resource
+in an estate, so it carries three extra obligations:
+
+- **Record it in summary form.** Tally the affected and eligible resources, then
+  emit one finding through `collector.addSummary` (`preflight/report.go`) whose
+  detail states the "N of M" ratio — not one `addDoc` per resource.
+- **Never conclude absence from a coverage gap.** Read the collection with
+  `listCollObserved` and return early when it was not observed; an unreadable
+  collection is already an inconclusive run, and "not observed" is not "absent".
+- **Carry a remediation, per environment where it differs.** A blocker that fires
+  on everything with no fix to point at is noise; the two reachable-backends
+  findings are split Kubernetes/Universal exactly because the fix is a Pod
+  annotation on one and a Dataplane field on the other.

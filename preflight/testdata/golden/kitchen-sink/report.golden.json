@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 36,
+    "blockers": 39,
     "warnings": 0,
     "info": 1,
     "coverage_gaps": 3,
@@ -355,6 +355,42 @@
       "count": 1,
       "example_resources": [
         "default/dp-gateway [zone:west]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Outbound defaults",
+      "title": "Kubernetes dataplanes have no reachableBackends",
+      "detail": "1 of 1 transparent-proxy Kubernetes data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. Add the `kuma.io/reachable-backends` annotation to each Pod (the control plane copies it onto the Dataplane), naming the MeshServices the workload actually calls — or set `defaults.allowAllOutbound: true` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`) on the 3.0 control plane to keep the 2.x behavior while you roll it out.",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
+      "count": 1,
+      "example_resources": [
+        "default/frontend.kuma-demo [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Outbound defaults",
+      "title": "Mesh has no MeshPassthrough policy",
+      "detail": "1 of 1 meshes with transparent-proxy proxies have no MeshPassthrough policy. In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. Add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap — or set `defaults.allowAllOutbound: true` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`) on the 3.0 control plane to keep the 2.x behavior while you roll it out.",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshpassthrough/",
+      "count": 1,
+      "example_resources": [
+        "default"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Outbound defaults",
+      "title": "Universal Dataplanes have no reachableBackends",
+      "detail": "1 of 2 transparent-proxy Universal data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. Add `networking.transparentProxying.reachableBackends.refs` to each Dataplane, naming the MeshServices the workload actually calls — or set `defaults.allowAllOutbound: true` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`) on the 3.0 control plane to keep the 2.x behavior while you roll it out.",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
+      "count": 1,
+      "example_resources": [
+        "default/dp-tproxy-universal [zone:east]"
       ]
     },
     {

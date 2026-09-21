@@ -95,6 +95,18 @@ const (
 	categoryRemovedResources = "Removed resources"
 )
 
+// categoryOutboundDefaults groups the two 3.0 outbound-deny default flips:
+// `reachableBackends` unset stops meaning "every destination in the mesh", and a
+// proxy matched by no MeshPassthrough stops getting a passthrough cluster. Both
+// are absence-triggered — they fire on a proxy/mesh that carries no
+// configuration at all — so both are reported in summary form.
+const categoryOutboundDefaults = "Outbound defaults"
+
+// allowAllOutboundSetting names the 3.0 control-plane escape hatch that restores
+// the 2.x all-destinations default for both flips, quoted in the remediation of
+// every finding in categoryOutboundDefaults.
+const allowAllOutboundSetting = "`defaults.allowAllOutbound: true` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`)"
+
 // removedCategory picks the finding category (and thus display group) for a
 // removed kind: classic policies group with the other policy findings, resources
 // stay under Removed resources.
@@ -184,6 +196,19 @@ type auditor struct {
 
 	resourceLimitGapRecorded bool
 
+	// listCache memoizes collection reads by path so a collection two checks both
+	// need costs one round-trip and records at most one coverage gap.
+	listCache map[string]listResult
+
+	// passthroughOff is the set of meshes that already turn mesh-level outbound
+	// passthrough off, so 3.0 flipping the default to None cannot take external
+	// egress away from them (checkPassthroughDefault).
+	passthroughOff map[string]bool
+	// tpMeshes is the set of meshes observed with at least one transparent-proxy
+	// proxy — the only meshes the passthrough default can affect. Filled by
+	// checkOutboundDefaults, read by checkPassthroughDefault.
+	tpMeshes map[string]bool
+
 	// zoneProxyZones is the set of Universal zones observed terminating cross-zone
 	// traffic (a ZoneIngress, or a Dataplane already carrying a ZoneIngress
 	// listener). checkMeshZoneAddresses requires a MeshZoneAddress for each.
@@ -251,6 +276,8 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 
 	for _, check := range []func(context.Context) error{
 		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkNewPolicies, a.checkDataplanes,
+		// checkPassthroughDefault reads the transparent-proxy meshes checkOutboundDefaults records.
+		a.checkOutboundDefaults, a.checkPassthroughDefault,
 		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
 		a.checkResourceNames, a.checkMeshTrust,
 		a.checkControlPlaneConfig, a.checkControlPlaneVersions,
@@ -308,9 +335,39 @@ func collectionReadGapReason(err error) string {
 	return "collection read failed — NOT audited"
 }
 
+// listResult is one memoized collection read: the items, and whether the
+// collection was actually observed (read in full, no coverage gap recorded).
+type listResult struct {
+	items    []resourceItem
+	observed bool
+}
+
 // listColl lists a collection and records a coverage gap (instead of silently
 // treating it as empty) when the collection cannot be read.
 func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
+	items, _ := a.listCollObserved(ctx, path)
+	return items
+}
+
+// listCollObserved lists a collection like listColl and also reports whether it
+// was observed. A check that concludes something from a resource's *absence*
+// must consult that flag: an unreadable collection yields no items, and "not
+// observed" is not "absent". The read is memoized by path, so a collection two
+// checks both need costs one round-trip and records at most one coverage gap.
+func (a *auditor) listCollObserved(ctx context.Context, path string) ([]resourceItem, bool) {
+	if r, cached := a.listCache[path]; cached {
+		return r.items, r.observed
+	}
+	items, observed := a.readColl(ctx, path)
+	if a.listCache == nil {
+		a.listCache = map[string]listResult{}
+	}
+	a.listCache[path] = listResult{items: items, observed: observed}
+	return items, observed
+}
+
+// readColl performs the uncached collection read behind listColl/listCollObserved.
+func (a *auditor) readColl(ctx context.Context, path string) ([]resourceItem, bool) {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
 		var listErr *listError
@@ -320,13 +377,13 @@ func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 				a.resourceLimitGapRecorded = true
 			}
 		}
-		return items
+		return items, false
 	}
 	if !found {
 		a.rep.addGap(path, "endpoint returned 404 — NOT audited")
-		return nil
+		return nil, false
 	}
-	return items
+	return items, true
 }
 
 // listIfServed lists a collection, returning nil when the endpoint is
@@ -398,6 +455,14 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 	if spec.Networking != nil && spec.Networking.Outbound != nil && spec.Networking.Outbound.Passthrough != nil {
 		a.rep.addDoc(blocker, "Mesh object settings", "Passthrough on Mesh",
 			"`mesh.networking.outbound.passthrough` is removed; use MeshPassthrough.", docMeshPassthrough, ref("networking.outbound.passthrough"))
+		// A mesh that already turns passthrough off has no external egress for 3.0
+		// to take away when it flips the no-policy default to None.
+		if !*spec.Networking.Outbound.Passthrough {
+			if a.passthroughOff == nil {
+				a.passthroughOff = map[string]bool{}
+			}
+			a.passthroughOff[m.Name] = true
+		}
 	}
 	if spec.Routing != nil {
 		if spec.Routing.ZoneEgress != nil {
@@ -798,6 +863,156 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 			"3.0 honors only the `*` entry in `networking.transparentProxying.directAccessServices` — per-service matching relied on a removed tag and is silently ignored, so this proxy loses direct access entirely. Replace the named services with `*`, or drop direct access for this proxy.",
 			docTransparentProxy, qualified(it))
 	}
+}
+
+// dpOverview is the slice of /dataplanes+insights the outbound-default check
+// reads: the Dataplane spec (a DataplaneOverview nests it under "dataplane")
+// plus the transparent-proxy block kuma-dp reports in its xDS node metadata.
+// Both are needed — a proxy can enable transparent proxying through kuma-dp
+// alone, with nothing in its spec to show for it.
+type dpOverview struct {
+	Dataplane struct {
+		Networking *dataplaneNetworking `json:"networking"`
+	} `json:"dataplane"`
+	DataplaneInsight struct {
+		Metadata struct {
+			TransparentProxy *struct {
+				Redirect struct {
+					Inbound  trafficFlow `json:"inbound"`
+					Outbound trafficFlow `json:"outbound"`
+				} `json:"redirect"`
+			} `json:"transparentProxy"`
+		} `json:"metadata"`
+	} `json:"dataplaneInsight"`
+}
+
+// trafficFlow is one direction of kuma-dp's reported transparent-proxy redirect.
+type trafficFlow struct {
+	Enabled bool `json:"enabled"`
+}
+
+// transparentProxy reports whether transparent proxying redirects this proxy's
+// traffic, which is what subjects it to the 3.0 reachable-backends default.
+// kuma-dp's reported configuration wins when it is there and the spec's legacy
+// redirect ports are the fallback, mirroring the control plane's own precedence
+// (tproxy_dp.GetDataplaneConfig). A proxy that reports neither is not using
+// transparent proxying, so the flip cannot touch it.
+func (o dpOverview) transparentProxy() bool {
+	if tp := o.DataplaneInsight.Metadata.TransparentProxy; tp != nil {
+		return tp.Redirect.Inbound.Enabled || tp.Redirect.Outbound.Enabled
+	}
+	tp := o.Dataplane.Networking.transparentProxying()
+	return tp.RedirectPortInbound != 0 || tp.RedirectPortOutbound != 0
+}
+
+// checkOutboundDefaults flags the proxies 3.0 leaves with no outbounds at all.
+// Unlike every other Dataplane check this one is triggered by *absence* — a proxy
+// that configures nothing is exactly the one that breaks — so it reports one
+// summary finding per environment ("N of M") instead of one finding per proxy,
+// and each carries the remediation for that environment: the Pod annotation on
+// Kubernetes, the Dataplane field on Universal.
+//
+// It reads /dataplanes+insights rather than /dataplanes because the insight
+// carries kuma-dp's own transparent-proxy configuration, the authoritative signal
+// for proxies that enable it without declaring it in the spec.
+func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
+	items, observed := a.listCollObserved(ctx, a.scopedPath("dataplanes+insights"))
+	if !observed {
+		return nil
+	}
+	// [0] = Universal, [1] = Kubernetes, indexed by the onK8s flag.
+	var total, denied [2]int
+	var refs [2][]string
+	for _, it := range items {
+		var ov dpOverview
+		// Overviews are not policy specs; a decode failure is skipped, not counted
+		// as a parse error (checkDataplanes covers the spec itself).
+		if json.Unmarshal(it.specBytes(), &ov) != nil {
+			continue
+		}
+		if !ov.transparentProxy() {
+			continue
+		}
+		// A builtin gateway cannot exist on 3.0 at all (checkDataplaneNetworking
+		// flags it), so what its outbounds would look like there is moot.
+		if g := ov.Dataplane.Networking.gateway(); strings.EqualFold(g, "BUILTIN") {
+			continue
+		}
+		if a.tpMeshes == nil {
+			a.tpMeshes = map[string]bool{}
+		}
+		a.tpMeshes[it.Mesh] = true
+		env := 0
+		if it.Labels[envLabel] == "kubernetes" {
+			env = 1
+		}
+		total[env]++
+		if ov.Dataplane.Networking.keepsOutbounds() {
+			continue
+		}
+		denied[env]++
+		if len(refs[env]) < ExampleCap {
+			refs[env] = append(refs[env], qualified(it))
+		}
+	}
+	a.addOutboundDenyFinding("Universal Dataplanes", "Universal",
+		"Add `networking.transparentProxying.reachableBackends.refs` to each Dataplane, naming the MeshServices the workload actually calls",
+		denied[0], total[0], refs[0])
+	a.addOutboundDenyFinding("Kubernetes dataplanes", "Kubernetes",
+		"Add the `kuma.io/reachable-backends` annotation to each Pod (the control plane copies it onto the Dataplane), naming the MeshServices the workload actually calls",
+		denied[1], total[1], refs[1])
+	return nil
+}
+
+// addOutboundDenyFinding records one environment's reachable-backends summary.
+func (a *auditor) addOutboundDenyFinding(subject, env, fix string, denied, total int, refs []string) {
+	a.rep.addSummary(blocker, categoryOutboundDefaults, subject+" have no reachableBackends",
+		fmt.Sprintf("%d of %d transparent-proxy %s data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. "+
+			"In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. "+
+			"%s — or set %s on the 3.0 control plane to keep the 2.x behavior while you roll it out.",
+			denied, total, env, fix, allowAllOutboundSetting),
+		docReachableBackends, denied, refs)
+}
+
+// checkPassthroughDefault flags meshes that would lose external egress when 3.0
+// stops giving a proxy matched by no MeshPassthrough a passthrough cluster. Like
+// checkOutboundDefaults this is absence-triggered and reported as one summary
+// finding. Three preconditions keep it off meshes it cannot affect: the
+// MeshPassthrough collection must have been read (absence concluded from a
+// coverage gap would be a lie), the mesh must have transparent-proxy proxies
+// (passthrough only ever applied to those), and the mesh must not already turn
+// passthrough off.
+func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
+	items, observed := a.listCollObserved(ctx, a.scopedPath("meshpassthroughs"))
+	if !observed {
+		return nil
+	}
+	covered := map[string]bool{}
+	for _, it := range items {
+		covered[it.Mesh] = true
+	}
+	var refs []string
+	affected, eligible := 0, 0
+	for _, m := range a.rep.meshes {
+		if !a.tpMeshes[m] || a.passthroughOff[m] {
+			continue
+		}
+		eligible++
+		if covered[m] {
+			continue
+		}
+		affected++
+		if len(refs) < ExampleCap {
+			refs = append(refs, m)
+		}
+	}
+	a.rep.addSummary(blocker, categoryOutboundDefaults, "Mesh has no MeshPassthrough policy",
+		fmt.Sprintf("%d of %d meshes with transparent-proxy proxies have no MeshPassthrough policy. "+
+			"In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. "+
+			"Add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap — or set %s on the 3.0 control plane to keep the 2.x behavior while you roll it out.",
+			affected, eligible, allowAllOutboundSetting),
+		docMeshPassthrough, affected, refs)
+	return nil
 }
 
 func (a *auditor) checkZoneProxies(ctx context.Context) error {
@@ -1612,22 +1827,77 @@ type gatewaySection struct {
 }
 
 type dataplaneSpec struct {
-	Probes     json.RawMessage `json:"probes"`
-	Metrics    json.RawMessage `json:"metrics"`
-	Networking *struct {
-		AdvertisedAddress string          `json:"advertisedAddress"`
-		Gateway           *gatewaySection `json:"gateway"`
-		Inbound           []struct {
-			Tags map[string]string `json:"tags"`
-		} `json:"inbound"`
-		Outbound []struct {
-			BackendRef json.RawMessage `json:"backendRef"`
-		} `json:"outbound"`
-		TransparentProxying *struct {
-			ReachableServices    []string `json:"reachableServices"`
-			DirectAccessServices []string `json:"directAccessServices"`
-		} `json:"transparentProxying"`
-	} `json:"networking"`
+	Probes     json.RawMessage      `json:"probes"`
+	Metrics    json.RawMessage      `json:"metrics"`
+	Networking *dataplaneNetworking `json:"networking"`
+}
+
+// dataplaneNetworking is the Dataplane's networking block, shared by the spec
+// decoder (checkDataplanes) and the DataplaneOverview decoder
+// (checkOutboundDefaults) so both read the same fields the same way.
+type dataplaneNetworking struct {
+	AdvertisedAddress string          `json:"advertisedAddress"`
+	Gateway           *gatewaySection `json:"gateway"`
+	Inbound           []struct {
+		Tags map[string]string `json:"tags"`
+	} `json:"inbound"`
+	Outbound []struct {
+		BackendRef json.RawMessage `json:"backendRef"`
+	} `json:"outbound"`
+	TransparentProxying *transparentProxying `json:"transparentProxying"`
+}
+
+// transparentProxying is the Dataplane's transparentProxying block. The redirect
+// ports are the legacy (pre-3.0) way a proxy declares transparent proxying; 3.0
+// moves that to kuma-dp's node metadata, which dpOverview reads instead when the
+// proxy reports it. ReachableBackends stays raw: only its presence matters, and
+// an explicitly empty `{}`/`{"refs":[]}` is a deliberate deny, not an absence.
+type transparentProxying struct {
+	ReachableServices    []string        `json:"reachableServices"`
+	DirectAccessServices []string        `json:"directAccessServices"`
+	ReachableBackends    json.RawMessage `json:"reachableBackends"`
+	RedirectPortInbound  uint32          `json:"redirectPortInbound"`
+	RedirectPortOutbound uint32          `json:"redirectPortOutbound"`
+}
+
+// transparentProxying returns the networking block's transparentProxying section,
+// or a zero value when either is absent, so callers can read fields off it
+// without a nil dance.
+func (n *dataplaneNetworking) transparentProxying() transparentProxying {
+	if n == nil || n.TransparentProxying == nil {
+		return transparentProxying{}
+	}
+	return *n.TransparentProxying
+}
+
+// gateway returns the networking block's gateway type ("" when the proxy is not a
+// gateway), guarding both nil levels.
+func (n *dataplaneNetworking) gateway() string {
+	if n == nil || n.Gateway == nil {
+		return ""
+	}
+	return n.Gateway.Type
+}
+
+// keepsOutbounds reports whether this proxy still gets outbound clusters once 3.0
+// stops treating an unset reachableBackends as "every destination in the mesh":
+// either it selects its destinations explicitly (any reachableBackends value,
+// including an empty ref list, which is a deliberate deny and already the
+// zone-proxy shape), or it defines outbounds with a backendRef, which short-circuit
+// reachable-backends resolution entirely.
+func (n *dataplaneNetworking) keepsOutbounds() bool {
+	if n == nil {
+		return false
+	}
+	if raw := n.transparentProxying().ReachableBackends; len(raw) > 0 && string(raw) != "null" {
+		return true
+	}
+	for _, out := range n.Outbound {
+		if hasJSON(out.BackendRef) {
+			return true
+		}
+	}
+	return false
 }
 
 // backendConf captures the OpenTelemetry backend `endpoint` shared by

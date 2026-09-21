@@ -102,3 +102,22 @@ func (r *collector) count(sev severity) int {
 	}
 	return n
 }
+
+// addSummary records a finding whose occurrence count and example list are known
+// up front — an aggregate check that concludes from a tally across a collection
+// ("N of M dataplanes") rather than one resource at a time. Examples are capped
+// at ExampleCap, as they are when addDoc accumulates them incrementally. A zero
+// count records nothing, so a caller can hand over an empty tally unguarded.
+func (r *collector) addSummary(sev severity, category, title, detail, doc string, count int, examples []string) {
+	if count <= 0 {
+		return
+	}
+	r.total += count
+	if len(examples) > ExampleCap {
+		examples = examples[:ExampleCap]
+	}
+	r.findings = append(r.findings, rawFinding{
+		severity: sev, category: category, title: title, detail: detail,
+		doc: doc, count: count, examples: append([]string(nil), examples...),
+	})
+}

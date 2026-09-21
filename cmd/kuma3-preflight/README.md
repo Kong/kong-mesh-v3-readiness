@@ -118,6 +118,7 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   `spec.probes`, and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible
   (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
+- **Outbound defaults** — the two 3.0 flips that deny outbound traffic by default. A transparent-proxy proxy with no `reachableBackends` and no outbound `backendRef` gets no outbound clusters at all once an unset `reachableBackends` stops meaning "every destination in the mesh"; a mesh with no MeshPassthrough loses external egress once a proxy matched by no policy stops getting a passthrough cluster. Both are triggered by *absence*, so each is reported as one summary blocker ("N of M") with the remediation for its environment — the `kuma.io/reachable-backends` Pod annotation on Kubernetes, the Dataplane field on Universal — rather than one finding per proxy. Proxies that already select their destinations (including the empty `refs` list zone proxies ship), builtin gateways, and meshes that already turn passthrough off are not counted.
 - **Control plane version** — flags a CP (or, on a **global**, any connected zone CP) not on
   the latest 2.14 patch, the only supported 3.0 upgrade source (older patch/minor → blocker).
   The latest patch is looked up from the `kumahq/kuma` GitHub releases at run time (Kong Mesh
