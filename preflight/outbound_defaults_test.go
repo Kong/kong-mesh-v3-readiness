@@ -14,9 +14,8 @@ const (
 	titleNoMeshPassthrough = "Mesh has no MeshPassthrough policy"
 )
 
-// overview builds one DataplaneOverview item for /dataplanes+insights, the shape
-// checkOutboundDefaults reads: the Dataplane spec nested under "dataplane", the
-// insight (with kuma-dp's reported metadata) next to it.
+// overview builds one /dataplanes+insights item: a DataplaneOverview nests the
+// Dataplane spec under "dataplane", alongside the insight.
 func overview(name string, labels map[string]any, networking map[string]any, metadata map[string]any) map[string]any {
 	it := map[string]any{
 		"type":      "DataplaneOverview",
@@ -33,16 +32,14 @@ func overview(name string, labels map[string]any, networking map[string]any, met
 	return it
 }
 
-// tproxySpec is the legacy (pre-3.0) way a Dataplane declares transparent
-// proxying: the redirect ports on its spec.
+// tproxySpec is the legacy (pre-3.0) transparent-proxy declaration: redirect
+// ports on the Dataplane spec.
 func tproxySpec(extra map[string]any) map[string]any {
 	tp := map[string]any{"redirectPortInbound": 15006, "redirectPortOutbound": 15001}
 	maps.Copy(tp, extra)
 	return map[string]any{"transparentProxying": tp}
 }
 
-// auditOverviews audits a mock control plane whose /dataplanes+insights serves
-// the given overviews and whose every other collection is empty.
 func auditOverviews(t *testing.T, items ...map[string]any) Report {
 	t.Helper()
 	return auditResponses(t, map[string]string{"/dataplanes+insights": listBody(t, items...)})
@@ -53,10 +50,7 @@ var (
 	kubernetesLabels = map[string]any{"kuma.io/env": "kubernetes"}
 )
 
-// TestOutboundDenyFlagsProxiesWithNoReachableBackends covers the 3.0 flip that
-// stops treating an unset reachableBackends as "every destination in the mesh":
-// a transparent-proxy proxy that selects nothing loses every outbound, and the
-// remediation differs per environment, so the two are reported separately.
+// Kubernetes and Universal are separate findings because the remediation differs.
 func TestOutboundDenyFlagsProxiesWithNoReachableBackends(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -109,9 +103,6 @@ func TestOutboundDenyFlagsProxiesWithNoReachableBackends(t *testing.T) {
 	}
 }
 
-// TestOutboundDenySkipsProxiesThatKeepOutbounds guards the check against the
-// noise it would otherwise generate: every proxy that still resolves outbounds
-// on 3.0, and every proxy the flip cannot reach at all, must stay unflagged.
 func TestOutboundDenySkipsProxiesThatKeepOutbounds(t *testing.T) {
 	cases := []struct {
 		name string
@@ -174,9 +165,6 @@ func TestOutboundDenySkipsProxiesThatKeepOutbounds(t *testing.T) {
 	}
 }
 
-// TestOutboundDenyReportsSummaryNotPerProxy checks the summary form the finding
-// exists to produce: many affected proxies collapse into one bullet whose detail
-// carries the N-of-M tally, with the unaffected ones counted in M only.
 func TestOutboundDenyReportsSummaryNotPerProxy(t *testing.T) {
 	items := []map[string]any{
 		overview("safe", universalLabels, tproxySpec(map[string]any{
@@ -202,9 +190,6 @@ func TestOutboundDenyReportsSummaryNotPerProxy(t *testing.T) {
 	}
 }
 
-// TestOutboundDenyNotConcludedFromCoverageGap guards the "never fake a clean
-// report" rule in reverse: an unreadable /dataplanes+insights must not be read
-// as "no proxy configures reachableBackends".
 func TestOutboundDenyNotConcludedFromCoverageGap(t *testing.T) {
 	m := auditWithNotFound(t, nil, "/dataplanes+insights")
 	for _, title := range []string{titleUniversalDeny, titleKubernetesDeny} {
@@ -217,8 +202,6 @@ func TestOutboundDenyNotConcludedFromCoverageGap(t *testing.T) {
 	}
 }
 
-// meshItem builds one "default" Mesh list item, optionally carrying the
-// mesh-level outbound passthrough switch.
 func meshItem(passthrough *bool) map[string]any {
 	it := map[string]any{"type": "Mesh", "name": "default", "meshServices": map[string]any{"mode": "Exclusive"}}
 	if passthrough != nil {
@@ -227,9 +210,6 @@ func meshItem(passthrough *bool) map[string]any {
 	return it
 }
 
-// TestPassthroughDefaultFlagsMeshWithNoPolicy covers the second 3.0 flip: a
-// transparent-proxy proxy matched by no MeshPassthrough stops getting a
-// passthrough cluster, so a mesh with no such policy loses external egress.
 func TestPassthroughDefaultFlagsMeshWithNoPolicy(t *testing.T) {
 	m := auditResponses(t, map[string]string{
 		"/meshes":              listBody(t, meshItem(nil)),
@@ -250,8 +230,6 @@ func TestPassthroughDefaultFlagsMeshWithNoPolicy(t *testing.T) {
 	}
 }
 
-// TestPassthroughDefaultSkipsUnaffectedMeshes checks the three preconditions that
-// keep the finding off meshes the flip cannot affect.
 func TestPassthroughDefaultSkipsUnaffectedMeshes(t *testing.T) {
 	passthroughOff := false
 	cases := []struct {

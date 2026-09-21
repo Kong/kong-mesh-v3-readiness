@@ -359,7 +359,6 @@ func (a *auditor) listCollObserved(ctx context.Context, path string) ([]resource
 	return items, observed
 }
 
-// readColl performs the uncached collection read behind listColl/listCollObserved.
 func (a *auditor) readColl(ctx context.Context, path string) ([]resourceItem, bool) {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
@@ -879,7 +878,6 @@ type dpOverview struct {
 	} `json:"dataplaneInsight"`
 }
 
-// trafficFlow is one direction of kuma-dp's reported transparent-proxy redirect.
 type trafficFlow struct {
 	Enabled bool `json:"enabled"`
 }
@@ -957,7 +955,6 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 	return nil
 }
 
-// addOutboundDenyFinding records one environment's reachable-backends summary.
 func (a *auditor) addOutboundDenyFinding(subject, env, fix string, denied, total int, refs []string) {
 	a.rep.addSummary(blocker, "Outbound defaults", subject+" have no reachableBackends",
 		fmt.Sprintf("%d of %d transparent-proxy %s data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. "+
@@ -1853,9 +1850,6 @@ type transparentProxying struct {
 	RedirectPortOutbound uint32          `json:"redirectPortOutbound"`
 }
 
-// transparentProxying returns the networking block's transparentProxying section,
-// or a zero value when either is absent, so callers can read fields off it
-// without a nil dance.
 func (n *dataplaneNetworking) transparentProxying() transparentProxying {
 	if n == nil || n.TransparentProxying == nil {
 		return transparentProxying{}
@@ -1863,8 +1857,6 @@ func (n *dataplaneNetworking) transparentProxying() transparentProxying {
 	return *n.TransparentProxying
 }
 
-// gateway returns the networking block's gateway type ("" when the proxy is not a
-// gateway), guarding both nil levels.
 func (n *dataplaneNetworking) gateway() string {
 	if n == nil || n.Gateway == nil {
 		return ""
