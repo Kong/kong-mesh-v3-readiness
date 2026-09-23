@@ -24,6 +24,7 @@ const readyConfigJSON = `{
     "inboundTagsDisabled": true,
     "kdsEventBasedWatchdog": {"enabled": true}
   },
+  "defaults": {"allowAllOutbound": false},
   "runtime": {"kubernetes": {
     "injector": {
       "unifiedResourceNamingEnabled": true,

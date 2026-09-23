@@ -7,7 +7,7 @@ import (
 )
 
 // badK8sConfig is a Kubernetes CP config that trips every data-plane-relevant
-// readiness check (7 blockers).
+// readiness check (8 blockers).
 func badK8sConfig() cpConfig {
 	var c cpConfig
 	c.Mode = "zone"
@@ -19,6 +19,7 @@ func badK8sConfig() cpConfig {
 	c.Experimental.DeltaXds = false                                    // blocker
 	c.Experimental.KdsEventBasedWatchdog.Enabled = false               // blocker
 	c.Experimental.SidecarContainers = false                           // blocker
+	c.Defaults.AllowAllOutbound = nil                                  // blocker (unset reads as true)
 	return c
 }
 
@@ -33,6 +34,7 @@ func goodK8sConfig() cpConfig {
 	c.Experimental.DeltaXds = true
 	c.Experimental.KdsEventBasedWatchdog.Enabled = true
 	c.Experimental.SidecarContainers = true
+	c.Defaults.AllowAllOutbound = new(bool)
 	return c
 }
 
@@ -40,7 +42,7 @@ func TestAddCPConfigFindings(t *testing.T) {
 	t.Run("k8s bad config, unqualified examples", func(t *testing.T) {
 		a := &auditor{rep: &collector{}}
 		a.addCPConfigFindings(badK8sConfig(), "")
-		if got, want := a.rep.count(blocker), 7; got != want {
+		if got, want := a.rep.count(blocker), 8; got != want {
 			t.Errorf("blockers = %d, want %d", got, want)
 		}
 		for _, f := range a.rep.findings {
@@ -83,9 +85,8 @@ func TestAddCPConfigFindings(t *testing.T) {
 				t.Errorf("k8s-gated check %q fired on a Universal CP", f.title)
 			}
 		}
-		// autoReachable + inboundTags + deltaXds + kdsWatchdog + sidecarContainers
-		// (eBPF + unified-naming are injector-gated, so 5 of 7 still fire).
-		if got, want := a.rep.count(blocker), 5; got != want {
+		// eBPF + unified-naming are injector-gated, so 6 of 8 still fire.
+		if got, want := a.rep.count(blocker), 6; got != want {
 			t.Errorf("universal blockers = %d, want %d", got, want)
 		}
 	})

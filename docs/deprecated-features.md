@@ -37,6 +37,8 @@ All flags under `experimental:` (`ExperimentalConfig`, `pkg/config/app/kuma-cp/c
 | `kdsEventBasedWatchdog.enabled` | `..._KDS_EVENT_BASED_WATCHDOG_ENABLED` | `false` | `true` — event-based KDS snapshot generation |
 | `ingressTagFilters` | `..._INGRESS_TAG_FILTERS` | `[]` | tuning knob — trims ZoneIngress tag size (not a boolean default flip) |
 
+Outside `experimental:`, `defaults.allowAllOutbound` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`) follows the same shape: `true` on 2.14, `false` in 3.0. Preflight flags it as a blocker while it is still `true` (or absent, on a CP predating the backport). See Outbound denied by default above.
+
 ## `from` field deprecations (→ use `rules`, removal in 3.0)
 
 All have a `deprecated.go` under `pkg/plugins/policies/<name>/api/v1alpha1/`:
@@ -116,7 +118,7 @@ generates the Dataplane and a 3.0 CP regenerates it, so preflight flags these on
 
 ## Outbound denied by default
 
-Two 2.x defaults flip together in 3.0 (kumahq/kuma#18798) so a workload that configures nothing can neither receive traffic (already true — `MeshTLS` defaults to `Strict`) nor send it. One switch restores both: `defaults.allowAllOutbound` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`, default `false`). Unlike every other item here these are **absence**-triggered — the resource that breaks carries no configuration at all — so preflight reports each as one summary blocker ("N of M").
+Two 2.x defaults flip together in 3.0 (kumahq/kuma#18798) so a workload that configures nothing can neither receive traffic (already true — `MeshTLS` defaults to `Strict`) nor send it. One switch governs both: `defaults.allowAllOutbound` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`), which 2.14 backports defaulted to `true` (kumahq/kuma#18851) and 3.0 defaults to `false`. Setting it to `false` on 2.14 enforces the 3.0 behavior on the current control plane, which is the migration path: surface and fix the breakage before the upgrade rather than during it. Unlike every other item here these are **absence**-triggered — the resource that breaks carries no configuration at all — so preflight reports each as one summary blocker ("N of M"), and flags the switch itself under Experimental config below.
 
 | Default | 2.x behavior | 3.0 behavior | What to do before upgrading |
 |---|---|---|---|

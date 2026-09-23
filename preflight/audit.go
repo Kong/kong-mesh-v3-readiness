@@ -95,9 +95,10 @@ const (
 	categoryRemovedResources = "Removed resources"
 )
 
-// allowAllOutboundSetting is the 3.0 escape hatch restoring the 2.x default,
-// quoted in the remediation of both outbound-deny findings.
-const allowAllOutboundSetting = "`defaults.allowAllOutbound: true` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`)"
+// restrictOutboundRemediation closes both outbound-deny findings. 2.14 backports
+// the switch (defaulted to the permissive `true` there), so the breakage can be
+// enforced and validated on 2.x rather than discovered on 3.0.
+const restrictOutboundRemediation = "Set `defaults.allowAllOutbound: false` (`KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND`) on the 2.14 control plane to enforce the 3.0 behavior now and validate it before upgrading."
 
 // removedCategory picks the finding category (and thus display group) for a
 // removed kind: classic policies group with the other policy findings, resources
@@ -940,8 +941,8 @@ func (a *auditor) addOutboundDenyFinding(subject, env, fix string, denied, total
 	a.rep.addSummary(blocker, "Outbound defaults", subject+" have no reachableBackends",
 		fmt.Sprintf("%d of %d transparent-proxy %s data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. "+
 			"In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. "+
-			"%s — or set %s on the 3.0 control plane to keep the 2.x behavior while you roll it out.",
-			denied, total, env, fix, allowAllOutboundSetting),
+			"%s. %s",
+			denied, total, env, fix, restrictOutboundRemediation),
 		docReachableBackends, denied, refs)
 }
 
@@ -977,8 +978,8 @@ func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
 	a.rep.addSummary(blocker, "Outbound defaults", "Mesh has no MeshPassthrough policy",
 		fmt.Sprintf("%d of %d meshes with transparent-proxy proxies have no MeshPassthrough policy. "+
 			"In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. "+
-			"Add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap — or set %s on the 3.0 control plane to keep the 2.x behavior while you roll it out.",
-			affected, eligible, allowAllOutboundSetting),
+			"Add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap. %s",
+			affected, eligible, restrictOutboundRemediation),
 		docMeshPassthrough, affected, refs)
 	return nil
 }
@@ -1201,6 +1202,12 @@ type cpConfig struct {
 			Enabled bool `json:"enabled"`
 		} `json:"kdsEventBasedWatchdog"`
 	} `json:"experimental"`
+	// Defaults.AllowAllOutbound is absent on a control plane older than the 2.14
+	// patch that added it; there, as when it is unset, the permissive 2.x
+	// behavior applies, so nil reads as true.
+	Defaults struct {
+		AllowAllOutbound *bool `json:"allowAllOutbound"`
+	} `json:"defaults"`
 	Runtime struct {
 		Kubernetes struct {
 			Injector struct {
@@ -1358,6 +1365,11 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 		a.rep.addDoc(blocker, cpConfigCategory, "Native sidecar containers not enabled",
 			cpConfigDetail("experimental.sidecarContainers", "false", "true"),
 			docKumaCPReference, ref("experimental.sidecarContainers=false"))
+	}
+	if cfg.Defaults.AllowAllOutbound == nil || *cfg.Defaults.AllowAllOutbound {
+		a.rep.addDoc(blocker, cpConfigCategory, "Default outbound not restricted",
+			cpConfigDetail("defaults.allowAllOutbound", "true", "false"),
+			docReachableBackends, ref("defaults.allowAllOutbound=true"))
 	}
 }
 

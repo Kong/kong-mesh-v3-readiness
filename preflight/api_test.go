@@ -21,6 +21,7 @@ import (
 const cleanConfigJSON = `{
   "mode": "zone",
   "environment": "kubernetes",
+  "defaults": {"allowAllOutbound": false},
   "experimental": {
     "autoReachableServices": false,
     "deltaXds": true,

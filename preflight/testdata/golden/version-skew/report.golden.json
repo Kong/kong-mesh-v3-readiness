@@ -9,7 +9,7 @@
   },
   "meshes": [],
   "summary": {
-    "blockers": 2,
+    "blockers": 5,
     "warnings": 0,
     "info": 0,
     "coverage_gaps": 0,
@@ -17,6 +17,20 @@
     "system_findings": 0
   },
   "findings": [
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Control plane configuration",
+      "title": "Default outbound not restricted",
+      "detail": "the field defaults.allowAllOutbound value has to be changed from true to false",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
+      "count": 3,
+      "example_resources": [
+        "zone zone-a: defaults.allowAllOutbound=true",
+        "zone zone-b: defaults.allowAllOutbound=true",
+        "zone zone-c: defaults.allowAllOutbound=true"
+      ]
+    },
     {
       "severity": "blocker",
       "group": "control_plane",

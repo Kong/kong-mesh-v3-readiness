@@ -23,49 +23,63 @@ func TestControlPlaneConfigDeprecatedSettingReported(t *testing.T) {
 	}{
 		{
 			name:     "global on kubernetes",
-			config:   `{"environment":"kubernetes","mode":"global","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			config:   `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"global","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Global control plane on Kubernetes",
 			detail: cpConfigDetail("mode", "global", "universal"),
 		},
 		{
 			name:     "autoReachableServices",
-			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"autoReachableServices":true,"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			config:   `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"zone","experimental":{"autoReachableServices":true,"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "autoReachableServices enabled",
 			detail: cpConfigDetail("experimental.autoReachableServices", "true", "false"),
 		},
 		{
 			name:     "ebpf transparent proxy",
-			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true,"ebpf":{"enabled":true}}}}}`,
+			config:   `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true,"ebpf":{"enabled":true}}}}}`,
 			severity: "blocker", title: "eBPF transparent proxy enabled",
 			detail: cpConfigDetail("runtime.kubernetes.injector.ebpf.enabled", "true", "false"),
 		},
 		{
 			name:     "unified naming off",
-			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":false}}}}`,
+			config:   `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":false}}}}`,
 			severity: "blocker", title: "Unified resource naming not enabled",
 			detail: cpConfigDetail("runtime.kubernetes.injector.unifiedResourceNamingEnabled", "false", "true"),
 		},
 		{
 			name:     "delta xds off",
-			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":false,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			config:   `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":false,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Delta xDS not enabled",
 			detail: cpConfigDetail("experimental.deltaXds", "false", "true"),
 		},
 		{
 			name:     "inbound tags enabled",
-			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":false,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			config:   `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":false,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Inbound tags still enabled",
 			detail: cpConfigDetail("experimental.inboundTagsDisabled", "false", "true"),
 		},
 		{
 			name:     "kds event-based watchdog off",
-			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":false}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			config:   `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":false}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "KDS event-based watchdog not enabled",
 			detail: cpConfigDetail("experimental.kdsEventBasedWatchdog.enabled", "false", "true"),
 		},
 		{
+			name:     "default outbound unrestricted",
+			config:   `{"environment":"kubernetes","mode":"zone","defaults":{"allowAllOutbound":true},"experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "Default outbound not restricted",
+			detail: cpConfigDetail("defaults.allowAllOutbound", "true", "false"),
+		},
+		{
+			// A control plane older than the 2.14 patch that added the switch serves
+			// no `defaults.allowAllOutbound` at all; absent reads as the permissive true.
+			name:     "default outbound switch absent",
+			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "Default outbound not restricted",
+			detail: cpConfigDetail("defaults.allowAllOutbound", "true", "false"),
+		},
+		{
 			name:     "sidecar containers off",
-			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":false,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			config:   `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":false,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Native sidecar containers not enabled",
 			detail: cpConfigDetail("experimental.sidecarContainers", "false", "true"),
 		},
@@ -89,7 +103,7 @@ func TestControlPlaneConfigDeprecatedSettingReported(t *testing.T) {
 // which has no injector, while the environment-agnostic experimental blockers do.
 func TestControlPlaneConfigInjectorChecksSkippedOffKubernetes(t *testing.T) {
 	m := auditResponses(t, map[string]string{
-		"/config": `{"environment":"universal","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}}}`,
+		"/config": `{"defaults":{"allowAllOutbound":false},"environment":"universal","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}}}`,
 	})
 	for _, title := range []string{"Unified resource naming not enabled", "eBPF transparent proxy enabled", "Global control plane on Kubernetes"} {
 		if _, ok := findFinding(m, "blocker", cpConfigCategory, title); ok {
@@ -157,14 +171,14 @@ func TestControlPlaneConfigDetailsShareOneShape(t *testing.T) {
 		{
 			name: "zone control plane tripping every config check",
 			responses: map[string]string{
-				"/config": `{"environment":"kubernetes","mode":"zone","experimental":{"autoReachableServices":true,"deltaXds":false,"sidecarContainers":false,"inboundTagsDisabled":false,"kdsEventBasedWatchdog":{"enabled":false}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":false,"ebpf":{"enabled":true}}}}}`,
+				"/config": `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"zone","experimental":{"autoReachableServices":true,"deltaXds":false,"sidecarContainers":false,"inboundTagsDisabled":false,"kdsEventBasedWatchdog":{"enabled":false}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":false,"ebpf":{"enabled":true}}}}}`,
 			},
 			want: 7,
 		},
 		{
 			name: "global control plane with no zones connected",
 			responses: map[string]string{
-				"/config":         `{"environment":"kubernetes","mode":"global","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+				"/config":         `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"global","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 				"/zones+insights": `{"total":0,"items":[],"next":null}`,
 			},
 			want: 2,
