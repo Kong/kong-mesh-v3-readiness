@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 36,
+    "blockers": 40,
     "warnings": 0,
     "info": 1,
     "coverage_gaps": 3,
@@ -403,6 +403,43 @@
       "count": 1,
       "example_resources": [
         "eu.west"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "other",
+      "category": "Reference by name",
+      "title": "MeshHTTPRoute references a resource by name",
+      "detail": "3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 2,
+      "example_resources": [
+        "default/anchor-only",
+        "default/catch-all"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "other",
+      "category": "Reference by name",
+      "title": "MeshLoadBalancingStrategy references a resource by name",
+      "detail": "3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "example_resources": [
+        "default/mlbs-crosszone"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "other",
+      "category": "Reference by name",
+      "title": "MeshTimeout references a resource by name",
+      "detail": "3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "example_resources": [
+        "default/mt-to-route"
       ]
     },
     {
