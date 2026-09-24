@@ -898,9 +898,6 @@ func (o dpOverview) transparentProxy() bool {
 // environment's fix. Reads /dataplanes+insights for kuma-dp's own transparent-proxy
 // config, which /dataplanes cannot show.
 func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
-	if a.outboundAlreadyRestricted() {
-		return nil
-	}
 	items, observed := a.listCollObserved(ctx, a.scopedPath("dataplanes+insights"))
 	if !observed {
 		return nil
@@ -949,11 +946,14 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 }
 
 func (a *auditor) addOutboundDenyFinding(subject, env, fix string, denied, total int, refs []string) {
+	impact := "In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. " +
+		fix + ". " + restrictOutboundRemediation
+	if a.outboundAlreadyRestricted() {
+		impact = "`defaults.allowAllOutbound` is already `false` here, so these proxies resolve no outbound clusters today and every in-mesh call they make already fails — the upgrade will not change that. " + fix + "."
+	}
 	a.rep.addSummary(blocker, "Outbound defaults", subject+" have no reachableBackends",
-		fmt.Sprintf("%d of %d transparent-proxy %s data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. "+
-			"In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. "+
-			"%s. %s",
-			denied, total, env, fix, restrictOutboundRemediation),
+		fmt.Sprintf("%d of %d transparent-proxy %s data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. %s",
+			denied, total, env, impact),
 		docReachableBackends, denied, refs)
 }
 
@@ -963,9 +963,6 @@ func (a *auditor) addOutboundDenyFinding(subject, env, fix string, denied, total
 // the mesh has transparent-proxy proxies, and it does not already turn
 // passthrough off.
 func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
-	if a.outboundAlreadyRestricted() {
-		return nil
-	}
 	items, observed := a.listCollObserved(ctx, a.scopedPath("meshpassthroughs"))
 	if !observed {
 		return nil
@@ -989,11 +986,14 @@ func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
 			refs = append(refs, m)
 		}
 	}
+	const fix = "Add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap."
+	impact := "In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. " +
+		fix + " " + restrictOutboundRemediation
+	if a.outboundAlreadyRestricted() {
+		impact = "`defaults.allowAllOutbound` is already `false` here, so a proxy matched by no MeshPassthrough has no passthrough cluster today and its external egress is already dropped — the upgrade will not change that. " + fix
+	}
 	a.rep.addSummary(blocker, "Outbound defaults", "Mesh has no MeshPassthrough policy",
-		fmt.Sprintf("%d of %d meshes with transparent-proxy proxies have no MeshPassthrough policy. "+
-			"In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. "+
-			"Add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap. %s",
-			affected, eligible, restrictOutboundRemediation),
+		fmt.Sprintf("%d of %d meshes with transparent-proxy proxies have no MeshPassthrough policy. %s", affected, eligible, impact),
 		docMeshPassthrough, affected, refs)
 	return nil
 }
@@ -1445,14 +1445,15 @@ func (a *auditor) noteOutboundDefault(cfg cpConfig, ref func(string) string) {
 	}
 	a.rep.addDoc(info, cpConfigCategory, "Default outbound changes in 3.0",
 		"`defaults.allowAllOutbound` defaults to `true` on 2.14 and `false` in 3.0, so after the upgrade a proxy with no `reachableBackends` reaches nothing and a proxy matched by no MeshPassthrough loses outbound passthrough. "+
-			"To keep today's behavior, set it explicitly to `true` before upgrading. To adopt the 3.0 behavior, set it to `false` now and validate — the control plane then denies the same traffic 3.0 will, and this report stops flagging the affected proxies and meshes.",
+			"To keep today's behavior, set it explicitly to `true` before upgrading. To adopt the 3.0 behavior, set it to `false` now and validate — the control plane then denies exactly what 3.0 will, so the proxies and meshes this report flags break here instead of after the upgrade.",
 		docReachableBackends, ref("defaults.allowAllOutbound="+value))
 }
 
 // outboundAlreadyRestricted reports whether every proxy-governing control plane
 // observed already sets defaults.allowAllOutbound to false. Such an estate runs
-// the 3.0 outbound behavior today, so the upgrade changes nothing about it and
-// the two outbound-deny checks stay silent.
+// the 3.0 outbound behavior today: a proxy with no reachableBackends is not at
+// risk from the upgrade, it is already reaching nothing — so the two checks keep
+// flagging it and only their framing changes.
 func (a *auditor) outboundAlreadyRestricted() bool {
 	return a.outboundConfigs > 0 && a.outboundConfigs == a.outboundRestricted
 }
