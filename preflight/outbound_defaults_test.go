@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -11,7 +12,7 @@ const (
 
 	titleUniversalDeny     = "Universal Dataplanes have no reachableBackends"
 	titleKubernetesDeny    = "Kubernetes dataplanes have no reachableBackends"
-	titleNoMeshPassthrough = "Mesh has no MeshPassthrough policy"
+	titleNoMeshPassthrough = "Transparent proxies selected by no MeshPassthrough"
 )
 
 // overview builds one /dataplanes+insights item: a DataplaneOverview nests the
@@ -234,8 +235,8 @@ func TestPassthroughDefaultFlagsMeshWithNoPolicy(t *testing.T) {
 	if f.Doc != docMeshPassthrough {
 		t.Errorf("doc = %q, want %q", f.Doc, docMeshPassthrough)
 	}
-	if len(f.Examples) != 1 || f.Examples[0] != "default" {
-		t.Errorf("examples = %v, want [default]", f.Examples)
+	if len(f.Examples) != 1 || f.Examples[0] != "default/dp-1" {
+		t.Errorf("examples = %v, want [default/dp-1]", f.Examples)
 	}
 }
 
@@ -256,6 +257,7 @@ func TestPassthroughDefaultSkipsUnaffectedMeshes(t *testing.T) {
 					"type": "MeshPassthrough", "mesh": "default", "name": "allow-external",
 					"spec": map[string]any{"targetRef": map[string]any{"kind": "Mesh"}},
 				}),
+				"/meshes/default/meshpassthroughs/allow-external/_resources/dataplanes": listBody(t, map[string]any{"type": "Dataplane", "mesh": "default", "name": "dp-1"}),
 			},
 		},
 		{
@@ -337,4 +339,52 @@ func TestOutboundDefaultChangeReportedAsInfo(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPassthroughDefaultReadsSelection confirms selection comes from the control
+// plane per proxy: a policy selecting only some proxies leaves the rest flagged,
+// a shadow policy selects nothing, and an unreadable selection is a coverage
+// gap for that mesh rather than a guess.
+func TestPassthroughDefaultReadsSelection(t *testing.T) {
+	const selectionPath = "/meshes/default/meshpassthroughs/allow-a/_resources/dataplanes"
+	responses := func(policyLabels map[string]any) map[string]string {
+		return map[string]string{
+			"/config": permissiveConfigJSON,
+			"/meshes": listBody(t, meshItem(nil)),
+			"/dataplanes+insights": listBody(t,
+				overview("dp-a", universalLabels, tproxySpec(nil), nil),
+				overview("dp-b", universalLabels, tproxySpec(nil), nil),
+			),
+			"/meshpassthroughs": listBody(t, map[string]any{
+				"type": "MeshPassthrough", "mesh": "default", "name": "allow-a", "labels": policyLabels,
+				"spec": map[string]any{"targetRef": map[string]any{"kind": "Dataplane", "labels": map[string]any{"app": "a"}}},
+			}),
+			selectionPath: listBody(t, map[string]any{"type": "Dataplane", "mesh": "default", "name": "dp-a"}),
+		}
+	}
+	t.Run("partial selection flags the rest", func(t *testing.T) {
+		m := auditResponses(t, responses(nil))
+		f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoMeshPassthrough)
+		if !ok || !slices.Equal(f.Examples, []string{"default/dp-b"}) || !strings.Contains(f.Detail, "1 of 2") {
+			t.Errorf("finding = %+v (found %v), want dp-b flagged 1 of 2", f, ok)
+		}
+	})
+	t.Run("shadow policy selects nothing", func(t *testing.T) {
+		m := auditResponses(t, responses(map[string]any{"kuma.io/effect": "shadow"}))
+		f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoMeshPassthrough)
+		if !ok || !slices.Equal(f.Examples, []string{"default/dp-a", "default/dp-b"}) {
+			t.Errorf("finding = %+v (found %v), want both proxies flagged", f, ok)
+		}
+	})
+	t.Run("unreadable selection is a coverage gap", func(t *testing.T) {
+		r := responses(nil)
+		delete(r, selectionPath)
+		m := auditWithNotFound(t, r, selectionPath)
+		if f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoMeshPassthrough); ok {
+			t.Errorf("flagged %v despite unreadable selection", f.Examples)
+		}
+		if m.Status != StatusInconclusive {
+			t.Errorf("status = %q, want %q", m.Status, StatusInconclusive)
+		}
+	})
 }

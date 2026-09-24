@@ -192,11 +192,10 @@ type auditor struct {
 	// listCache memoizes collection reads by path.
 	listCache map[string]listResult
 
-	// passthroughOff and tpMeshes narrow checkPassthroughDefault to the meshes the
-	// flip can affect: those with transparent-proxy proxies (recorded by
-	// checkOutboundDefaults) that do not already turn passthrough off.
+	// passthroughOff and tpProxies (the transparent proxies checkOutboundDefaults
+	// records) narrow checkPassthroughDefault to the proxies the flip can affect.
 	passthroughOff map[string]bool
-	tpMeshes       map[string]bool
+	tpProxies      []resourceItem
 
 	// outboundConfigs/outboundRestricted tally the proxy-governing control planes
 	// (the audited CP, or every zone behind a global) and how many already set
@@ -919,10 +918,7 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 		if g := ov.Dataplane.Networking.gateway(); strings.EqualFold(g, "BUILTIN") {
 			continue
 		}
-		if a.tpMeshes == nil {
-			a.tpMeshes = map[string]bool{}
-		}
-		a.tpMeshes[it.Mesh] = true
+		a.tpProxies = append(a.tpProxies, it)
 		env := 0
 		if it.Labels[envLabel] == "kubernetes" {
 			env = 1
@@ -961,43 +957,72 @@ func (a *auditor) addOutboundDenyFinding(subject, env, fix string, denied, total
 		docReachableBackends, denied, refs)
 }
 
-// checkPassthroughDefault flags meshes that lose external egress when 3.0 stops
-// giving a proxy matched by no MeshPassthrough a passthrough cluster. Three
-// preconditions keep it off meshes it cannot affect: the collection was read,
-// the mesh has transparent-proxy proxies, and it does not already turn
-// passthrough off.
+// checkPassthroughDefault flags transparent proxies that lose external egress
+// when 3.0 stops giving a proxy matched by no MeshPassthrough a passthrough
+// cluster. Selection is read from the control plane (`_resources/dataplanes`,
+// the matcher xDS uses) rather than reimplemented, since it depends on zone
+// origin, namespace role and KRI names; a mesh whose selection cannot be read
+// is a coverage gap, never flagged. Meshes that already turn passthrough off
+// are skipped.
 func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
 	items, observed := a.listCollObserved(ctx, a.scopedPath("meshpassthroughs"))
-	if !observed {
+	if !observed || len(a.tpProxies) == 0 {
 		return nil
 	}
-	covered := map[string]bool{}
-	for _, it := range items {
-		covered[it.Mesh] = true
+	affectedMeshes := map[string]bool{}
+	for _, it := range a.tpProxies {
+		affectedMeshes[it.Mesh] = !a.passthroughOff[it.Mesh]
+	}
+	selected := map[string]bool{}
+	unresolved := map[string]bool{}
+	for _, p := range items {
+		if !affectedMeshes[p.Mesh] || unresolved[p.Mesh] || p.Labels["kuma.io/effect"] == "shadow" {
+			continue
+		}
+		path := "/meshes/" + url.PathEscape(p.Mesh) + "/meshpassthroughs/" + url.PathEscape(p.Name) + "/_resources/dataplanes"
+		dps, found, err := a.c.list(ctx, path)
+		var listErr *listError
+		switch {
+		case err != nil && errors.As(err, &listErr) && listErr.kind == listErrResourceLimit:
+			if !a.resourceLimitGapRecorded {
+				a.rep.addGap(path, collectionReadGapReason(err))
+				a.resourceLimitGapRecorded = true
+			}
+			unresolved[p.Mesh] = true
+		case err != nil:
+			a.rep.addGap(path, collectionReadGapReason(err)+" (passthrough default NOT audited for mesh "+p.Mesh+")")
+			unresolved[p.Mesh] = true
+		case !found:
+			a.rep.addGap(path, "endpoint returned 404 — passthrough default NOT audited for mesh "+p.Mesh)
+			unresolved[p.Mesh] = true
+		}
+		for _, dp := range dps {
+			selected[p.Mesh+"/"+dp.Name] = true
+		}
 	}
 	var refs []string
 	affected, eligible := 0, 0
-	for _, m := range a.rep.meshes {
-		if !a.tpMeshes[m] || a.passthroughOff[m] {
+	for _, it := range a.tpProxies {
+		if !affectedMeshes[it.Mesh] || unresolved[it.Mesh] {
 			continue
 		}
 		eligible++
-		if covered[m] {
+		if selected[it.Mesh+"/"+it.Name] {
 			continue
 		}
 		affected++
 		if len(refs) < ExampleCap {
-			refs = append(refs, m)
+			refs = append(refs, qualified(it))
 		}
 	}
-	const fix = "Add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap."
+	const fix = "Add a MeshPassthrough selecting every proxy that needs external egress, or model those destinations as MeshExternalServices."
 	impact := "In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. " +
 		fix + " " + restrictOutboundRemediation
 	if a.outboundAlreadyRestricted() {
 		impact = "`defaults.restrictOutbound` is already `true` here, so a proxy matched by no MeshPassthrough has no passthrough cluster today and its external egress is already dropped — the upgrade will not change that. " + fix
 	}
-	a.rep.addSummary(blocker, "Outbound defaults", "Mesh has no MeshPassthrough policy",
-		fmt.Sprintf("%d of %d meshes with transparent-proxy proxies have no MeshPassthrough policy. %s", affected, eligible, impact),
+	a.rep.addSummary(blocker, "Outbound defaults", "Transparent proxies selected by no MeshPassthrough",
+		fmt.Sprintf("%d of %d transparent-proxy data plane proxies are selected by no MeshPassthrough. %s", affected, eligible, impact),
 		docMeshPassthrough, affected, refs)
 	return nil
 }

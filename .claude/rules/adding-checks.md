@@ -56,8 +56,9 @@ HTML report no longer renders a warnings section — do not add new warnings.
 
 A check that fires on a resource having *nothing* (the 3.0 outbound-deny
 defaults: `checkOutboundDefaults`, `checkPassthroughDefault`) would otherwise hit
-almost every resource in an estate. Three extra obligations:
+almost every resource in an estate. Four extra obligations:
 
 - **Summary form.** Tally affected/eligible, then emit one `collector.addSummary` finding whose detail states the "N of M" ratio — not one `addDoc` per resource.
 - **Read with `listCollObserved`** and return early when the collection was not observed. "Not observed" is not "absent".
+- **Read policy selection from the CP** (`_resources/dataplanes`) instead of reimplementing the matcher; an unreadable selection is a coverage gap for that mesh.
 - **Carry a remediation**, split per environment where the fix differs (Pod annotation on Kubernetes, Dataplane field on Universal). A blocker firing on everything with nowhere to go is noise.

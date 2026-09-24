@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 39,
+    "blockers": 41,
     "warnings": 0,
     "info": 2,
     "coverage_gaps": 3,
@@ -373,12 +373,14 @@
       "severity": "blocker",
       "group": "data_plane_and_workloads",
       "category": "Outbound defaults",
-      "title": "Mesh has no MeshPassthrough policy",
-      "detail": "1 of 1 meshes with transparent-proxy proxies have no MeshPassthrough policy. In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. Add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap. This applies only while `defaults.restrictOutbound` keeps its 2.14 default of `false`: set it explicitly to `false` to keep today's behavior through the upgrade, or to `true` to enforce the 3.0 behavior now and validate it.",
+      "title": "Transparent proxies selected by no MeshPassthrough",
+      "detail": "3 of 3 transparent-proxy data plane proxies are selected by no MeshPassthrough. In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. Add a MeshPassthrough selecting every proxy that needs external egress, or model those destinations as MeshExternalServices. This applies only while `defaults.restrictOutbound` keeps its 2.14 default of `false`: set it explicitly to `false` to keep today's behavior through the upgrade, or to `true` to enforce the 3.0 behavior now and validate it.",
       "doc_url": "https://developer.konghq.com/mesh/policies/meshpassthrough/",
-      "count": 1,
+      "count": 3,
       "example_resources": [
-        "default"
+        "default/frontend.kuma-demo [zone:east]",
+        "default/dp-tproxy-universal [zone:east]",
+        "default/dp-reachable-universal [zone:east]"
       ]
     },
     {
