@@ -115,9 +115,12 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   and the `SourceIP` hash type; MeshHealthCheck `healthyPanicThreshold` (→ MeshCircuitBreaker);
   MeshTrust `spec.origin` (→ `status.origin`).
 - **Dataplanes** — `reachableServices`, builtin `networking.gateway` section, Universal
-  `spec.probes`, and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
+  `spec.probes`, Kubernetes pods on virtual probes (`spec.probes` set by the pod converter),
+  inbounds that set their protocol only through the `kuma.io/protocol` tag or use one 3.0 rejects
+  (Kafka), and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible
-  (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
+  (`kumaCpCompatible: false`), or that still advertise Unix-socket readiness
+  (`feature-readiness-unix-socket`, kuma-dp older than 2.14), read from `/dataplanes+insights`.
 - **Control plane version** — flags a CP (or, on a **global**, any connected zone CP) not on
   the latest 2.14 patch, the only supported 3.0 upgrade source (older patch/minor → blocker).
   The latest patch is looked up from the `kumahq/kuma` GitHub releases at run time (Kong Mesh
