@@ -19,7 +19,7 @@ func badK8sConfig() cpConfig {
 	c.Experimental.DeltaXds = false                                    // blocker
 	c.Experimental.KdsEventBasedWatchdog.Enabled = false               // blocker
 	c.Experimental.SidecarContainers = false                           // blocker
-	c.Defaults.AllowAllOutbound = nil                                  // info (unset reads as true)
+	c.Defaults.RestrictOutbound = nil                                  // info (unset reads as false)
 	return c
 }
 
@@ -34,7 +34,8 @@ func goodK8sConfig() cpConfig {
 	c.Experimental.DeltaXds = true
 	c.Experimental.KdsEventBasedWatchdog.Enabled = true
 	c.Experimental.SidecarContainers = true
-	c.Defaults.AllowAllOutbound = new(bool)
+	restricted := true
+	c.Defaults.RestrictOutbound = &restricted
 	return c
 }
 

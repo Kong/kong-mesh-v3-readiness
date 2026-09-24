@@ -43,7 +43,7 @@ func tproxySpec(extra map[string]any) map[string]any {
 // permissiveConfigJSON is readyConfigJSON with the 2.14 outbound default left
 // permissive, which is what makes the outbound-deny checks apply at all.
 var permissiveConfigJSON = strings.Replace(readyConfigJSON,
-	`"defaults": {"allowAllOutbound": false}`, `"defaults": {"allowAllOutbound": true}`, 1)
+	`"defaults": {"restrictOutbound": true}`, `"defaults": {"restrictOutbound": false}`, 1)
 
 func auditOverviews(t *testing.T, items ...map[string]any) Report {
 	t.Helper()
@@ -303,7 +303,7 @@ func TestRestrictedControlPlaneStillVerifiesReachableBackends(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing finding %q\nfindings: %+v", title, m.Findings)
 		}
-		if !strings.Contains(f.Detail, "already `false` here") {
+		if !strings.Contains(f.Detail, "already `true` here") {
 			t.Errorf("finding %q keeps the future-tense framing: %q", title, f.Detail)
 		}
 	}
@@ -313,11 +313,11 @@ func TestRestrictedControlPlaneStillVerifiesReachableBackends(t *testing.T) {
 }
 
 // The switch is reported as info, not a blocker: /config serves only the
-// effective value, so pinning an explicit `true` could never clear a blocker.
+// effective value, so pinning an explicit `false` could never clear a blocker.
 func TestOutboundDefaultChangeReportedAsInfo(t *testing.T) {
 	for _, tc := range []struct{ name, config, wantExample string }{
-		{"permissive", permissiveConfigJSON, "defaults.allowAllOutbound=true"},
-		{"switch absent", strings.Replace(readyConfigJSON, `"defaults": {"allowAllOutbound": false},`, "", 1), "defaults.allowAllOutbound=unset"},
+		{"permissive", permissiveConfigJSON, "defaults.restrictOutbound=false"},
+		{"switch absent", strings.Replace(readyConfigJSON, `"defaults": {"restrictOutbound": true},`, "", 1), "defaults.restrictOutbound=unset"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditResponses(t, map[string]string{"/config": tc.config})

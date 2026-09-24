@@ -385,7 +385,7 @@ func TestOptionalCollectionReadFailureDegradesToGap(t *testing.T) {
 	t.Run("not served stays non-gap", func(t *testing.T) {
 		srv := cpServer(t, map[string]http.HandlerFunc{
 			"/config": func(w http.ResponseWriter, _ *http.Request) {
-				writeJSON(w, []byte(`{"defaults":{"allowAllOutbound":false},"mode":"zone","environment":"kubernetes","experimental":{"autoReachableServices":false,"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true,"ebpf":{"enabled":false}},"workloadLabels":["app.kubernetes.io/name"]}}}`))
+				writeJSON(w, []byte(`{"defaults":{"restrictOutbound":true},"mode":"zone","environment":"kubernetes","experimental":{"autoReachableServices":false,"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true,"ebpf":{"enabled":false}},"workloadLabels":["app.kubernetes.io/name"]}}}`))
 			},
 			"/meshes": func(w http.ResponseWriter, _ *http.Request) {
 				writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`))

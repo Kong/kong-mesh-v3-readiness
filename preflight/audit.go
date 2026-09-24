@@ -98,7 +98,7 @@ const (
 // restrictOutboundRemediation closes both outbound-deny findings with the choice
 // the 3.0 default change forces. 2.14 backports the switch, so either answer can
 // be applied and validated on 2.x rather than discovered on 3.0.
-const restrictOutboundRemediation = "This applies only while `defaults.allowAllOutbound` keeps its 2.14 default of `true`: set it explicitly to `true` to keep today's behavior through the upgrade, or to `false` to enforce the 3.0 behavior now and validate it."
+const restrictOutboundRemediation = "This applies only while `defaults.restrictOutbound` keeps its 2.14 default of `false`: set it explicitly to `false` to keep today's behavior through the upgrade, or to `true` to enforce the 3.0 behavior now and validate it."
 
 // removedCategory picks the finding category (and thus display group) for a
 // removed kind: classic policies group with the other policy findings, resources
@@ -200,7 +200,7 @@ type auditor struct {
 
 	// outboundConfigs/outboundRestricted tally the proxy-governing control planes
 	// (the audited CP, or every zone behind a global) and how many already set
-	// defaults.allowAllOutbound to false. See outboundAlreadyRestricted.
+	// defaults.restrictOutbound to true. See outboundAlreadyRestricted.
 	outboundConfigs    int
 	outboundRestricted int
 
@@ -274,7 +274,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
 		a.checkResourceNames, a.checkMeshTrust,
 		a.checkControlPlaneConfig,
-		// Both read defaults.allowAllOutbound, which checkControlPlaneConfig resolves;
+		// Both read defaults.restrictOutbound, which checkControlPlaneConfig resolves;
 		// checkPassthroughDefault also reads the meshes checkOutboundDefaults records.
 		a.checkOutboundDefaults, a.checkPassthroughDefault,
 		a.checkControlPlaneVersions,
@@ -949,7 +949,7 @@ func (a *auditor) addOutboundDenyFinding(subject, env, fix string, denied, total
 	impact := "In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. " +
 		fix + ". " + restrictOutboundRemediation
 	if a.outboundAlreadyRestricted() {
-		impact = "`defaults.allowAllOutbound` is already `false` here, so these proxies resolve no outbound clusters today and every in-mesh call they make already fails — the upgrade will not change that. " + fix + "."
+		impact = "`defaults.restrictOutbound` is already `true` here, so these proxies resolve no outbound clusters today and every in-mesh call they make already fails — the upgrade will not change that. " + fix + "."
 	}
 	a.rep.addSummary(blocker, "Outbound defaults", subject+" have no reachableBackends",
 		fmt.Sprintf("%d of %d transparent-proxy %s data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. %s",
@@ -990,7 +990,7 @@ func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
 	impact := "In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. " +
 		fix + " " + restrictOutboundRemediation
 	if a.outboundAlreadyRestricted() {
-		impact = "`defaults.allowAllOutbound` is already `false` here, so a proxy matched by no MeshPassthrough has no passthrough cluster today and its external egress is already dropped — the upgrade will not change that. " + fix
+		impact = "`defaults.restrictOutbound` is already `true` here, so a proxy matched by no MeshPassthrough has no passthrough cluster today and its external egress is already dropped — the upgrade will not change that. " + fix
 	}
 	a.rep.addSummary(blocker, "Outbound defaults", "Mesh has no MeshPassthrough policy",
 		fmt.Sprintf("%d of %d meshes with transparent-proxy proxies have no MeshPassthrough policy. %s", affected, eligible, impact),
@@ -1216,11 +1216,11 @@ type cpConfig struct {
 			Enabled bool `json:"enabled"`
 		} `json:"kdsEventBasedWatchdog"`
 	} `json:"experimental"`
-	// Defaults.AllowAllOutbound is absent on a control plane older than the 2.14
+	// Defaults.RestrictOutbound is absent on a control plane older than the 2.14
 	// patch that added it; there, as when it is unset, the permissive 2.x
-	// behavior applies, so nil reads as true.
+	// behavior applies, so nil reads as false.
 	Defaults struct {
-		AllowAllOutbound *bool `json:"allowAllOutbound"`
+		RestrictOutbound *bool `json:"restrictOutbound"`
 	} `json:"defaults"`
 	Runtime struct {
 		Kubernetes struct {
@@ -1420,37 +1420,32 @@ func latestZoneVersion(zo zoneOverview) (string, bool) {
 	return "", false
 }
 
-// checkZoneControlPlaneConfigs audits the data-plane-relevant CP settings of
-// every zone of a global CP, sourcing each zone's config from ZoneInsight so a
-// single audit of the global covers all zones. A zone that has reported no
-// config, or whose collection is unreachable, is a coverage gap — never a silent
-// pass (an unobserved zone is not a clean zone).
-// noteOutboundDefault reports the 3.0 change of the defaults.allowAllOutbound
-// default (true on 2.14, false on 3.0) and records whether this control plane
+// noteOutboundDefault reports the 3.0 change of the defaults.restrictOutbound
+// default (false on 2.14, true on 3.0) and records whether this control plane
 // already runs restricted. It is info, not a blocker: the operator has to decide
 // between pinning today's behavior and adopting the new one, and /config serves
-// only the effective value, so an explicit `true` is indistinguishable from the
+// only the effective value, so an explicit `false` is indistinguishable from the
 // 2.14 default and a blocker here could never be cleared by pinning. The real
 // breakage is quantified per proxy and per mesh by checkOutboundDefaults and
 // checkPassthroughDefault, which do gate.
 func (a *auditor) noteOutboundDefault(cfg cpConfig, ref func(string) string) {
 	a.outboundConfigs++
-	if v := cfg.Defaults.AllowAllOutbound; v != nil && !*v {
+	if v := cfg.Defaults.RestrictOutbound; v != nil && *v {
 		a.outboundRestricted++
 		return
 	}
-	value := "true"
-	if cfg.Defaults.AllowAllOutbound == nil {
+	value := "false"
+	if cfg.Defaults.RestrictOutbound == nil {
 		value = "unset"
 	}
 	a.rep.addDoc(info, cpConfigCategory, "Default outbound changes in 3.0",
-		"`defaults.allowAllOutbound` defaults to `true` on 2.14 and `false` in 3.0, so after the upgrade a proxy with no `reachableBackends` reaches nothing and a proxy matched by no MeshPassthrough loses outbound passthrough. "+
-			"To keep today's behavior, set it explicitly to `true` before upgrading. To adopt the 3.0 behavior, set it to `false` now and validate — the control plane then denies exactly what 3.0 will, so the proxies and meshes this report flags break here instead of after the upgrade.",
-		docReachableBackends, ref("defaults.allowAllOutbound="+value))
+		"`defaults.restrictOutbound` defaults to `false` on 2.14 and `true` in 3.0, so after the upgrade a proxy with no `reachableBackends` reaches nothing and a proxy matched by no MeshPassthrough loses outbound passthrough. "+
+			"To keep today's behavior, set it explicitly to `false` before upgrading. To adopt the 3.0 behavior, set it to `true` now and validate — the control plane then denies exactly what 3.0 will, so the proxies and meshes this report flags break here instead of after the upgrade.",
+		docReachableBackends, ref("defaults.restrictOutbound="+value))
 }
 
 // outboundAlreadyRestricted reports whether every proxy-governing control plane
-// observed already sets defaults.allowAllOutbound to false. Such an estate runs
+// observed already sets defaults.restrictOutbound to true. Such an estate runs
 // the 3.0 outbound behavior today: a proxy with no reachableBackends is not at
 // risk from the upgrade, it is already reaching nothing — so the two checks keep
 // flagging it and only their framing changes.
@@ -1458,6 +1453,11 @@ func (a *auditor) outboundAlreadyRestricted() bool {
 	return a.outboundConfigs > 0 && a.outboundConfigs == a.outboundRestricted
 }
 
+// checkZoneControlPlaneConfigs audits the data-plane-relevant CP settings of
+// every zone of a global CP, sourcing each zone's config from ZoneInsight so a
+// single audit of the global covers all zones. A zone that has reported no
+// config, or whose collection is unreachable, is a coverage gap — never a silent
+// pass (an unobserved zone is not a clean zone).
 func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 	items, found, err := a.zoneInsights(ctx)
 	zonesHitResourceLimit := false

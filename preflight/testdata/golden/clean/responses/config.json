@@ -9,7 +9,7 @@
     "kdsEventBasedWatchdog": { "enabled": true }
   },
   "defaults": {
-    "allowAllOutbound": false
+    "restrictOutbound": true
   },
   "runtime": {
     "kubernetes": {
