@@ -138,7 +138,7 @@ All gateway functionality delegated to Kong / third-party (delegated gateway). D
 - **Delta xDS** → the only option (SOTW path removed, not just defaulted on)
 - **CoreDNS + Envoy DNS filter** → dropped (DNS handling reworked)
 - **eBPF** transparent proxy → dropped
-- **Old inspect APIs** → dropped (new inspect API only)
+- **Legacy inspect and overview endpoints** → removed (`dataplanes/{name}/rules`, `{policy}/{name}/dataplanes`, `meshservices/{name}/_resources/dataplanes`, `dataplanes+insights`, `zones+insights`, zone proxy overviews and Envoy admin, `service-insights`); `_rules` stays without `toRules`/`fromRules`, `dataplanes/{name}/policies` is deprecated but still served. Manual check with the replacement mapping
 - **Pod resources** instead of container resources
 - **`KUMA_RUNTIME_KUBERNETES_INJECTOR_BUILTIN_DNS_LOGGING`** (embedded DNS logging) → dropped
 - Routing MeshExternalService through a specific zone → dropped

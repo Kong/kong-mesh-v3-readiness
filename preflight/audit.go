@@ -1721,21 +1721,36 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // --inspect-dataplanes deep check, so none is repeated here.
 var manualChecks = []ManualCheck{
 	{
-		Title: "Old inspect APIs removed (switch to the new inspect API)",
-		Detail: "Kuma 3.0 removes the old dataplane rules-inspection endpoint (`_rules`) and " +
-			"keeps only the redesigned, KRI-based inspect API. The dropped endpoint returned " +
-			"every policy's rules for a proxy in one nested blob (fromRules/toRules/inboundRules/" +
-			"toResourceRules), and it goes away together with `kuma.io/service` routing support. " +
-			"The new API splits that into per-scope endpoints that reference resources by KRI, " +
-			"listed below. The control-plane API cannot tell you which clients still call the old " +
-			"endpoint, whether that's kumactl, the GUI, dashboards, scripts, or monitoring, so you " +
-			"have to find and migrate those consumers yourself; a 2.x kumactl or GUI pointed at a " +
-			"3.0 CP gets a 404. Upgrade kumactl and the GUI to their 3.0 builds, which already use " +
-			"the new endpoints.",
-		Command: `# Removed in 3.0
-GET /meshes/{mesh}/dataplanes/{name}/_rules
+		Title: "Migrate clients of removed inspect and overview endpoints",
+		Detail: "Kuma 3.0 removes several legacy REST endpoints, which then answer 404: the " +
+			"dataplane `rules` inspect endpoint, the per-policy `{policy}/{name}/dataplanes` " +
+			"inspect paths, the MeshService `_resources/dataplanes` path, the `dataplanes+insights` " +
+			"and `zones+insights` overview aliases, the ZoneIngress/ZoneEgress overview and Envoy " +
+			"admin endpoints, and `service-insights`, which the control plane stops computing. " +
+			"The `_rules` endpoint stays but no longer returns `toRules`/`fromRules`, and the " +
+			"`?gateway=` overview filter is ignored. The control-plane API cannot tell you which " +
+			"clients still call these paths, whether that's kumactl, the GUI, dashboards, scripts, " +
+			"or monitoring, so find and migrate those consumers yourself using the mapping below, " +
+			"and upgrade kumactl and the GUI together with the control plane.",
+		Command: `# Removed in 3.0 (404)                                   -> replacement
+GET /meshes/{mesh}/dataplanes/{name}/rules                  -> /meshes/{mesh}/dataplanes/{name}/_policies
+GET /meshes/{mesh}/{policyType}/{name}/dataplanes           -> /meshes/{mesh}/{policyType}/{name}/_resources/dataplanes
+GET /meshes/{mesh}/meshservices/{name}/_resources/dataplanes -> /meshes/{mesh}/meshservices/{name}/_dataplanes
+GET /meshes/{mesh}/dataplanes+insights[/{name}]             -> /meshes/{mesh}/dataplanes/_overview (/{name}/_overview)
+GET /zones+insights[/{name}]                                -> /zones/_overview (/zones/{name}/_overview)
+GET /meshes/{mesh}/service-insights[/{name}]                -> MeshService / MeshExternalService status
+GET /zoneingresses+insights, /zoneegressoverviews           -> none (ZoneIngress/ZoneEgress are removed)
+GET /zoneingresses/{name}/{xds,stats,clusters}              -> none
+GET /zoneegresses/{name}/{xds,stats,clusters}               -> none
 
-# Replacement endpoints (new KRI-based inspect API)
+# Changed
+GET /meshes/{mesh}/dataplanes/{name}/_rules                 -> no toRules/fromRules; read toResourceRules/inboundRules
+GET /meshes/{mesh}/dataplanes/_overview?gateway=            -> filter ignored
+
+# Deprecated, still served
+GET /meshes/{mesh}/dataplanes/{name}/policies               -> /meshes/{mesh}/dataplanes/{name}/_policies
+
+# KRI-based inspect API
 GET /meshes/{mesh}/dataplanes/{name}/_layout
 GET /meshes/{mesh}/dataplanes/{name}/_policies
 GET /meshes/{mesh}/dataplanes/{name}/_inbounds/{inbound_kri}/_policies
