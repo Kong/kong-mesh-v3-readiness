@@ -74,7 +74,7 @@ every kind from `to[].targetRef` (the destination), which keeps `Mesh` / `Mesh*S
 - Net direction: tag/service-subset selectors → label-based `Dataplane` selection backed by MeshService
 - **Top-level targetRef** restricted to only `Mesh` and `Dataplane` (all other kinds dropped)
 - **`to[].targetRef`** drops the subset/selector kinds (`MeshSubset`, `MeshServiceSubset`) and `MeshGateway`; `Mesh` (all outbound — also the only kind allowed for MeshGateway-targeted policies), the `Mesh*Service` kinds (`MeshService` / `MeshExternalService` / `MeshMultiZoneService`) and `MeshHTTPRoute` stay valid
-- **`proxyTypes` in targetRef** (`api/common/v1alpha1/targetref.go:101`) → dropped (Gateway/Sidecar proxy-type filtering)
+- **`proxyTypes` in targetRef** (`api/common/v1alpha1/targetref.go:101`) → dropped (Gateway/Sidecar proxy-type filtering). The stored field is pruned, so a policy scoped with it widens to every proxy: the 2.x default `mesh-gateways-timeout-all-<mesh>` (`proxyTypes: [Gateway]`, `streamIdleTimeout: 5s`) then fails every sidecar HTTP response slower than 5s with 504 (kumahq/kuma#18857). Delete it rather than dropping the field; on Kubernetes add `MeshTimeout` to the Mesh `skipCreatingInitialPolicies` first, or the 2.x Mesh controller recreates it
 
 ## Backend / endpoint deprecations
 

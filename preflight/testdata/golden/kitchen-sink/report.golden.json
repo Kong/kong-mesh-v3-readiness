@@ -11,12 +11,12 @@
     "default"
   ],
   "summary": {
-    "blockers": 36,
+    "blockers": 39,
     "warnings": 0,
     "info": 1,
     "coverage_gaps": 3,
     "parse_errors": 0,
-    "system_findings": 1
+    "system_findings": 3
   },
   "findings": [
     {
@@ -210,6 +210,42 @@
       "count": 1,
       "example_resources": [
         "default/mt-to-subset"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "targetRef proxyTypes",
+      "title": "MeshTimeout scoped to gateways with targetRef.proxyTypes",
+      "detail": "3.0 drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. Do not just remove the field. Delete the policy, or retarget it to the gateway with `kind: Dataplane` and `labels`. The 2.x default `mesh-gateways-timeout-all-\u003cmesh\u003e` sets `streamIdleTimeout: 5s`, which left in place fails every sidecar HTTP response slower than 5s with 504. On Kubernetes the 2.x control plane recreates a deleted default on the next Mesh reconcile, so first add `MeshTimeout` to the Mesh `skipCreatingInitialPolicies`.",
+      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
+      "count": 1,
+      "example_resources": [
+        "default/mesh-gateways-timeout-all-default (system — CP-managed, update before 3.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "targetRef proxyTypes",
+      "title": "MeshTimeout scoped to sidecars with targetRef.proxyTypes",
+      "detail": "3.0 drops `proxyTypes`, so this policy will also apply to gateways. Remove the field if that is intended, otherwise retarget it with `kind: Dataplane` and `labels`.",
+      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
+      "count": 1,
+      "example_resources": [
+        "default/mesh-timeout-all-default (system — CP-managed, update before 3.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "targetRef proxyTypes",
+      "title": "MeshTimeout uses targetRef.proxyTypes",
+      "detail": "3.0 drops `proxyTypes`. It already covers every proxy here, so remove the field.",
+      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
+      "count": 1,
+      "example_resources": [
+        "default/mt-all-proxy-types"
       ]
     },
     {
