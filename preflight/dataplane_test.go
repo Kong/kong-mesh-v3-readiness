@@ -1,6 +1,12 @@
 package preflight
 
-import "testing"
+import (
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+)
 
 // auditDataplane audits a mock control plane whose only Dataplane is the given
 // one (no meshes, every other collection empty), so dataplane findings stand
@@ -122,4 +128,91 @@ func TestCleanDataplaneHasNoIssues(t *testing.T) {
 	if len(m.Findings) != 0 {
 		t.Errorf("expected no findings for a clean dataplane, got %+v", m.Findings)
 	}
+}
+
+// TestReachableBackendsDefault covers the 3.0 restrictOutbound=true default:
+// only a transparent proxy whose reachableBackends is absent loses its outbounds.
+// An explicit empty object already means "none" on 2.x, and a proxy without a
+// transparentProxying section never goes through reachable-backend filtering.
+func TestReachableBackendsDefault(t *testing.T) {
+	const title = "Transparent-proxy Dataplane has no reachableBackends"
+	tp := func(fields map[string]any) map[string]any {
+		return map[string]any{"transparentProxying": fields}
+	}
+	redirect := map[string]any{"redirectPortInbound": 15006, "redirectPortOutbound": 15001}
+	withBackends := func(rb any) map[string]any {
+		f := maps.Clone(redirect)
+		f["reachableBackends"] = rb
+		return f
+	}
+	cases := []struct {
+		name       string
+		env        string
+		networking map[string]any
+		want       bool
+	}{
+		{"universal transparent proxy without reachableBackends", "universal", tp(redirect), true},
+		{"kubernetes transparent proxy without reachableBackends", "kubernetes", tp(redirect), true},
+		{"null reachableBackends counts as absent", "universal", tp(withBackends(nil)), true},
+		{"empty reachableBackends already restricts", "universal", tp(withBackends(map[string]any{})), false},
+		{"reachableBackends with refs", "kubernetes", tp(withBackends(map[string]any{"refs": []any{map[string]any{"kind": "MeshService", "labels": map[string]any{"kuma.io/display-name": "backend"}}}})), false},
+		{"no transparent proxy", "universal", map[string]any{"inbound": []any{map[string]any{"port": 8080}}}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := auditDataplane(t, map[string]any{
+				"labels":     map[string]any{"kuma.io/env": tc.env, "kuma.io/workload": "dp-1"},
+				"networking": tc.networking,
+			})
+			if _, got := findFinding(m, "blocker", "Dataplane networking", title); got != tc.want {
+				t.Errorf("finding %q present = %v, want %v\nfindings: %+v", title, got, tc.want, m.Findings)
+			}
+		})
+	}
+}
+
+// TestReachableBackendsDefaultAlreadyRestricted confirms a proxy is not flagged
+// when its control plane already sets `defaults.restrictOutbound: true` on 2.x:
+// it already runs with the 3.0 default, so the upgrade changes nothing for it.
+func TestReachableBackendsDefaultAlreadyRestricted(t *testing.T) {
+	const title = "Transparent-proxy Dataplane has no reachableBackends"
+	tpDP := func(name, zone string) map[string]any {
+		return map[string]any{
+			"type": "Dataplane", "mesh": "default", "name": name,
+			"labels":     map[string]any{"kuma.io/env": "kubernetes", "kuma.io/zone": zone},
+			"networking": map[string]any{"transparentProxying": map[string]any{"redirectPortOutbound": 15001}},
+		}
+	}
+	t.Run("zone control plane", func(t *testing.T) {
+		m := auditResponses(t, map[string]string{
+			"/config":     strings.Replace(readyConfigJSON, `"mode": "zone",`, `"mode": "zone", "defaults": {"restrictOutbound": true},`, 1),
+			"/dataplanes": listBody(t, tpDP("dp-1", "east")),
+		})
+		if _, ok := findFinding(m, "blocker", "Dataplane networking", title); ok {
+			t.Errorf("proxy flagged although its CP already restricts outbound\nfindings: %+v", m.Findings)
+		}
+	})
+	t.Run("global flags only zones not yet restricted", func(t *testing.T) {
+		zoneCfg := func(restrict bool) string {
+			return fmt.Sprintf(`{"mode": "zone", "environment": "kubernetes", "defaults": {"restrictOutbound": %t}}`, restrict)
+		}
+		zone := func(name string, restrict bool) map[string]any {
+			return map[string]any{
+				"type": "ZoneOverview", "name": name,
+				"zoneInsight": map[string]any{"subscriptions": []any{map[string]any{"config": zoneCfg(restrict)}}},
+			}
+		}
+		m := auditResponses(t, map[string]string{
+			"/config":         `{"mode": "global", "environment": "universal"}`,
+			"/zones+insights": listBody(t, zone("east", true), zone("west", false)),
+			"/dataplanes":     listBody(t, tpDP("dp-east", "east"), tpDP("dp-west", "west")),
+		})
+		f, ok := findFinding(m, "blocker", "Dataplane networking", title)
+		if !ok {
+			t.Fatalf("unrestricted zone's proxy not flagged\nfindings: %+v", m.Findings)
+		}
+		if want := []string{"default/dp-west [zone:west]"}; !slices.Equal(f.Examples, want) {
+			t.Errorf("flagged = %v, want %v", f.Examples, want)
+		}
+	})
 }
