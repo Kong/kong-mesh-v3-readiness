@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 38,
+    "blockers": 40,
     "warnings": 0,
     "info": 1,
     "coverage_gaps": 3,
@@ -316,6 +316,19 @@
       "title": "Transparent-proxy Dataplane has no reachableBackends",
       "detail": "3.0 defaults `defaults.restrictOutbound` to `true`, so a transparent proxy without `reachableBackends` gets no outbounds and cannot reach any service. List the destinations it calls in `networking.transparentProxying.reachableBackends` (the `kuma.io/reachable-backends` annotation on Kubernetes), or set `KUMA_DEFAULTS_RESTRICT_OUTBOUND=false` explicitly on the control plane to keep allow-all.",
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
+      "count": 2,
+      "example_resources": [
+        "default/dp-1 [zone:east]",
+        "default/dp-legacy-universal [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane networking",
+      "title": "Transparent-proxy Dataplane not selected by any MeshPassthrough",
+      "detail": "3.0 treats a transparent proxy that no MeshPassthrough selects as `passthroughMode: None`, so its traffic to destinations outside the mesh is dropped instead of forwarded. Allow the external destinations it uses with MeshExternalService or a MeshPassthrough that selects it (`passthroughMode: Matched` with `appendMatch`, or `All`), or set `KUMA_DEFAULTS_RESTRICT_OUTBOUND=false` explicitly on the control plane.",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshpassthrough/",
       "count": 2,
       "example_resources": [
         "default/dp-1 [zone:east]",

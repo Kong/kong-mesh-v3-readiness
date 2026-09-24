@@ -199,6 +199,13 @@ type auditor struct {
 	restrictOutboundZones map[string]bool
 	// noReachableBackends are transparent proxies with no reachableBackends.
 	noReachableBackends []resourceItem
+	// Inputs to checkPassthroughDefault, gathered by earlier checks: meshes whose
+	// passthrough is already off, the transparent-proxy Dataplanes, and the
+	// MeshPassthrough policies (meshPassthroughsRead only when fully listed).
+	passthroughOffMeshes map[string]bool
+	tpDataplanes         []resourceItem
+	meshPassthroughs     []resourceItem
+	meshPassthroughsRead bool
 }
 
 // zoneInsights fetches /zones+insights once and caches the result (items, whether
@@ -261,7 +268,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkNewPolicies, a.checkDataplanes,
 		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
 		a.checkResourceNames, a.checkMeshTrust,
-		a.checkControlPlaneConfig, a.checkOutboundDefaults, a.checkControlPlaneVersions,
+		a.checkControlPlaneConfig, a.checkOutboundDefaults, a.checkPassthroughDefault, a.checkControlPlaneVersions,
 		a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
 	} {
 		if err := ctx.Err(); err != nil {
@@ -319,6 +326,13 @@ func collectionReadGapReason(err error) string {
 // listColl lists a collection and records a coverage gap (instead of silently
 // treating it as empty) when the collection cannot be read.
 func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
+	items, _ := a.listCollComplete(ctx, path)
+	return items
+}
+
+// listCollComplete is listColl that also reports whether the whole collection
+// was read, for a check that must not draw conclusions from a partial list.
+func (a *auditor) listCollComplete(ctx context.Context, path string) ([]resourceItem, bool) {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
 		var listErr *listError
@@ -328,13 +342,13 @@ func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 				a.resourceLimitGapRecorded = true
 			}
 		}
-		return items
+		return items, false
 	}
 	if !found {
 		a.rep.addGap(path, "endpoint returned 404 — NOT audited")
-		return nil
+		return nil, false
 	}
-	return items
+	return items, true
 }
 
 // listIfServed lists a collection, returning nil when the endpoint is
@@ -406,6 +420,12 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 	if spec.Networking != nil && spec.Networking.Outbound != nil && spec.Networking.Outbound.Passthrough != nil {
 		a.rep.addDoc(blocker, "Mesh object settings", "Passthrough on Mesh",
 			"`mesh.networking.outbound.passthrough` is removed; use MeshPassthrough.", docMeshPassthrough, ref("networking.outbound.passthrough"))
+		if !*spec.Networking.Outbound.Passthrough {
+			if a.passthroughOffMeshes == nil {
+				a.passthroughOffMeshes = map[string]bool{}
+			}
+			a.passthroughOffMeshes[m.Name] = true
+		}
 	}
 	if spec.Routing != nil {
 		if spec.Routing.ZoneEgress != nil {
@@ -485,7 +505,10 @@ func (a *auditor) checkRemovedEnterprisePolicies(ctx context.Context) error {
 
 func (a *auditor) checkNewPolicies(ctx context.Context) error {
 	for _, wsPath := range newPolicyPaths {
-		items := a.listColl(ctx, a.scopedPath(wsPath))
+		items, complete := a.listCollComplete(ctx, a.scopedPath(wsPath))
+		if wsPath == "meshpassthroughs" && complete {
+			a.meshPassthroughs, a.meshPassthroughsRead = items, true
+		}
 		for _, it := range items {
 			before := a.rep.total
 			ref := a.ref(it)
@@ -709,6 +732,62 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 		}
 		a.checkDataplaneLabels(it, onK8s)
 		a.checkDataplaneNetworking(it, spec, onK8s)
+		// MeshPassthrough skips builtin gateways, so only other transparent proxies
+		// depend on the passthrough default (checkPassthroughDefault).
+		if n := spec.Networking; n != nil && n.TransparentProxying != nil && (n.Gateway == nil || !strings.EqualFold(n.Gateway.Type, "BUILTIN")) {
+			a.tpDataplanes = append(a.tpDataplanes, it)
+		}
+	}
+	return nil
+}
+
+// checkPassthroughDefault flags transparent proxies that lose passthrough in 3.0,
+// where a proxy no MeshPassthrough selects behaves as `passthroughMode: None`. On
+// 2.x such a proxy follows the Mesh's passthrough, which defaults to on, so a mesh
+// with passthrough already off, or a CP already on `restrictOutbound: true`, is
+// unaffected; it runs after checkControlPlaneConfig, which reads that flag.
+// Selection is read from the control plane (`_resources/dataplanes`, the same
+// matcher xDS uses) rather than reimplemented, since it depends on zone origin,
+// namespace role and KRI names.
+// A mesh whose selection cannot be read fully is a coverage gap, never flagged.
+func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
+	if len(a.tpDataplanes) == 0 || !a.meshPassthroughsRead {
+		return nil
+	}
+	selected := map[string]bool{}
+	unresolved := map[string]bool{}
+	for _, p := range a.meshPassthroughs {
+		if p.Labels["kuma.io/effect"] == "shadow" || unresolved[p.Mesh] {
+			continue
+		}
+		path := "/meshes/" + url.PathEscape(p.Mesh) + "/meshpassthroughs/" + url.PathEscape(p.Name) + "/_resources/dataplanes"
+		dps, found, err := a.c.list(ctx, path)
+		var listErr *listError
+		switch {
+		case err != nil && errors.As(err, &listErr) && listErr.kind == listErrResourceLimit:
+			if !a.resourceLimitGapRecorded {
+				a.rep.addGap(path, collectionReadGapReason(err))
+				a.resourceLimitGapRecorded = true
+			}
+			unresolved[p.Mesh] = true
+		case err != nil:
+			a.rep.addGap(path, collectionReadGapReason(err)+" (passthrough default NOT audited for mesh "+p.Mesh+")")
+			unresolved[p.Mesh] = true
+		case !found:
+			a.rep.addGap(path, "endpoint returned 404 — passthrough default NOT audited for mesh "+p.Mesh)
+			unresolved[p.Mesh] = true
+		}
+		for _, dp := range dps {
+			selected[p.Mesh+"/"+dp.Name] = true
+		}
+	}
+	for _, it := range a.tpDataplanes {
+		if a.passthroughOffMeshes[it.Mesh] || a.outboundRestricted(it) || unresolved[it.Mesh] || selected[it.Mesh+"/"+it.Name] {
+			continue
+		}
+		a.rep.addDoc(blocker, "Dataplane networking", "Transparent-proxy Dataplane not selected by any MeshPassthrough",
+			"3.0 treats a transparent proxy that no MeshPassthrough selects as `passthroughMode: None`, so its traffic to destinations outside the mesh is dropped instead of forwarded. Allow the external destinations it uses with MeshExternalService or a MeshPassthrough that selects it (`passthroughMode: Matched` with `appendMatch`, or `All`), or set `KUMA_DEFAULTS_RESTRICT_OUTBOUND=false` explicitly on the control plane.",
+			docMeshPassthrough, qualified(it))
 	}
 	return nil
 }

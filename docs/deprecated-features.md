@@ -57,7 +57,7 @@ All have a `deprecated.go` under `pkg/plugins/policies/<name>/api/v1alpha1/`:
 - `Mesh.spec.logging` → **MeshAccessLog**
 - `Mesh.spec.mtls` → **MeshIdentity** + **MeshTrust** (see core table)
 - `Mesh.spec.routing.localityAwareLoadBalancing` → **MeshLoadBalancingStrategy** (see core table)
-- Passthrough setting (`Mesh.spec.networking.outbound` passthrough) → **MeshPassthrough**
+- Passthrough setting (`Mesh.spec.networking.outbound` passthrough) → **MeshPassthrough**. 3.0 also defaults an unselected transparent proxy to `passthroughMode: None` (kumahq/kuma#18842); on 2.x it followed the Mesh setting, default on. Preflight flags every transparent-proxy Dataplane no MeshPassthrough selects in a mesh whose passthrough is not `false`, reading selection from the CP (`/meshes/{mesh}/meshpassthroughs/{name}/_resources/dataplanes`)
 - `Mesh.spec.routing.zoneEgress` boolean (`mesh.proto:289`) → dropped
 - `Mesh.spec.routing.defaultForbidMeshExternalServiceAccess` (`mesh.proto:293`) → dropped
 - Mesh membership / `Mesh.spec.constraints.dataplaneProxy` (`mesh.proto:62-92`) → dropped
