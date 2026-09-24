@@ -946,12 +946,16 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 }
 
 func (a *auditor) addOutboundDenyFinding(subject, env, fix string, denied, total int, refs []string) {
+	sev := blocker
 	impact := "In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. " +
 		fix + ". " + restrictOutboundRemediation
+	// The CP already denies what 3.0 will, so the upgrade changes nothing for
+	// these proxies; a proxy that calls nothing in the mesh is correct as is.
 	if a.outboundAlreadyRestricted() {
-		impact = "`defaults.restrictOutbound` is already `true` here, so these proxies resolve no outbound clusters today and every in-mesh call they make already fails — the upgrade will not change that. " + fix + "."
+		sev = info
+		impact = "`defaults.restrictOutbound` is already `true` here, so the upgrade does not change these proxies: they resolve no in-mesh outbound clusters today. That is correct for a workload that calls nothing in the mesh. For any other, setting `reachableBackends` is recommended — it lists exactly what the workload may reach, improving security, and keeps its proxy configuration small, improving control plane and proxy performance. " + fix + "."
 	}
-	a.rep.addSummary(blocker, "Outbound defaults", subject+" have no reachableBackends",
+	a.rep.addSummary(sev, "Outbound defaults", subject+" have no reachableBackends",
 		fmt.Sprintf("%d of %d transparent-proxy %s data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. %s",
 			denied, total, env, impact),
 		docReachableBackends, denied, refs)

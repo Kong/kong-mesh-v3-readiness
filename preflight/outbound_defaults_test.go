@@ -286,10 +286,10 @@ func TestPassthroughDefaultSkipsUnaffectedMeshes(t *testing.T) {
 	}
 }
 
-// A control plane already set to false denies this traffic today, so the proxies
-// and meshes still missing configuration keep being flagged — only the framing
-// moves to the present tense, and the informational note about the coming change
-// is what goes away.
+// A control plane already set to true denies this traffic today, so the upgrade
+// changes nothing for a proxy without reachableBackends: it drops to info with a
+// recommendation. The mesh missing a MeshPassthrough stays a blocker in the
+// present tense, and the note about the coming change goes away.
 func TestRestrictedControlPlaneStillVerifiesReachableBackends(t *testing.T) {
 	m := auditResponses(t, map[string]string{
 		"/meshes":              listBody(t, meshItem(nil)),
@@ -298,13 +298,16 @@ func TestRestrictedControlPlaneStillVerifiesReachableBackends(t *testing.T) {
 	if m.Status != StatusBlockers {
 		t.Fatalf("status = %q, want %q\nfindings: %+v", m.Status, StatusBlockers, m.Findings)
 	}
-	for _, title := range []string{titleUniversalDeny, titleNoMeshPassthrough} {
-		f, ok := findFinding(m, "blocker", categoryOutboundDefaults, title)
+	for _, tc := range []struct{ sev, title string }{
+		{SeverityInfo, titleUniversalDeny},
+		{"blocker", titleNoMeshPassthrough},
+	} {
+		f, ok := findFinding(m, tc.sev, categoryOutboundDefaults, tc.title)
 		if !ok {
-			t.Fatalf("missing finding %q\nfindings: %+v", title, m.Findings)
+			t.Fatalf("missing %s finding %q\nfindings: %+v", tc.sev, tc.title, m.Findings)
 		}
 		if !strings.Contains(f.Detail, "already `true` here") {
-			t.Errorf("finding %q keeps the future-tense framing: %q", title, f.Detail)
+			t.Errorf("finding %q keeps the future-tense framing: %q", tc.title, f.Detail)
 		}
 	}
 	if _, ok := findFinding(m, SeverityInfo, cpConfigCategory, "Default outbound changes in 3.0"); ok {
