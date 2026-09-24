@@ -122,7 +122,7 @@ All gateway functionality delegated to Kong / third-party (delegated gateway). D
 - Builtin gateway type
 - Gateway API + GAMMA built-in support
 - `proxyTypes` in policy targetRef (see targetRef section)
-- `networking.gateway` section in Dataplane
+- `networking.gateway` section in Dataplane and the `kuma.io/gateway` marking (see below)
 
 ## Observability
 
@@ -152,7 +152,7 @@ All gateway functionality delegated to Kong / third-party (delegated gateway). D
 - **`kuma.io/mesh` annotation** → use label
 - **MeshGatewayInstance**: `kuma.io/service` tag → auto-generated `serviceName`
 - **Dataplane `spec.probes`** → removed for Universal; not needed on Kubernetes
-- **`kuma.io/gateway`** moved from Pod annotation to Dataplane **label**, and the value is now a boolean: only `"true"` marks a delegated gateway (`mesh_proto.IsDelegatedGateway`). The 2.x annotation value `enabled` carried over as a label silently stops marking the proxy
+- **`kuma.io/gateway` removed** (kumahq/kuma#18662): the Pod annotation, the Dataplane label and `networking.gateway` are all gone. A marked gateway becomes an ordinary workload whose inbound traffic is redirected through Envoy, so MeshTrafficPermission rejects clients outside the mesh; 3.0 rejects a write carrying the label. Replace the marking with `traffic.kuma.io/exclude-inbound-ports` listing every listen port (k8s; plus `kuma.io/ignore: "true"` on the fronting Service) or `kuma-dp --exclude-inbound-ports` (Universal). The MeshMetric `gateway` proxy role and the `?gateway=` overview filter go with it. Preflight flags k8s Dataplanes with `networking.gateway` and Universal Dataplanes with `networking.gateway` or the label
 - **`k8s.kuma.io/service-account`** is control-plane-owned in 3.0: the admission webhook rejects a user-applied resource carrying it (unless the caller is the CP or in `runtime.kubernetes.allowedUsers`) and xDS auth refuses a proxy whose label does not match its Pod's ServiceAccount. Preflight flags it on Universal Dataplanes (where it has no source at all); the GitOps-on-Kubernetes case is a manual check, since a CP-created Dataplane legitimately carries it
 - **`kuma.io/tags` Pod annotation** → no reader in 3.0 (`pkg/plugins/runtime/k8s/metadata/annotations.go`); it is ignored rather than warned about. Manual check
 - **Legacy HMAC256 signing keys** (pre-1.4.x) → asymmetric RSA/ECDSA (`pkg/core/tokens/signing_key_accessor.go`)

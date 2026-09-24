@@ -114,7 +114,7 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   MeshAccessLog/MeshTrace/MeshMetric; MeshLoadBalancingStrategy `loadBalancer.{ringHash,maglev}.hashPolicies`
   and the `SourceIP` hash type; MeshHealthCheck `healthyPanicThreshold` (→ MeshCircuitBreaker);
   MeshTrust `spec.origin` (→ `status.origin`).
-- **Dataplanes** — `reachableServices`, builtin `networking.gateway` section, Universal
+- **Dataplanes** — `reachableServices`, the removed `kuma.io/gateway` marking (builtin or delegated), Universal
   `spec.probes`, and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible
   (`kumaCpCompatible: false`), read from `/dataplanes+insights`.

@@ -136,8 +136,9 @@ const ExampleCap = 10
 const policyRoleLabel = "kuma.io/policy-role"
 
 // Dataplane labels the checks read. envLabel/zoneLabel are stamped by the control
-// plane; gatewayLabel and serviceAccountLabel change meaning in 3.0 (see
-// checkDataplaneLabels), and listenerZoneIngressLabel marks a unified Zone Proxy.
+// plane; 3.0 removes gatewayLabel (checkGatewayMarking) and owns
+// serviceAccountLabel (checkDataplaneLabels); listenerZoneIngressLabel marks a
+// unified Zone Proxy.
 const (
 	envLabel                 = "kuma.io/env"
 	zoneLabel                = "kuma.io/zone"
@@ -700,25 +701,19 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 				"`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.", docMeshMetric, qualified(it))
 		}
 		a.checkDataplaneLabels(it, onK8s)
+		var gw *gatewaySection
+		if spec.Networking != nil {
+			gw = spec.Networking.Gateway
+		}
+		a.checkGatewayMarking(it, gw, onK8s)
 		a.checkDataplaneNetworking(it, spec, onK8s)
 	}
 	return nil
 }
 
-// checkDataplaneLabels flags the two Dataplane labels whose meaning changes in
-// 3.0: the delegated-gateway marker (only "true" marks a gateway now) and the
-// Kubernetes ServiceAccount label, which 3.0 treats as control-plane-owned.
+// checkDataplaneLabels flags the Kubernetes ServiceAccount label, which 3.0
+// treats as control-plane-owned.
 func (a *auditor) checkDataplaneLabels(it resourceItem, onK8s bool) {
-	// 3.0 marks a delegated gateway with the kuma.io/gateway *label* and reads it
-	// as a boolean: only "true" is a gateway. Universal-only: on Kubernetes the
-	// label is recomputed from the Pod's kuma.io/gateway annotation on every
-	// reconcile (and deleted when the Pod is not a gateway), so a stray value
-	// there fixes itself — and "set it to true" would be actively wrong advice.
-	if v, ok := it.Labels[gatewayLabel]; !onK8s && ok && v != "true" && v != "false" {
-		a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane kuma.io/gateway label is not a boolean",
-			"3.0 marks a delegated gateway with the `kuma.io/gateway` label and accepts only `true`/`false`; any other value (e.g. the 2.x `enabled` annotation value) leaves the proxy silently unmarked as a gateway. Set the label to `true` (current: "+v+").",
-			docDelegatedGateway, qualified(it))
-	}
 	// k8s.kuma.io/service-account is computed by the control plane from the Pod and
 	// feeds the proxy's identity. In 3.0 the admission webhook rejects a
 	// user-applied resource carrying it, and xDS auth refuses a proxy whose label
@@ -733,6 +728,33 @@ func (a *auditor) checkDataplaneLabels(it resourceItem, onK8s bool) {
 	}
 }
 
+// gatewayMarkingEffects lists what else 3.0 drops with the kuma.io/gateway marking.
+const gatewayMarkingEffects = " 3.0 also stops reporting `gateway` as the MeshMetric `kuma.proxy_role` (a former gateway reports `sidecar`) and ignores the `?gateway=` filter on `/dataplanes/_overview`; update dashboards and scripts that rely on either."
+
+// checkGatewayMarking flags gateways relying on the kuma.io/gateway marking (Pod
+// annotation, Dataplane label, networking.gateway), all removed in 3.0: a marked
+// proxy becomes an ordinary workload whose inbound traffic goes through Envoy,
+// so MeshTrafficPermission rejects clients outside the mesh. A stray Pod label on
+// Kubernetes is not flagged: 3.0 no longer copies reserved Pod labels.
+func (a *auditor) checkGatewayMarking(it resourceItem, g *gatewaySection, onK8s bool) {
+	switch _, labeled := it.Labels[gatewayLabel]; {
+	case g != nil && strings.EqualFold(g.Type, "BUILTIN"):
+		if !onK8s {
+			a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane is a builtin gateway",
+				"`networking.gateway.type: BUILTIN` is removed in 3.0 along with the rest of Kuma's own gateway support; migrate this proxy to a delegated gateway (Kong or another third-party) before upgrading.",
+				docDelegatedGateway, qualified(it))
+		}
+	case onK8s && g != nil:
+		a.rep.addDoc(blocker, "Gateway in Dataplane", "Kubernetes gateway relies on the kuma.io/gateway annotation",
+			"3.0 ignores the `kuma.io/gateway` Pod annotation: the Pod is injected as an ordinary workload and its inbound traffic is redirected through Envoy, so MeshTrafficPermission rejects clients outside the mesh instead of letting them reach the gateway. Replace the annotation with `traffic.kuma.io/exclude-inbound-ports` listing every port the gateway listens on (there is no all-ports value) and restart the Pods; annotate the fronting Service with `kuma.io/ignore: \"true\"` so it does not become a MeshService with no endpoints."+gatewayMarkingEffects,
+			docDelegatedGateway, qualified(it))
+	case !onK8s && (g != nil || labeled):
+		a.rep.addDoc(blocker, "Gateway in Dataplane", "Universal Dataplane uses the removed kuma.io/gateway marking",
+			"3.0 removes `networking.gateway` and the `kuma.io/gateway` label: it rejects a write carrying the label, and a gateway marked either way becomes an ordinary proxy. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own."+gatewayMarkingEffects,
+			docDelegatedGateway, qualified(it))
+	}
+}
+
 // checkDataplaneNetworking flags networking fields 3.0 rejects on write, drops
 // from the proto, or silently ignores. The hand-written-Universal-only ones are
 // gated on env: on Kubernetes the control plane generates the Dataplane and a 3.0
@@ -743,23 +765,6 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		return
 	}
 	if !onK8s {
-		// 3.0 reserves networking.gateway and marks a delegated gateway with the
-		// kuma.io/gateway label instead. A 2.x Universal gateway carries the marker
-		// only in the spec (2.x never computes the label), so on 3.0 it silently
-		// becomes a proxy with no inbounds and no gateway marking, selected by no
-		// policy. Builtin gateways have no replacement at all.
-		if g := net.Gateway; g != nil {
-			switch {
-			case strings.EqualFold(g.Type, "BUILTIN"):
-				a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane is a builtin gateway",
-					"`networking.gateway.type: BUILTIN` is removed in 3.0 along with the rest of Kuma's own gateway support; migrate this proxy to a delegated gateway (Kong or another third-party) before upgrading.",
-					docDelegatedGateway, qualified(it))
-			case it.Labels[gatewayLabel] != "true":
-				a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway",
-					"3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy still carries the marker in its spec and does not carry the label, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Set the `kuma.io/gateway` label to `\"true\"` before upgrading.",
-					docDelegatedGateway, qualified(it))
-			}
-		}
 		if net.AdvertisedAddress != "" {
 			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.advertisedAddress",
 				"`networking.advertisedAddress` is removed in 3.0 (the proto field is reserved); drop it and advertise the address through the zone proxy configuration instead.",
@@ -1605,8 +1610,8 @@ type ruleEntry struct {
 	TargetRef targetRef `json:"targetRef"`
 }
 
-// gatewaySection is the Dataplane's 2.x networking.gateway block: the field 3.0
-// reserves in favor of the kuma.io/gateway label. Type defaults to DELEGATED.
+// gatewaySection is the Dataplane's 2.x networking.gateway block, which 3.0
+// removes with the rest of the kuma.io/gateway marking. Type defaults to DELEGATED.
 type gatewaySection struct {
 	Type string `json:"type"`
 }

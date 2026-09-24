@@ -337,23 +337,12 @@
       "severity": "blocker",
       "group": "data_plane_and_workloads",
       "category": "Gateway in Dataplane",
-      "title": "Dataplane kuma.io/gateway label is not a boolean",
-      "detail": "3.0 marks a delegated gateway with the `kuma.io/gateway` label and accepts only `true`/`false`; any other value (e.g. the 2.x `enabled` annotation value) leaves the proxy silently unmarked as a gateway. Set the label to `true` (current: enabled).",
+      "title": "Universal Dataplane uses the removed kuma.io/gateway marking",
+      "detail": "3.0 removes `networking.gateway` and the `kuma.io/gateway` label: it rejects a write carrying the label, and a gateway marked either way becomes an ordinary proxy. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own. 3.0 also stops reporting `gateway` as the MeshMetric `kuma.proxy_role` (a former gateway reports `sidecar`) and ignores the `?gateway=` filter on `/dataplanes/_overview`; update dashboards and scripts that rely on either.",
       "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
-      "count": 1,
+      "count": 2,
       "example_resources": [
-        "default/dp-legacy-universal [zone:east]"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "data_plane_and_workloads",
-      "category": "Gateway in Dataplane",
-      "title": "Dataplane marks a gateway with networking.gateway",
-      "detail": "3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy still carries the marker in its spec and does not carry the label, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Set the `kuma.io/gateway` label to `\"true\"` before upgrading.",
-      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
-      "count": 1,
-      "example_resources": [
+        "default/dp-legacy-universal [zone:east]",
         "default/dp-gateway [zone:west]"
       ]
     },
