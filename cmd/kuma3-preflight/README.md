@@ -139,6 +139,10 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   `/config`/`/zones+insights`, is a coverage gap — never a silent pass.
 - **Resource names** — Mesh/MeshService/MeshExternalService/MeshMultiZoneService names that
   are not valid RFC-1035 DNS labels.
+- **Reserved labels** — `kuma.io/`, `k8s.kuma.io/` labels outside the 3.0 registry on user-authored
+  policies, Universal Dataplanes and service resources (3.0 rejects them on write), and selectors
+  keyed on one (targetRef/backendRef `labels`, MeshService `dataplaneLabels`, MeshLoadBalancingStrategy
+  `affinityTags`), which match nothing once 3.0 stops setting `kuma.io/service` and the like.
 - **Service resources** — MeshService `selector.dataplaneTags` (user-authored, or Universal
   generated from `kuma.io/service`, which 3.0 renames after `kuma.io/workload`), `ServiceTag`
   identities, and `ports[].appProtocol` outside tcp/http/http2/grpc (MeshMultiZoneService too);
