@@ -529,16 +529,22 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 			From []struct {
 				Default backendConf `json:"default"`
 			} `json:"from"`
+			Rules []struct {
+				Default backendConf `json:"default"`
+			} `json:"rules"`
 		}
 		if json.Unmarshal(spec, &s) != nil {
 			return
 		}
-		confs := make([]backendConf, 0, len(s.To)+len(s.From))
+		confs := make([]backendConf, 0, len(s.To)+len(s.From)+len(s.Rules))
 		for _, t := range s.To {
 			confs = append(confs, t.Default)
 		}
 		for _, f := range s.From {
 			confs = append(confs, f.Default)
+		}
+		for _, r := range s.Rules {
+			confs = append(confs, r.Default)
 		}
 		if hasOtelEndpoint(confs...) {
 			a.addOtelEndpoint(it.Type, ref)
