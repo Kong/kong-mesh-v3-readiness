@@ -390,6 +390,21 @@ func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
 		}
 	})
 
+	// Shape captured from a 2.14.5 global: a Universal ZoneIngress carries no
+	// kuma.io/env label, unlike a Kubernetes one.
+	t.Run("universal zone proxy without env label is flagged", func(t *testing.T) {
+		got := examples(auditResponses(t, globalResponses(map[string]string{
+			"/zoneingresses": listBody(t, map[string]any{
+				"type": "ZoneIngress", "name": "zi-east", "zone": "east",
+				"labels": map[string]any{"kuma.io/display-name": "zi-east", "kuma.io/origin": "zone", "kuma.io/zone": "east"},
+			}),
+		})))
+		want := []string{"mesh default, zone east", "mesh payments, zone east"}
+		if !slices.Equal(got, want) {
+			t.Errorf("examples = %v, want %v", got, want)
+		}
+	})
+
 	t.Run("single-zone estate is not checked", func(t *testing.T) {
 		got := examples(auditResponses(t, globalResponses(map[string]string{
 			"/zones+insights": listBody(t, map[string]any{"type": "ZoneOverview", "name": "east"}),
