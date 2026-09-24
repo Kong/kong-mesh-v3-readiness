@@ -9,28 +9,14 @@
   },
   "meshes": [],
   "summary": {
-    "blockers": 5,
+    "blockers": 2,
     "warnings": 0,
-    "info": 0,
+    "info": 3,
     "coverage_gaps": 0,
     "parse_errors": 0,
     "system_findings": 0
   },
   "findings": [
-    {
-      "severity": "blocker",
-      "group": "control_plane",
-      "category": "Control plane configuration",
-      "title": "Default outbound not restricted",
-      "detail": "the field defaults.allowAllOutbound value has to be changed from true to false",
-      "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
-      "count": 3,
-      "example_resources": [
-        "zone zone-a: defaults.allowAllOutbound=true",
-        "zone zone-b: defaults.allowAllOutbound=true",
-        "zone zone-c: defaults.allowAllOutbound=true"
-      ]
-    },
     {
       "severity": "blocker",
       "group": "control_plane",
@@ -42,6 +28,20 @@
       "example_resources": [
         "zone zone-b (2.13.5)",
         "zone zone-c (2.11.2)"
+      ]
+    },
+    {
+      "severity": "info",
+      "group": "control_plane",
+      "category": "Control plane configuration",
+      "title": "Default outbound changes in 3.0",
+      "detail": "`defaults.allowAllOutbound` defaults to `true` on 2.14 and `false` in 3.0, so after the upgrade a proxy with no `reachableBackends` reaches nothing and a proxy matched by no MeshPassthrough loses outbound passthrough. To keep today's behavior, set it explicitly to `true` before upgrading. To adopt the 3.0 behavior, set it to `false` now and validate — the control plane then denies the same traffic 3.0 will, and this report stops flagging the affected proxies and meshes.",
+      "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
+      "count": 3,
+      "example_resources": [
+        "zone zone-a: defaults.allowAllOutbound=unset",
+        "zone zone-b: defaults.allowAllOutbound=unset",
+        "zone zone-c: defaults.allowAllOutbound=unset"
       ]
     }
   ],

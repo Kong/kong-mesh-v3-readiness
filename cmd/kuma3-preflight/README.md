@@ -118,7 +118,7 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   `spec.probes`, and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible
   (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
-- **Outbound defaults** — the two 3.0 flips that deny outbound traffic by default: a transparent-proxy proxy with no `reachableBackends` and no outbound `backendRef` gets no outbound clusters, and a mesh with no MeshPassthrough loses external egress. Both are absence-triggered, so each is one summary blocker ("N of M") carrying the fix for its environment (`kuma.io/reachable-backends` Pod annotation on Kubernetes, the Dataplane field on Universal) rather than one finding per proxy. Proxies that already select destinations (including the empty `refs` list zone proxies ship), builtin gateways, and meshes that already turn passthrough off are excluded. The remediation points at `defaults.allowAllOutbound: false`, which 2.14 backports, so the breakage can be enforced and validated before the upgrade.
+- **Outbound defaults** — the two 3.0 flips that deny outbound traffic by default: a transparent-proxy proxy with no `reachableBackends` and no outbound `backendRef` gets no outbound clusters, and a mesh with no MeshPassthrough loses external egress. Both are absence-triggered, so each is one summary blocker ("N of M") carrying the fix for its environment (`kuma.io/reachable-backends` Pod annotation on Kubernetes, the Dataplane field on Universal) rather than one finding per proxy. Proxies that already select destinations (including the empty `refs` list zone proxies ship), builtin gateways, and meshes that already turn passthrough off are excluded. The remediation states the choice the default change forces: pin `defaults.allowAllOutbound: true` to keep today's behavior through the upgrade, or set `false` — backported to 2.14 — to enforce the 3.0 behavior now and validate it. A control plane already set to `false` runs the 3.0 behavior today, so both checks stay silent there.
 - **Control plane version** — flags a CP (or, on a **global**, any connected zone CP) not on
   the latest 2.14 patch, the only supported 3.0 upgrade source (older patch/minor → blocker).
   The latest patch is looked up from the `kumahq/kuma` GitHub releases at run time (Kong Mesh
@@ -129,8 +129,8 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   coverage gap — never a silent pass.
 - **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
   eBPF transparent proxy, unified resource naming, inbound-tags-disabled, delta
-  xDS, KDS event-based watchdog, native sidecar containers, `defaults.allowAllOutbound` not yet
-  restricted (all blockers). The
+  xDS, KDS event-based watchdog, native sidecar containers not yet enabled (all blockers), plus an
+  info note when `defaults.allowAllOutbound` still holds its 2.14 default (3.0 flips it to `false`). The
   report's control-plane line shows the CP mode (read from `/config`). Against a **global**
   CP the data-plane-relevant checks run **per zone**, sourced from each zone's config in
   `GET /zones+insights` (examples read `zone <name>: …`); the global keeps only the

@@ -64,20 +64,6 @@ func TestControlPlaneConfigDeprecatedSettingReported(t *testing.T) {
 			detail: cpConfigDetail("experimental.kdsEventBasedWatchdog.enabled", "false", "true"),
 		},
 		{
-			name:     "default outbound unrestricted",
-			config:   `{"environment":"kubernetes","mode":"zone","defaults":{"allowAllOutbound":true},"experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
-			severity: "blocker", title: "Default outbound not restricted",
-			detail: cpConfigDetail("defaults.allowAllOutbound", "true", "false"),
-		},
-		{
-			// A control plane older than the 2.14 patch that added the switch serves
-			// no `defaults.allowAllOutbound` at all; absent reads as the permissive true.
-			name:     "default outbound switch absent",
-			config:   `{"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
-			severity: "blocker", title: "Default outbound not restricted",
-			detail: cpConfigDetail("defaults.allowAllOutbound", "true", "false"),
-		},
-		{
 			name:     "sidecar containers off",
 			config:   `{"defaults":{"allowAllOutbound":false},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":false,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Native sidecar containers not enabled",
