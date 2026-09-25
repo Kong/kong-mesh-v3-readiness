@@ -1531,9 +1531,13 @@ func validRFC1035(name string) bool {
 	return name != "" && len(name) <= 63 && rfc1035Label.MatchString(name)
 }
 
-// displayName strips the k8s ".<namespace>" suffix the REST API appends, so name
-// validation runs on the logical resource name (matching the CP's own check).
+// displayName returns the logical resource name, which is what 3.0 validates.
+// A KDS-synced copy is stored as "<name>-<hash>[.<system-ns>]", so its
+// kuma.io/display-name label is the only place the original name survives.
 func displayName(it resourceItem) string {
+	if dn := it.Labels["kuma.io/display-name"]; dn != "" {
+		return dn
+	}
 	if ns := it.Labels["k8s.kuma.io/namespace"]; ns != "" {
 		return strings.TrimSuffix(it.Name, "."+ns)
 	}
