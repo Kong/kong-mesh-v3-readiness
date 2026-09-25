@@ -1124,8 +1124,10 @@ func (a *auditor) checkMeshServiceSpec(it resourceItem) {
 				docMeshService, ref)
 		}
 	}
+	// 2.14 generators always emit a ServiceTag identity and 3.0 regenerates it
+	// SpiffeID-only, so only a hand-written MeshService needs the rewrite.
 	for _, id := range s.Identities {
-		if id.Type == "ServiceTag" {
+		if managedBy == "" && id.Type == "ServiceTag" {
 			a.rep.addDoc(blocker, "MeshService identities", "MeshService declares a ServiceTag identity",
 				"3.0 accepts only `SpiffeID` entries in `spec.identities` and rejects a `ServiceTag` one on write. Replace it with the SPIFFE ID of the workload before upgrading.",
 				docMeshService, ref)

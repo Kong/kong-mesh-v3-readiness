@@ -154,6 +154,18 @@ func TestServiceResourceSpecs(t *testing.T) {
 			nil, true,
 		},
 		{
+			"k8s-generated ServiceTag identity", "/meshservices", "MeshService", "MeshService identities", "MeshService declares a ServiceTag identity",
+			map[string]any{"identities": []any{map[string]any{"type": "ServiceTag", "value": "redis"}}},
+			map[string]any{"kuma.io/managed-by": "k8s-controller"},
+			false,
+		},
+		{
+			"universal-generated ServiceTag identity", "/meshservices", "MeshService", "MeshService identities", "MeshService declares a ServiceTag identity",
+			map[string]any{"identities": []any{map[string]any{"type": "ServiceTag", "value": "redis"}}},
+			map[string]any{"kuma.io/managed-by": "meshservice-generator"},
+			false,
+		},
+		{
 			"kafka appProtocol", "/meshservices", "MeshService", "Service ports", "MeshService port uses an appProtocol 3.0 rejects",
 			map[string]any{"ports": []any{map[string]any{"port": 9092, "appProtocol": "kafka"}}},
 			nil, true,
