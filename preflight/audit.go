@@ -253,7 +253,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	for _, check := range []func(context.Context) error{
 		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkNewPolicies, a.checkDataplanes,
 		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
-		a.checkResourceNames, a.checkMeshTrust,
+		a.checkServiceResources, a.checkMeshTrust,
 		a.checkControlPlaneConfig, a.checkControlPlaneVersions,
 		a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
 	} {
@@ -501,17 +501,86 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 						"`proxyTypes` is removed (gateway support dropped).", docDelegatedGateway, ref)
 				}
 			}
+			// A resource is flagged once however many of its refs name a resource.
+			byName := spec.TargetRef != nil && spec.TargetRef.selectsByName()
 			for _, to := range spec.To {
 				if k := to.TargetRef.Kind; k != "" && !allowedToTargetRefKinds[k] {
 					a.rep.addDoc(blocker, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
 						"`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.", docPolicies, ref)
 				}
+				byName = byName || to.TargetRef.selectsByName()
+			}
+			if it.Type == "MeshHTTPRoute" || it.Type == "MeshTCPRoute" {
+				byName = a.checkRouteBackendRefs(it.Type, it.specBytes(), ref) || byName
+			}
+			if byName {
+				a.addSelectsByName(it.Type, ref)
 			}
 			a.checkPolicyFields(it, ref)
 			a.countSystem(it, before)
 		}
 	}
 	return nil
+}
+
+func (a *auditor) addSelectsByName(typ, ref string) {
+	a.rep.addDoc(blocker, "Reference by name", typ+" references a resource by name",
+		"3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
+		docPolicies, ref)
+}
+
+// routeBackendKinds are the only kinds 3.0 accepts in a route backendRef.
+var routeBackendKinds = map[string]bool{"MeshService": true, "MeshExternalService": true, "MeshMultiZoneService": true}
+
+// checkRouteBackendRefs flags MeshHTTPRoute/MeshTCPRoute backendRefs (and the
+// RequestMirror filter's) whose kind 3.0 cannot resolve, once per kind, and
+// reports whether any of them references its resource by name.
+func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref string) bool {
+	var s struct {
+		To []struct {
+			Rules []struct {
+				Default struct {
+					BackendRefs []targetRef `json:"backendRefs"`
+					Filters     []struct {
+						RequestMirror *struct {
+							BackendRef targetRef `json:"backendRef"`
+						} `json:"requestMirror"`
+					} `json:"filters"`
+				} `json:"default"`
+			} `json:"rules"`
+		} `json:"to"`
+	}
+	if json.Unmarshal(spec, &s) != nil {
+		return false
+	}
+	var refs []targetRef
+	for _, t := range s.To {
+		for _, r := range t.Rules {
+			refs = append(refs, r.Default.BackendRefs...)
+			for _, f := range r.Default.Filters {
+				if f.RequestMirror != nil {
+					refs = append(refs, f.RequestMirror.BackendRef)
+				}
+			}
+		}
+	}
+	byName := false
+	flagged := map[string]bool{}
+	for _, br := range refs {
+		switch {
+		case br.Kind != "" && !routeBackendKinds[br.Kind]:
+			if flagged[br.Kind] {
+				continue
+			}
+			flagged[br.Kind] = true
+			a.rep.addDoc(blocker, "Route backendRef", typ+" backendRef kind="+br.Kind,
+				"3.0 routes accept only MeshService, MeshExternalService and MeshMultiZoneService backendRefs (the RequestMirror filter too). A stored ref of another kind is unresolved, so traffic matching the rule loses its destination (a MeshHTTPRoute rule with no resolvable backend answers 500). Selecting endpoints by tag has no equivalent: split the destination into separate MeshServices.",
+				docMeshHTTPRoute, ref)
+		case br.selectsByName():
+			byName = true
+		}
+	}
+	return byName
 }
 
 // checkPolicyFields flags per-policy deprecated fields visible in the spec but not
@@ -565,6 +634,27 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 			if t.Default.HealthyPanicThreshold != nil {
 				a.rep.addDoc(blocker, "Relocated policy fields", "MeshHealthCheck uses healthyPanicThreshold",
 					"`healthyPanicThreshold` moves to MeshCircuitBreaker in 3.0.", docMeshCircuitBreaker, ref)
+				break
+			}
+		}
+	case "MeshPassthrough":
+		var s struct {
+			Default struct {
+				AppendMatch []struct {
+					Type  string `json:"type"`
+					Value string `json:"value"`
+					Port  int    `json:"port"`
+				} `json:"appendMatch"`
+			} `json:"default"`
+		}
+		if json.Unmarshal(spec, &s) != nil {
+			return
+		}
+		for _, m := range s.Default.AppendMatch {
+			if m.Type == "Domain" && m.Port == 0 && !strings.HasPrefix(m.Value, "*") {
+				a.rep.addDoc(blocker, "MeshPassthrough", "MeshPassthrough Domain match has no port",
+					"3.0 resolves a non-wildcard `Domain` match in the sidecar and connects to the resolved address, which needs a `port`. A stored match without one stops applying, and when it was the policy's only match the sidecar rejects all passthrough traffic. Add `port` to the match (duplicate it for each port the domain is used on) and make sure the sidecar can resolve the domain.",
+					docMeshPassthrough, ref)
 				break
 			}
 		}
@@ -986,21 +1076,135 @@ func (a *auditor) requiredZoneAddresses() []string {
 	return required
 }
 
-// checkResourceNames flags resource names that are not valid RFC-1035 DNS labels
-// (deprecated in 3.0). These resource types are newer than the legacy set; a 404
-// means the CP version does not serve them, which is not a coverage gap.
-func (a *auditor) checkResourceNames(ctx context.Context) error {
-	for _, rc := range []struct{ wsPath, kind string }{
-		{"meshservices", "MeshService"},
-		{"meshexternalservices", "MeshExternalService"},
-		{"meshmultizoneservices", "MeshMultiZoneService"},
+// checkServiceResources flags MeshService, MeshExternalService and
+// MeshMultiZoneService names that are not valid RFC-1035 DNS labels (deprecated
+// in 3.0) and the spec fields 3.0 no longer reads. These resource types are newer
+// than the legacy set; a 404 means the CP version does not serve them, which is
+// not a coverage gap.
+func (a *auditor) checkServiceResources(ctx context.Context) error {
+	for _, rc := range []struct {
+		wsPath, kind string
+		checkSpec    func(resourceItem)
+	}{
+		{"meshservices", "MeshService", a.checkMeshServiceSpec},
+		{"meshexternalservices", "MeshExternalService", a.checkExternalServiceTLS},
+		{"meshmultizoneservices", "MeshMultiZoneService", a.checkMultiZoneServiceSpec},
 	} {
 		items := a.listIfServed(ctx, a.scopedPath(rc.wsPath))
 		for _, it := range items {
 			a.checkName(it, rc.kind)
+			rc.checkSpec(it)
 		}
 	}
 	return nil
+}
+
+type servicePort struct {
+	AppProtocol string `json:"appProtocol"`
+}
+
+// supportedAppProtocol mirrors 3.0's core_meta.SupportedProtocols; an empty value
+// defaults to tcp.
+func supportedAppProtocol(p string) bool {
+	switch strings.ToLower(p) {
+	case "", "tcp", "http", "http2", "grpc":
+		return true
+	}
+	return false
+}
+
+func (a *auditor) addUnsupportedAppProtocol(kind string, ports []servicePort, ref string) {
+	for _, p := range ports {
+		if !supportedAppProtocol(p.AppProtocol) {
+			a.rep.addDoc(blocker, "Service ports", kind+" port uses an appProtocol 3.0 rejects",
+				"3.0 accepts only `tcp`, `http`, `http2` and `grpc` as `ports[].appProtocol` (Kafka support is removed) and rejects any other value on write, so re-applying this resource fails. Set a supported protocol (`tcp` for opaque traffic); for a MeshService generated from a Kubernetes Service, change the Service port's `appProtocol`.",
+				docMeshService, ref)
+			return
+		}
+	}
+}
+
+// checkMeshServiceSpec flags MeshService fields 3.0 removes. Generated
+// MeshServices (kuma.io/managed-by) are regenerated by the 3.0 control plane, so
+// only a Universal one still keyed on kuma.io/service needs attention: 3.0
+// generates per kuma.io/workload instead, which changes its name.
+func (a *auditor) checkMeshServiceSpec(it resourceItem) {
+	ref := qualified(it)
+	var s struct {
+		Selector struct {
+			DataplaneTags map[string]string `json:"dataplaneTags"`
+		} `json:"selector"`
+		Identities []struct {
+			Type string `json:"type"`
+		} `json:"identities"`
+		Ports []servicePort `json:"ports"`
+	}
+	if !a.unmarshalSpec(it, &s, ref) {
+		return
+	}
+	managedBy := it.Labels["kuma.io/managed-by"]
+	if len(s.Selector.DataplaneTags) > 0 {
+		switch managedBy {
+		case "":
+			a.rep.addDoc(blocker, "MeshService selector", "MeshService selects proxies by dataplaneTags",
+				"3.0 removes `spec.selector.dataplaneTags` and drops it on read, so this MeshService matches no proxies, produces no endpoints and goes `Unavailable`. Move the selector to `spec.selector.dataplaneLabels.matchLabels` using labels that exist on the Dataplanes themselves (Pod labels on Kubernetes, Dataplane `labels` on Universal).",
+				docMeshService, ref)
+		case "k8s-controller":
+		default:
+			a.rep.addDoc(blocker, "MeshService selector", "Generated MeshService is keyed on kuma.io/service",
+				"3.0 generates Universal MeshServices per `kuma.io/workload` label instead of per `kuma.io/service` tag, so this one is replaced by a MeshService named after the proxies' workload unless the two names already match. Update every targetRef, backendRef and `reachableBackends` entry that selects it by `kuma.io/display-name`.",
+				docMeshService, ref)
+		}
+	}
+	// 2.14 generators always emit a ServiceTag identity and 3.0 regenerates it
+	// SpiffeID-only, so only a hand-written MeshService needs the rewrite.
+	for _, id := range s.Identities {
+		if managedBy == "" && id.Type == "ServiceTag" {
+			a.rep.addDoc(blocker, "MeshService identities", "MeshService declares a ServiceTag identity",
+				"3.0 accepts only `SpiffeID` entries in `spec.identities` and rejects a `ServiceTag` one on write. Replace it with the SPIFFE ID of the workload before upgrading.",
+				docMeshService, ref)
+			break
+		}
+	}
+	a.addUnsupportedAppProtocol("MeshService", s.Ports, ref)
+}
+
+func (a *auditor) checkMultiZoneServiceSpec(it resourceItem) {
+	ref := qualified(it)
+	var s struct {
+		Ports []servicePort `json:"ports"`
+	}
+	if a.unmarshalSpec(it, &s, ref) {
+		a.addUnsupportedAppProtocol("MeshMultiZoneService", s.Ports, ref)
+	}
+}
+
+// checkExternalServiceTLS flags TLS material in the 2.x DataSource shape (a flat
+// secret/inline/inlineString with no `type`), which 3.0 cannot read. 2.14.6+ also
+// accepts the typed shape (kumahq/kuma#18867), so it can be rewritten before upgrading.
+func (a *auditor) checkExternalServiceTLS(it resourceItem) {
+	ref := qualified(it)
+	var s struct {
+		TLS *struct {
+			Verification *struct {
+				CaCert     map[string]json.RawMessage `json:"caCert"`
+				ClientCert map[string]json.RawMessage `json:"clientCert"`
+				ClientKey  map[string]json.RawMessage `json:"clientKey"`
+			} `json:"verification"`
+		} `json:"tls"`
+	}
+	if !a.unmarshalSpec(it, &s, ref) || s.TLS == nil || s.TLS.Verification == nil {
+		return
+	}
+	v := s.TLS.Verification
+	for _, ds := range []map[string]json.RawMessage{v.CaCert, v.ClientCert, v.ClientKey} {
+		if _, typed := ds["type"]; len(ds) > 0 && !typed {
+			a.rep.addDoc(blocker, "MeshExternalService TLS", "MeshExternalService TLS uses the removed DataSource shape",
+				"3.0 reads `tls.verification.caCert`, `clientCert` and `clientKey` only as a typed `SecureDataSource`. A stored MeshExternalService in the old shape is not rejected, but the control plane cannot read its TLS material and drops the destination from every proxy's config. Rewrite it before upgrading: `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: <name>` becomes `type: Secret` with `secretRef: {kind: Secret, name: <name>}`.",
+				docMeshExternalService, ref)
+			return
+		}
+	}
 }
 
 // checkMeshTrust flags MeshTrust resources still carrying the deprecated
@@ -1632,8 +1836,24 @@ type policySpec struct {
 }
 
 type targetRef struct {
-	Kind       string   `json:"kind"`
-	ProxyTypes []string `json:"proxyTypes"`
+	Kind       string            `json:"kind"`
+	ProxyTypes []string          `json:"proxyTypes"`
+	Name       string            `json:"name"`
+	Namespace  string            `json:"namespace"`
+	Mesh       string            `json:"mesh"`
+	Labels     map[string]string `json:"labels"`
+}
+
+// labelSelectedKinds are the targetRef/backendRef kinds 3.0 resolves by labels only.
+var labelSelectedKinds = map[string]bool{
+	"Dataplane": true, "MeshService": true, "MeshExternalService": true,
+	"MeshMultiZoneService": true, "MeshHTTPRoute": true,
+}
+
+// selectsByName reports a ref to a real resource that names it instead of
+// selecting it by labels. 3.0 drops name/namespace/mesh, which leaves it empty.
+func (t targetRef) selectsByName() bool {
+	return labelSelectedKinds[t.Kind] && len(t.Labels) == 0 && (t.Name != "" || t.Namespace != "" || t.Mesh != "")
 }
 
 type ruleEntry struct {
