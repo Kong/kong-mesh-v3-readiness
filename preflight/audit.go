@@ -1703,7 +1703,7 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 		}
 		if ref, ok := legacyCoreDNSRef(it, ins, last.Dependencies["coredns"]); ok {
 			a.rep.addDoc(blocker, "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS",
-				"This proxy resolves mesh names through the bundled CoreDNS (a transparent proxy not advertising `feature-embedded-dns`, or one reporting a `coredns` dependency). 3.0 removes the CoreDNS + Envoy DNS-filter path, so this proxy loses mesh DNS as soon as its control plane runs 3.0. Before upgrading, set `KUMA_DNS_PROXY_PORT=15053` (or `--dns-proxy-port` / `dns.proxyPort`) on every Universal kuma-dp and restart it so it switches to the embedded DNS proxy.",
+				"This proxy resolves mesh names through the bundled CoreDNS (a transparent proxy not advertising `feature-embedded-dns`, or one reporting a `coredns` dependency). 3.0 removes the CoreDNS + Envoy DNS-filter path, so this proxy loses mesh DNS as soon as its control plane runs 3.0. Before upgrading, switch it to the embedded DNS proxy: on Universal set `KUMA_DNS_PROXY_PORT=15053` (or `--dns-proxy-port` / `dns.proxyPort`) on kuma-dp and restart it; on Kubernetes set `runtime.kubernetes.injector.builtinDNS.experimentalProxy: true` on the control plane and restart the pods. A proxy running with DNS disabled (`KUMA_DNS_ENABLED=false`) does not advertise the feature either and can be ignored.",
 				docDNS, ref)
 		}
 		// unified-resource-naming is advertised only when the CP has it enabled and

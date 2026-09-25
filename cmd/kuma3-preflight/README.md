@@ -127,7 +127,7 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
 - **Legacy CoreDNS** — transparent-proxy dataplanes whose advertised features
   (`/dataplanes+insights` `metadata.features`) omit `feature-embedded-dns`, or that report a
   `coredns` dependency: they still run the bundled CoreDNS, which loses mesh DNS under a 3.0
-  CP. Fix before upgrading with `KUMA_DNS_PROXY_PORT=15053` on each Universal kuma-dp.
+  CP. Fix before upgrading with `KUMA_DNS_PROXY_PORT=15053` on Universal kuma-dp (Kubernetes: `builtinDNS.experimentalProxy: true` on the CP), then restart the proxies.
 - **Control plane version** — flags a CP (or, on a **global**, any connected zone CP) not on
   the latest 2.14 patch, the only supported 3.0 upgrade source (older patch/minor → blocker).
   The latest patch is looked up from the `kumahq/kuma` GitHub releases at run time (Kong Mesh
