@@ -75,6 +75,11 @@ every kind from `to[].targetRef` (the destination), which keeps `Mesh` / `Mesh*S
 - **Top-level targetRef** restricted to only `Mesh` and `Dataplane` (all other kinds dropped)
 - **`to[].targetRef`** drops the subset/selector kinds (`MeshSubset`, `MeshServiceSubset`) and `MeshGateway`; `Mesh` (all outbound — also the only kind allowed for MeshGateway-targeted policies), the `Mesh*Service` kinds (`MeshService` / `MeshExternalService` / `MeshMultiZoneService`) and `MeshHTTPRoute` stay valid
 - **`proxyTypes` in targetRef** (`api/common/v1alpha1/targetref.go:101`) → dropped (Gateway/Sidecar proxy-type filtering)
+- **`name` / `namespace` / `mesh` in targetRef and route backendRef** → dropped, selection is by `labels` only (kumahq/kuma#17761, #17756, #17740). A stored name-only ref loses the name: top-level `kind: Dataplane` widens to every Dataplane in the mesh, a `to[]` targetRef or backendRef resolves to nothing. Map `name` → `kuma.io/display-name`, `namespace` → `k8s.kuma.io/namespace`
+- **Route `backendRefs`** (MeshHTTPRoute/MeshTCPRoute, incl. RequestMirror) accept only MeshService/MeshExternalService/MeshMultiZoneService (kumahq/kuma#18391); a stored `MeshServiceSubset` ref is unresolved and the rule loses its destination
+- **MeshPassthrough non-wildcard `Domain` match** needs `port` (kumahq/kuma#18658); a stored match without one stops applying, and as the only match rejects all passthrough
+- **MeshService**: `selector.dataplaneTags` dropped on read (matches 0 proxies, kumahq/kuma#17749), Universal generated MeshServices keyed per `kuma.io/workload` instead of `kuma.io/service`, `identities[].type: ServiceTag` rejected (kumahq/kuma#17973), `ports[].appProtocol` limited to tcp/http/http2/grpc (Kafka removed, kumahq/kuma#17831; MeshMultiZoneService too)
+- **MeshExternalService** `tls.verification.caCert`/`clientCert`/`clientKey` move to the typed `SecureDataSource` (kumahq/kuma#17899); a stored old-shape resource is dropped from xDS. 2.14.6+ accepts both shapes (kumahq/kuma#18867), so rewrite before upgrading
 
 ## Backend / endpoint deprecations
 
