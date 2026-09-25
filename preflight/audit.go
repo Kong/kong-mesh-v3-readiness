@@ -1637,6 +1637,7 @@ func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch 
 // verdict for each connected proxy, plus the dependency versions kuma-dp reports
 // (e.g. a bundled `coredns`, which signals the legacy embedded-DNS path).
 type dpInsight struct {
+	Dataplane        dataplaneSpec `json:"dataplane"`
 	DataplaneInsight struct {
 		Subscriptions []struct {
 			Version struct {
@@ -1666,6 +1667,9 @@ type dpInsight struct {
 // proxy whose advertised features omit it is not emitting unified names — the CP
 // flag is off, or on but the proxy has not reconnected yet.
 const featureUnifiedNaming = "feature-unified-resource-naming"
+
+// 2.14 never persists the `coredns` dependency, so this feature is the only CoreDNS signal there.
+const featureEmbeddedDNS = "feature-embedded-dns"
 
 // featureReadinessUnixSocket is advertised by kuma-dp older than 2.14, which
 // serves readiness on a Unix socket. 3.0 always points the readiness cluster at
@@ -1697,14 +1701,10 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
 				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
 		}
-		// A reported `coredns` dependency means kuma-dp launched the bundled
-		// CoreDNS, i.e. the proxy is on the legacy CoreDNS + Envoy DNS-filter
-		// path that 3.0 removes. This is a free, every-proxy signal from a
-		// payload already fetched here; --inspect-dataplanes deep-confirms it.
-		if v := last.Dependencies["coredns"]; v != "" {
+		if ref, ok := legacyCoreDNSRef(it, ins, last.Dependencies["coredns"]); ok {
 			a.rep.addDoc(blocker, "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS",
-				"This proxy reports a bundled CoreDNS dependency; 3.0 removes the CoreDNS + Envoy DNS-filter path — upgrade kuma-dp.",
-				docDNS, qualified(it)+" (coredns "+v+")")
+				"This proxy resolves mesh names through the bundled CoreDNS (a transparent proxy not advertising `feature-embedded-dns`, or one reporting a `coredns` dependency). 3.0 removes the CoreDNS + Envoy DNS-filter path, so this proxy loses mesh DNS as soon as its control plane runs 3.0. Before upgrading, switch it to the embedded DNS proxy: on Universal set `KUMA_DNS_PROXY_PORT=15053` (or `--dns-proxy-port` / `dns.proxyPort`) on kuma-dp and restart it; on Kubernetes set `runtime.kubernetes.injector.builtinDNS.experimentalProxy: true` on the control plane and restart the pods. A proxy running with DNS disabled (`KUMA_DNS_ENABLED=false`) does not advertise the feature either and can be ignored.",
+				docDNS, ref)
 		}
 		// unified-resource-naming is advertised only when the CP has it enabled and
 		// the proxy has (re)connected since, so a proxy whose feature list omits it
@@ -1724,6 +1724,19 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func legacyCoreDNSRef(it resourceItem, ins dpInsight, corednsVersion string) (string, bool) {
+	if corednsVersion != "" {
+		return qualified(it) + " (coredns " + corednsVersion + ")", true
+	}
+	feats := ins.DataplaneInsight.Metadata.Features
+	net := ins.Dataplane.Networking
+	// empty features: an older CP that reports no metadata, inconclusive
+	if len(feats) > 0 && !slices.Contains(feats, featureEmbeddedDNS) && net != nil && net.TransparentProxying != nil {
+		return qualified(it), true
+	}
+	return "", false
 }
 
 // dnsFilterMarker is the Envoy UDP DNS filter name; its presence in a proxy's
@@ -1972,7 +1985,7 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // checkControlPlaneConfig, Universal Dataplane labels and networking fields by
 // checkDataplanes, zone names and per-zone MeshZoneAddress coverage by
 // checkZoneNames/checkMeshZoneAddresses, and the legacy CoreDNS path by
-// checkDataplaneVersions (a reported `coredns` dependency) plus the
+// checkDataplaneVersions plus the
 // --inspect-dataplanes deep check, so none is repeated here.
 var manualChecks = []ManualCheck{
 	{
