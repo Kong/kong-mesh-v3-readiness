@@ -41,15 +41,20 @@ func tproxySpec(extra map[string]any) map[string]any {
 	return map[string]any{"transparentProxying": tp}
 }
 
-// permissiveConfigJSON is readyConfigJSON with the 2.14 outbound default left
-// permissive, which is what makes the outbound-deny checks apply at all.
-var permissiveConfigJSON = strings.Replace(readyConfigJSON,
+// unsetConfigJSON is readyConfigJSON with defaults.restrictOutbound left unset
+// (served as null), the only state the 3.0 default flip breaks.
+var unsetConfigJSON = strings.Replace(readyConfigJSON,
+	`"defaults": {"restrictOutbound": true}`, `"defaults": {"restrictOutbound": null}`, 1)
+
+// pinnedConfigJSON sets defaults.restrictOutbound explicitly to false, which 3.0
+// honors, so the upgrade keeps the 2.x outbound behavior.
+var pinnedConfigJSON = strings.Replace(readyConfigJSON,
 	`"defaults": {"restrictOutbound": true}`, `"defaults": {"restrictOutbound": false}`, 1)
 
 func auditOverviews(t *testing.T, items ...map[string]any) Report {
 	t.Helper()
 	return auditResponses(t, map[string]string{
-		"/config":              permissiveConfigJSON,
+		"/config":              unsetConfigJSON,
 		"/dataplanes+insights": listBody(t, items...),
 	})
 }
@@ -200,7 +205,7 @@ func TestOutboundDenyReportsSummaryNotPerProxy(t *testing.T) {
 }
 
 func TestOutboundDenyNotConcludedFromCoverageGap(t *testing.T) {
-	m := auditWithNotFound(t, map[string]string{"/config": permissiveConfigJSON}, "/dataplanes+insights")
+	m := auditWithNotFound(t, map[string]string{"/config": unsetConfigJSON}, "/dataplanes+insights")
 	for _, title := range []string{titleUniversalDeny, titleKubernetesDeny} {
 		if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, title); ok {
 			t.Errorf("finding %q concluded from an unread collection\nfindings: %+v", title, m.Findings)
@@ -221,7 +226,7 @@ func meshItem(passthrough *bool) map[string]any {
 
 func TestPassthroughDefaultFlagsMeshWithNoPolicy(t *testing.T) {
 	m := auditResponses(t, map[string]string{
-		"/config":              permissiveConfigJSON,
+		"/config":              unsetConfigJSON,
 		"/meshes":              listBody(t, meshItem(nil)),
 		"/dataplanes+insights": listBody(t, overview("dp-1", universalLabels, tproxySpec(nil), nil)),
 	})
@@ -250,7 +255,7 @@ func TestPassthroughDefaultSkipsUnaffectedMeshes(t *testing.T) {
 		{
 			name: "mesh already has a MeshPassthrough",
 			responses: map[string]string{
-				"/config":              permissiveConfigJSON,
+				"/config":              unsetConfigJSON,
 				"/meshes":              listBody(t, meshItem(nil)),
 				"/dataplanes+insights": listBody(t, overview("dp-1", universalLabels, tproxySpec(nil), nil)),
 				"/meshpassthroughs": listBody(t, map[string]any{
@@ -263,18 +268,18 @@ func TestPassthroughDefaultSkipsUnaffectedMeshes(t *testing.T) {
 		{
 			name: "mesh already turns passthrough off",
 			responses: map[string]string{
-				"/config":              permissiveConfigJSON,
+				"/config":              unsetConfigJSON,
 				"/meshes":              listBody(t, meshItem(&passthroughOff)),
 				"/dataplanes+insights": listBody(t, overview("dp-1", universalLabels, tproxySpec(nil), nil)),
 			},
 		},
 		{
 			name:      "mesh has no transparent-proxy proxies",
-			responses: map[string]string{"/config": permissiveConfigJSON, "/meshes": listBody(t, meshItem(nil))},
+			responses: map[string]string{"/config": unsetConfigJSON, "/meshes": listBody(t, meshItem(nil))},
 		},
 		{
 			name:      "MeshPassthrough collection could not be read",
-			responses: map[string]string{"/config": permissiveConfigJSON, "/meshes": listBody(t, meshItem(nil))},
+			responses: map[string]string{"/config": unsetConfigJSON, "/meshes": listBody(t, meshItem(nil))},
 			notFound:  []string{"/meshpassthroughs"},
 		},
 	}
@@ -317,18 +322,20 @@ func TestRestrictedControlPlaneStillVerifiesReachableBackends(t *testing.T) {
 	}
 }
 
-// The switch is reported as info, not a blocker: /config serves only the
-// effective value, so pinning an explicit `false` could never clear a blocker.
-func TestOutboundDefaultChangeReportedAsInfo(t *testing.T) {
-	for _, tc := range []struct{ name, config, wantExample string }{
-		{"permissive", permissiveConfigJSON, "defaults.restrictOutbound=false"},
-		{"switch absent", strings.Replace(readyConfigJSON, `"defaults": {"restrictOutbound": true},`, "", 1), "defaults.restrictOutbound=unset"},
+// The switch itself is info: the upgrade's effect on each proxy and mesh is gated
+// by the per-proxy checks. Unset (served as null, or absent on a CP predating the
+// switch) gets the default-change note; an explicit `false` gets the pinned note.
+func TestOutboundDefaultNoteTellsUnsetFromPinned(t *testing.T) {
+	for _, tc := range []struct{ name, config, title, wantExample string }{
+		{"unset", unsetConfigJSON, "Default outbound changes in 3.0", "defaults.restrictOutbound=unset"},
+		{"switch absent", strings.Replace(readyConfigJSON, `"defaults": {"restrictOutbound": true},`, "", 1), "Default outbound changes in 3.0", "defaults.restrictOutbound=unset"},
+		{"pinned false", pinnedConfigJSON, "Outbound default pinned to 2.x behavior", "defaults.restrictOutbound=false"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditResponses(t, map[string]string{"/config": tc.config})
-			f, ok := findFinding(m, SeverityInfo, cpConfigCategory, "Default outbound changes in 3.0")
+			f, ok := findFinding(m, SeverityInfo, cpConfigCategory, tc.title)
 			if !ok {
-				t.Fatalf("missing info finding\nfindings: %+v", m.Findings)
+				t.Fatalf("missing info finding %q\nfindings: %+v", tc.title, m.Findings)
 			}
 			if len(f.Examples) != 1 || f.Examples[0] != tc.wantExample {
 				t.Errorf("examples = %v, want [%s]", f.Examples, tc.wantExample)
@@ -341,6 +348,75 @@ func TestOutboundDefaultChangeReportedAsInfo(t *testing.T) {
 	}
 }
 
+// An explicit `false` survives into 3.0, so a proxy without reachableBackends or
+// MeshPassthrough keeps its 2.x outbound behavior: both findings drop to info and
+// the estate is not blocked by them.
+func TestPinnedControlPlaneDoesNotBlockOutboundDefaults(t *testing.T) {
+	m := auditResponses(t, map[string]string{
+		"/config":              pinnedConfigJSON,
+		"/meshes":              listBody(t, meshItem(nil)),
+		"/dataplanes+insights": listBody(t, overview("dp-1", universalLabels, tproxySpec(nil), nil)),
+	})
+	for _, title := range []string{titleUniversalDeny, titleNoMeshPassthrough} {
+		if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, title); ok {
+			t.Errorf("pinned control plane still blocks on %q\nfindings: %+v", title, m.Findings)
+		}
+		f, ok := findFinding(m, SeverityInfo, categoryOutboundDefaults, title)
+		if !ok {
+			t.Fatalf("missing info finding %q\nfindings: %+v", title, m.Findings)
+		}
+		if !strings.Contains(f.Detail, "explicitly `false` here") {
+			t.Errorf("finding %q does not explain the pin: %q", title, f.Detail)
+		}
+	}
+	if m.Status != StatusClean {
+		t.Errorf("status = %q, want %q\nfindings: %+v", m.Status, StatusClean, m.Findings)
+	}
+}
+
+// Behind a global, each proxy is judged by its own zone's switch, so a zone that
+// already decided does not inherit the blocker of a zone that has not.
+func TestOutboundDefaultsJudgedPerZone(t *testing.T) {
+	zoneCfg := func(restrict string) string {
+		return `{"mode": "zone", "environment": "universal", "defaults": {"restrictOutbound": ` + restrict + `}, ` +
+			`"experimental": {"deltaXds": true, "sidecarContainers": true, "inboundTagsDisabled": true, ` +
+			`"kdsEventBasedWatchdog": {"enabled": true}}}`
+	}
+	zone := func(name, restrict string) map[string]any {
+		return map[string]any{
+			"type": "ZoneOverview", "name": name,
+			"zoneInsight": map[string]any{"subscriptions": []any{map[string]any{"config": zoneCfg(restrict)}}},
+		}
+	}
+	inZone := func(name, z string) map[string]any {
+		return overview(name, map[string]any{"kuma.io/env": "universal", "kuma.io/zone": z}, tproxySpec(nil), nil)
+	}
+	m := auditResponses(t, map[string]string{
+		"/config":         `{"mode": "global", "environment": "universal"}`,
+		"/zones+insights": listBody(t, zone("east", "null"), zone("west", "true"), zone("north", "false")),
+		"/dataplanes+insights": listBody(t,
+			inZone("dp-east", "east"), inZone("dp-west", "west"), inZone("dp-north", "north"),
+		),
+	})
+	f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleUniversalDeny)
+	if !ok {
+		t.Fatalf("missing blocker for the unset zone\nfindings: %+v", m.Findings)
+	}
+	if !slices.Equal(f.Examples, []string{"default/dp-east [zone:east]"}) || !strings.Contains(f.Detail, "1 of 3") {
+		t.Errorf("blocker = %v %q, want only dp-east, 1 of 3", f.Examples, f.Detail)
+	}
+	var infoRefs []string
+	for _, f := range m.Findings {
+		if f.Severity == SeverityInfo && f.Category == categoryOutboundDefaults && f.Title == titleUniversalDeny {
+			infoRefs = append(infoRefs, f.Examples...)
+		}
+	}
+	slices.Sort(infoRefs)
+	if want := []string{"default/dp-north [zone:north]", "default/dp-west [zone:west]"}; !slices.Equal(infoRefs, want) {
+		t.Errorf("info examples = %v, want %v", infoRefs, want)
+	}
+}
+
 // TestPassthroughDefaultReadsSelection confirms selection comes from the control
 // plane per proxy: a policy selecting only some proxies leaves the rest flagged,
 // a shadow policy selects nothing, and an unreadable selection is a coverage
@@ -349,7 +425,7 @@ func TestPassthroughDefaultReadsSelection(t *testing.T) {
 	const selectionPath = "/meshes/default/meshpassthroughs/allow-a/_resources/dataplanes"
 	responses := func(policyLabels map[string]any) map[string]string {
 		return map[string]string{
-			"/config": permissiveConfigJSON,
+			"/config": unsetConfigJSON,
 			"/meshes": listBody(t, meshItem(nil)),
 			"/dataplanes+insights": listBody(t,
 				overview("dp-a", universalLabels, tproxySpec(nil), nil),
