@@ -156,7 +156,9 @@ All gateway functionality delegated to Kong / third-party (delegated gateway). D
 - **MeshMultiZoneService**: names > 63 chars deprecated
 - **`kuma.io/mesh` annotation** → use label
 - **MeshGatewayInstance**: `kuma.io/service` tag → auto-generated `serviceName`
-- **Dataplane `spec.probes`** → removed for Universal; not needed on Kubernetes
+- **Dataplane `spec.probes`** and virtual probes → removed (kumahq/kuma#17901). On Universal drop the field; on Kubernetes `spec.probes` marks a pod with virtual probes enabled; when Application Probe Proxy is off for it (`kuma.io/application-probe-proxy-port: "0"`) its rewritten kubelet probes fail on 3.0 until re-injected, so move it to Application Probe Proxy first. The Dataplane alone cannot tell the two apart, so every such pod is flagged
+- **`kuma.io/protocol` inbound tag** no longer sets the protocol (kumahq/kuma#17861): a Universal inbound without `networking.inbound[].protocol` is served as plain TCP and loses its L7 filters. Inbound `protocol: kafka` is rejected (kumahq/kuma#17831)
+- **Unix-socket readiness** removed (kumahq/kuma#18637): a kuma-dp older than 2.14 advertising `feature-readiness-unix-socket` never reports ready against a 3.0 CP
 - **`kuma.io/gateway`** moved from Pod annotation to Dataplane **label**, and the value is now a boolean: only `"true"` marks a delegated gateway (`mesh_proto.IsDelegatedGateway`). The 2.x annotation value `enabled` carried over as a label silently stops marking the proxy
 - **`k8s.kuma.io/service-account`** is control-plane-owned in 3.0: the admission webhook rejects a user-applied resource carrying it (unless the caller is the CP or in `runtime.kubernetes.allowedUsers`) and xDS auth refuses a proxy whose label does not match its Pod's ServiceAccount. Preflight flags it on Universal Dataplanes (where it has no source at all); the GitOps-on-Kubernetes case is a manual check, since a CP-created Dataplane legitimately carries it
 - **`kuma.io/tags` Pod annotation** → no reader in 3.0 (`pkg/plugins/runtime/k8s/metadata/annotations.go`); it is ignored rather than warned about. Manual check

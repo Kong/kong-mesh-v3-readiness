@@ -142,6 +142,7 @@ const (
 	envLabel                 = "kuma.io/env"
 	zoneLabel                = "kuma.io/zone"
 	gatewayLabel             = "kuma.io/gateway"
+	protocolTag              = "kuma.io/protocol"
 	serviceAccountLabel      = "k8s.kuma.io/service-account"
 	listenerZoneIngressLabel = "kuma.io/listener-zoneingress"
 )
@@ -777,11 +778,20 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 			a.rep.addDoc(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label",
 				"On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.", docAnnotations, qualified(it))
 		}
-		// Universal-only: spec.probes is removed in 3.0. On Kubernetes probes are
-		// derived from the pod and need no action, so only flag non-k8s dataplanes.
-		if hasJSON(spec.Probes) && !onK8s {
-			a.rep.addDoc(blocker, "Dataplane probes", "Dataplane has a probes section",
-				"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", docDataPlaneProxy, qualified(it))
+		// spec.probes is removed in 3.0. On Kubernetes the pod converter sets it
+		// whenever the pod has virtual probes enabled, even when Application Probe
+		// Proxy is also on and takes precedence, so the Dataplane alone cannot tell
+		// whether the kubelet probes point at the virtual probes listener 3.0 no
+		// longer builds.
+		if hasJSON(spec.Probes) {
+			if onK8s {
+				a.rep.addDoc(blocker, "Dataplane probes", "Kubernetes pod has virtual probes enabled",
+					"3.0 removes virtual probes along with the `kuma.io/virtual-probes*` annotations and the `virtualProbesEnabled` control plane setting. If this pod runs with Application Probe Proxy disabled (`kuma.io/application-probe-proxy-port: \"0\"`), its kubelet probes were rewritten to the virtual probes port, which a 3.0 control plane no longer serves, so they fail until the pod is re-injected; otherwise Application Probe Proxy already serves them and only the stale settings remain. Move it to Application Probe Proxy (the default) before upgrading: drop the `kuma.io/virtual-probes` annotation (and `virtualProbesEnabled` from the control plane config), keep `kuma.io/application-probe-proxy-port` unset or non-zero, and restart the pod.",
+					docDataPlaneProxy, qualified(it))
+			} else {
+				a.rep.addDoc(blocker, "Dataplane probes", "Dataplane has a probes section",
+					"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", docDataPlaneProxy, qualified(it))
+			}
 		}
 		// A per-proxy metrics backend (on k8s, translated from the deprecated
 		// `prometheus.metrics.kuma.io/*` pod annotations) moves to MeshMetric.
@@ -832,6 +842,14 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 	if net == nil {
 		return
 	}
+	for _, in := range net.Inbound {
+		if !supportedInboundProtocol(inboundProtocol(in.Protocol, in.Tags)) {
+			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane inbound uses a protocol 3.0 rejects",
+				"3.0 accepts only `tcp`, `tls`, `http`, `http2`, `grpc` and `mysql` as `networking.inbound[].protocol` (Kafka support is removed) and rejects any other value on write. On Kubernetes the protocol comes from the Service port's `appProtocol` or its `<port>.service.kuma.io/protocol` annotation, so change it there; on Universal set a supported protocol (`tcp` for opaque traffic).",
+				docDataPlaneProxy, qualified(it))
+			break
+		}
+	}
 	if !onK8s {
 		// 3.0 reserves networking.gateway and marks a delegated gateway with the
 		// kuma.io/gateway label instead. A 2.x Universal gateway carries the marker
@@ -855,13 +873,24 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 				"`networking.advertisedAddress` is removed in 3.0 (the proto field is reserved); drop it and advertise the address through the zone proxy configuration instead.",
 				docDataPlaneProxy, qualified(it))
 		}
+		var tagged, protocolTagOnly bool
 		for _, in := range net.Inbound {
-			if len(in.Tags) > 0 {
-				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.inbound[].tags",
-					"`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService. This pairs with `experimental.inboundTagsDisabled: true` on the control plane.",
-					docMeshService, qualified(it))
-				break
-			}
+			tagged = tagged || len(in.Tags) > 0
+			// A tcp tag keeps the default and an unsupported one is flagged above.
+			tag := in.Tags[protocolTag]
+			protocolTagOnly = protocolTagOnly || (in.Protocol == "" && tag != "" && !strings.EqualFold(tag, "tcp") && supportedInboundProtocol(tag))
+		}
+		if tagged {
+			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.inbound[].tags",
+				"`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService, except `kuma.io/protocol`, which belongs in `networking.inbound[].protocol`. This pairs with `experimental.inboundTagsDisabled: true` on the control plane.",
+				docMeshService, qualified(it))
+		}
+		// 2.x fell back to the kuma.io/protocol tag when the protocol field was
+		// unset; 3.0 reads only the field.
+		if protocolTagOnly {
+			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane inbound sets its protocol only through kuma.io/protocol",
+				"3.0 reads an inbound's protocol only from `networking.inbound[].protocol` and no longer falls back to the `kuma.io/protocol` tag. An inbound without the field is served as plain TCP and silently loses its L7 behavior: HTTP access log fields, MeshTimeout HTTP timeouts, MeshFaultInjection, MeshRateLimit HTTP limits and HTTP routing. Set `protocol` on each such inbound before upgrading.",
+				docDataPlaneProxy, qualified(it))
 		}
 		for _, out := range net.Outbound {
 			if !hasJSON(out.BackendRef) {
@@ -1638,6 +1667,11 @@ type dpInsight struct {
 // flag is off, or on but the proxy has not reconnected yet.
 const featureUnifiedNaming = "feature-unified-resource-naming"
 
+// featureReadinessUnixSocket is advertised by kuma-dp older than 2.14, which
+// serves readiness on a Unix socket. 3.0 always points the readiness cluster at
+// the TCP readiness port, so such a proxy never reports ready.
+const featureReadinessUnixSocket = "feature-readiness-unix-socket"
+
 // checkDataplaneVersions flags data planes the control plane itself reports as
 // version-incompatible (`kumaCpCompatible: false`): they are already outside the
 // supported CP/DP skew window and must be upgraded before a major-version bump.
@@ -1682,6 +1716,11 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 			a.rep.addDoc(blocker, "Dataplane features", "Dataplane is not using unified resource naming",
 				"This proxy does not advertise the `feature-unified-resource-naming` capability, so it is not emitting the unified (KRI-based) resource names Kuma 3.0 requires. Enable `unifiedResourceNamingEnabled` on the control plane (if not already) and restart/re-inject the proxy so it adopts unified naming before upgrading.",
 				docKumaCPReference, qualified(it))
+		}
+		if slices.Contains(ins.DataplaneInsight.Metadata.Features, featureReadinessUnixSocket) {
+			a.rep.addDoc(blocker, "Dataplane features", "Dataplane reports readiness over a Unix socket",
+				"This proxy advertises `feature-readiness-unix-socket`, which kuma-dp stopped sending in 2.14. A 3.0 control plane always points the readiness cluster at the TCP readiness port, so this proxy never reports ready. Upgrade its kuma-dp to 2.14 before upgrading the control plane.",
+				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
 		}
 	}
 	return nil
@@ -1838,7 +1877,8 @@ type dataplaneSpec struct {
 		AdvertisedAddress string          `json:"advertisedAddress"`
 		Gateway           *gatewaySection `json:"gateway"`
 		Inbound           []struct {
-			Tags map[string]string `json:"tags"`
+			Tags     map[string]string `json:"tags"`
+			Protocol string            `json:"protocol"`
 		} `json:"inbound"`
 		Outbound []struct {
 			BackendRef json.RawMessage `json:"backendRef"`
@@ -2107,4 +2147,23 @@ func buildManualChecks(k8sObserved bool) []ManualCheck {
 		checks = append(checks, kubernetesManualChecks...)
 	}
 	return checks
+}
+
+// inboundProtocol is the protocol 2.x serves an inbound with: the protocol
+// field, falling back to the kuma.io/protocol tag when the field is unset.
+func inboundProtocol(field string, tags map[string]string) string {
+	if field != "" {
+		return field
+	}
+	return tags[protocolTag]
+}
+
+// supportedInboundProtocol mirrors the 3.0 Dataplane validator, which accepts any
+// protocol core_meta.ParseProtocol knows; an empty value defaults to tcp.
+func supportedInboundProtocol(p string) bool {
+	switch strings.ToLower(p) {
+	case "", "tcp", "tls", "http", "http2", "grpc", "mysql":
+		return true
+	}
+	return false
 }
