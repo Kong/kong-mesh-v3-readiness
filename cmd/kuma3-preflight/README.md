@@ -109,15 +109,21 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   `defaultForbidMeshExternalServiceAccess`, locality-aware LB, inline metrics/tracing/logging,
   membership `constraints`; flags when `meshServices.mode` is not `Exclusive`.
 - **New policies** — `from` usage, top-level `targetRef` kinds other than Mesh/Dataplane,
-  `to` targets other than `Mesh*Service`, `proxyTypes`.
+  `to` targets other than `Mesh*Service`, `proxyTypes`, and any targetRef or route `backendRef`
+  that names its resource (`name`/`namespace`/`mesh`) instead of selecting it by `labels`.
 - **Per-policy field deprecations** — OpenTelemetry `endpoint` (→ `backendRef`) on
   MeshAccessLog/MeshTrace/MeshMetric; MeshLoadBalancingStrategy `loadBalancer.{ringHash,maglev}.hashPolicies`
   and the `SourceIP` hash type; MeshHealthCheck `healthyPanicThreshold` (→ MeshCircuitBreaker);
-  MeshTrust `spec.origin` (→ `status.origin`).
+  MeshTrust `spec.origin` (→ `status.origin`); MeshHTTPRoute/MeshTCPRoute `backendRefs` (and
+  RequestMirror) of a kind other than MeshService/MeshExternalService/MeshMultiZoneService;
+  MeshPassthrough non-wildcard `Domain` matches without a `port`.
 - **Dataplanes** — `reachableServices`, builtin `networking.gateway` section, Universal
-  `spec.probes`, and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
+  `spec.probes`, Kubernetes pods with virtual probes enabled (`spec.probes` set by the pod converter),
+  inbounds that set their protocol only through the `kuma.io/protocol` tag or use one 3.0 rejects
+  (Kafka), and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible
-  (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
+  (`kumaCpCompatible: false`), or that still advertise Unix-socket readiness
+  (`feature-readiness-unix-socket`, kuma-dp older than 2.14), read from `/dataplanes+insights`.
 - **Legacy CoreDNS** — transparent-proxy dataplanes whose advertised features
   (`/dataplanes+insights` `metadata.features`) omit `feature-embedded-dns`, or that report a
   `coredns` dependency: they still run the bundled CoreDNS, which loses mesh DNS under a 3.0
@@ -140,6 +146,10 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   `/config`/`/zones+insights`, is a coverage gap — never a silent pass.
 - **Resource names** — Mesh/MeshService/MeshExternalService/MeshMultiZoneService names that
   are not valid RFC-1035 DNS labels.
+- **Service resources** — MeshService `selector.dataplaneTags` (user-authored, or Universal
+  generated from `kuma.io/service`, which 3.0 renames after `kuma.io/workload`), `ServiceTag`
+  identities, and `ports[].appProtocol` outside tcp/http/http2/grpc (MeshMultiZoneService too);
+  MeshExternalService TLS material in the old untyped DataSource shape.
 - **Zone proxies** — flags ZoneIngress/ZoneEgress (the separate resources are replaced by
   the unified Zone Proxy in 3.0).
 - **Envoy config (opt-in, `--inspect-dataplanes N`)** — fetches up to N proxies' config
