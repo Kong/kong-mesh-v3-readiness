@@ -142,6 +142,7 @@ var categoryToGroup = map[string]string{
 	"MeshHTTPRoute routing":     groupPolicies,
 	"Cross-zone load balancing": groupPolicies,
 	"Reference by name":         groupPolicies,
+	"Policy role":               groupPolicies,
 	"Route backendRef":          groupPolicies,
 	"MeshPassthrough":           groupPolicies,
 	"Removed resources":         groupRemovedResources,
@@ -160,6 +161,7 @@ var categoryToGroup = map[string]string{
 	"MeshService identities":    groupOther,
 	"Service ports":             groupOther,
 	"MeshExternalService TLS":   groupOther,
+	"MeshIdentity coverage":     groupOther,
 	"Unparseable resources":     groupOther,
 	"Zone proxies":              groupOther,
 }

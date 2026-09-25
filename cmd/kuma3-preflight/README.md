@@ -139,6 +139,12 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   `/config`/`/zones+insights`, is a coverage gap — never a silent pass.
 - **Resource names** — Mesh/MeshService/MeshExternalService/MeshMultiZoneService names that
   are not valid RFC-1035 DNS labels.
+- **Policy role** — 2.14 producer policies whose `to[]` items do not pin a MeshService/MeshHTTPRoute
+  of their own namespace and zone by exactly `kuma.io/display-name`, `k8s.kuma.io/namespace` and
+  `kuma.io/zone`, which 3.0 turns into namespace-scoped consumer policies.
+- **MeshExternalService identity** — meshes with MeshExternalServices but no MeshIdentity, whose
+  clients get no MeshExternalService cluster in 3.0 (503). An unreadable MeshIdentity list is a
+  coverage gap.
 - **Reserved labels** — `kuma.io/`, `k8s.kuma.io/` labels outside the 3.0 registry on user-authored
   policies, Universal Dataplanes and service resources (3.0 rejects them on write), and selectors
   keyed on one (targetRef/backendRef `labels`, MeshService `dataplaneLabels`, MeshLoadBalancingStrategy
