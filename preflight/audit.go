@@ -499,12 +499,14 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 					gateway, sidecar := slices.Contains(pt, "Gateway"), slices.Contains(pt, "Sidecar")
 					switch {
 					case gateway && !sidecar:
+						detail := "3.0 drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. " +
+							"Do not just remove the field. Delete the policy (which also clears its other findings), or retarget it to the gateway with `kind: Dataplane` and `labels`."
+						if it.Type == "MeshTimeout" {
+							detail += " The 2.x default `mesh-gateways-timeout-all-<mesh>` sets `streamIdleTimeout: 5s`, which left in place fails every sidecar HTTP response slower than 5s with 504. " +
+								"Defaults are generated once per Mesh, so a deleted one stays deleted unless the Mesh is recreated; if yours is (e.g. GitOps replace), add `MeshTimeout` to its `skipCreatingInitialPolicies`."
+						}
 						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to gateways with targetRef.proxyTypes",
-							"3.0 drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. "+
-								"Do not just remove the field. Delete the policy, or retarget it to the gateway with `kind: Dataplane` and `labels`. "+
-								"The 2.x default `mesh-gateways-timeout-all-<mesh>` sets `streamIdleTimeout: 5s`, which left in place fails every sidecar HTTP response slower than 5s with 504. "+
-								"On Kubernetes the 2.x control plane recreates a deleted default on the next Mesh reconcile, so first add `MeshTimeout` to the Mesh `skipCreatingInitialPolicies`.",
-							docDelegatedGateway, ref)
+							detail, docDelegatedGateway, ref)
 					case sidecar && !gateway:
 						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to sidecars with targetRef.proxyTypes",
 							"3.0 drops `proxyTypes`, so this policy will also apply to gateways. "+

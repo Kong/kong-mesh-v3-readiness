@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 39,
+    "blockers": 42,
     "warnings": 0,
     "info": 1,
     "coverage_gaps": 3,
@@ -167,6 +167,19 @@
       "severity": "blocker",
       "group": "policies",
       "category": "Policy `from` field",
+      "title": "MeshTimeout uses `from`",
+      "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
+      "count": 2,
+      "example_resources": [
+        "default/mesh-gateways-timeout-all-default (system — CP-managed, update before 3.0)",
+        "default/mesh-timeout-all-default (system — CP-managed, update before 3.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "Policy `from` field",
       "title": "MeshTrafficPermission uses `from`",
       "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
       "doc_url": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
@@ -216,8 +229,20 @@
       "severity": "blocker",
       "group": "policies",
       "category": "targetRef proxyTypes",
+      "title": "MeshRetry scoped to gateways with targetRef.proxyTypes",
+      "detail": "3.0 drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. Do not just remove the field. Delete the policy (which also clears its other findings), or retarget it to the gateway with `kind: Dataplane` and `labels`.",
+      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
+      "count": 1,
+      "example_resources": [
+        "default/mr-gateways"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "targetRef proxyTypes",
       "title": "MeshTimeout scoped to gateways with targetRef.proxyTypes",
-      "detail": "3.0 drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. Do not just remove the field. Delete the policy, or retarget it to the gateway with `kind: Dataplane` and `labels`. The 2.x default `mesh-gateways-timeout-all-\u003cmesh\u003e` sets `streamIdleTimeout: 5s`, which left in place fails every sidecar HTTP response slower than 5s with 504. On Kubernetes the 2.x control plane recreates a deleted default on the next Mesh reconcile, so first add `MeshTimeout` to the Mesh `skipCreatingInitialPolicies`.",
+      "detail": "3.0 drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. Do not just remove the field. Delete the policy (which also clears its other findings), or retarget it to the gateway with `kind: Dataplane` and `labels`. The 2.x default `mesh-gateways-timeout-all-\u003cmesh\u003e` sets `streamIdleTimeout: 5s`, which left in place fails every sidecar HTTP response slower than 5s with 504. Defaults are generated once per Mesh, so a deleted one stays deleted unless the Mesh is recreated; if yours is (e.g. GitOps replace), add `MeshTimeout` to its `skipCreatingInitialPolicies`.",
       "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
       "count": 1,
       "example_resources": [
