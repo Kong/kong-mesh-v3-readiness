@@ -118,6 +118,10 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   `spec.probes`, and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible
   (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
+- **Legacy CoreDNS** — transparent-proxy dataplanes whose advertised features
+  (`/dataplanes+insights` `metadata.features`) omit `feature-embedded-dns`, or that report a
+  `coredns` dependency: they still run the bundled CoreDNS, which loses mesh DNS under a 3.0
+  CP. Fix before upgrading with `KUMA_DNS_PROXY_PORT=15053` on each Universal kuma-dp.
 - **Control plane version** — flags a CP (or, on a **global**, any connected zone CP) not on
   the latest 2.14 patch, the only supported 3.0 upgrade source (older patch/minor → blocker).
   The latest patch is looked up from the `kumahq/kuma` GitHub releases at run time (Kong Mesh
@@ -142,6 +146,6 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   dumps and flags use of the legacy Envoy DNS filter.
 
 It also lists **manual checks** for the remaining 3.0 drops that aren't observable
-through the CP API (Gateway API/GAMMA migration, observability install command, CoreDNS,
+through the CP API (Gateway API/GAMMA migration, observability install command,
 old inspect-API clients, pod-vs-container resources, Workload adoption, HMAC256 signing-key
 rotation, `kuma.io/mesh` annotation→label).
