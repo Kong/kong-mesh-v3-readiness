@@ -499,18 +499,21 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 					a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
 						"`proxyTypes` is removed (gateway support dropped).", docDelegatedGateway, ref)
 				}
-				if spec.TargetRef.selectsByName() {
-					a.addSelectsByName(it.Type, ref)
-				}
 			}
+			// A resource is flagged once however many of its refs name a resource.
+			byName := spec.TargetRef != nil && spec.TargetRef.selectsByName()
 			for _, to := range spec.To {
 				if k := to.TargetRef.Kind; k != "" && !allowedToTargetRefKinds[k] {
 					a.rep.addDoc(blocker, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
 						"`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.", docPolicies, ref)
 				}
-				if to.TargetRef.selectsByName() {
-					a.addSelectsByName(it.Type, ref)
-				}
+				byName = byName || to.TargetRef.selectsByName()
+			}
+			if it.Type == "MeshHTTPRoute" || it.Type == "MeshTCPRoute" {
+				byName = a.checkRouteBackendRefs(it.Type, it.specBytes(), ref) || byName
+			}
+			if byName {
+				a.addSelectsByName(it.Type, ref)
 			}
 			a.checkPolicyFields(it, ref)
 			a.countSystem(it, before)
@@ -529,9 +532,9 @@ func (a *auditor) addSelectsByName(typ, ref string) {
 var routeBackendKinds = map[string]bool{"MeshService": true, "MeshExternalService": true, "MeshMultiZoneService": true}
 
 // checkRouteBackendRefs flags MeshHTTPRoute/MeshTCPRoute backendRefs (and the
-// RequestMirror filter's) that 3.0 cannot resolve: a kind other than the three
-// real service kinds, or a ref by name.
-func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref string) {
+// RequestMirror filter's) whose kind 3.0 cannot resolve, once per kind, and
+// reports whether any of them references its resource by name.
+func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref string) bool {
 	var s struct {
 		To []struct {
 			Rules []struct {
@@ -547,7 +550,7 @@ func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref string) {
 		} `json:"to"`
 	}
 	if json.Unmarshal(spec, &s) != nil {
-		return
+		return false
 	}
 	var refs []targetRef
 	for _, t := range s.To {
@@ -560,16 +563,23 @@ func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref string) {
 			}
 		}
 	}
+	byName := false
+	flagged := map[string]bool{}
 	for _, br := range refs {
 		switch {
 		case br.Kind != "" && !routeBackendKinds[br.Kind]:
+			if flagged[br.Kind] {
+				continue
+			}
+			flagged[br.Kind] = true
 			a.rep.addDoc(blocker, "Route backendRef", typ+" backendRef kind="+br.Kind,
 				"3.0 routes accept only MeshService, MeshExternalService and MeshMultiZoneService backendRefs (the RequestMirror filter too). A stored ref of another kind is unresolved, so traffic matching the rule loses its destination (a MeshHTTPRoute rule with no resolvable backend answers 500). Selecting endpoints by tag has no equivalent: split the destination into separate MeshServices.",
 				docMeshHTTPRoute, ref)
 		case br.selectsByName():
-			a.addSelectsByName(typ, ref)
+			byName = true
 		}
 	}
+	return byName
 }
 
 // checkPolicyFields flags per-policy deprecated fields visible in the spec but not
@@ -626,8 +636,6 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 				break
 			}
 		}
-	case "MeshTCPRoute":
-		a.checkRouteBackendRefs(it.Type, spec, ref)
 	case "MeshPassthrough":
 		var s struct {
 			Default struct {
@@ -650,7 +658,6 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 			}
 		}
 	case "MeshHTTPRoute":
-		a.checkRouteBackendRefs(it.Type, spec, ref)
 		var s struct {
 			To []struct {
 				Rules []httpRouteRule `json:"rules"`
@@ -1148,8 +1155,8 @@ func (a *auditor) checkMultiZoneServiceSpec(it resourceItem) {
 }
 
 // checkExternalServiceTLS flags TLS material in the 2.x DataSource shape (a flat
-// secret/inline/inlineString with no `type`), which 3.0 cannot read. 2.14 accepts
-// only that shape, so the rewrite has to ship with the upgrade.
+// secret/inline/inlineString with no `type`), which 3.0 cannot read. 2.14.6+ also
+// accepts the typed shape (kumahq/kuma#18867), so it can be rewritten before upgrading.
 func (a *auditor) checkExternalServiceTLS(it resourceItem) {
 	ref := qualified(it)
 	var s struct {
@@ -1168,7 +1175,7 @@ func (a *auditor) checkExternalServiceTLS(it resourceItem) {
 	for _, ds := range []map[string]json.RawMessage{v.CaCert, v.ClientCert, v.ClientKey} {
 		if _, typed := ds["type"]; len(ds) > 0 && !typed {
 			a.rep.addDoc(blocker, "MeshExternalService TLS", "MeshExternalService TLS uses the removed DataSource shape",
-				"3.0 reads `tls.verification.caCert`, `clientCert` and `clientKey` only as a typed `SecureDataSource`. A stored MeshExternalService in the old shape is not rejected, but the control plane cannot read its TLS material and drops the destination from every proxy's config. 2.14 accepts only the old shape, so rewrite it as part of the upgrade: `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: <name>` becomes `type: Secret` with `secretRef: {kind: Secret, name: <name>}`.",
+				"3.0 reads `tls.verification.caCert`, `clientCert` and `clientKey` only as a typed `SecureDataSource`. A stored MeshExternalService in the old shape is not rejected, but the control plane cannot read its TLS material and drops the destination from every proxy's config. Rewrite it before upgrading: `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: <name>` becomes `type: Secret` with `secretRef: {kind: Secret, name: <name>}`.",
 				docMeshExternalService, ref)
 			return
 		}

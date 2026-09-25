@@ -79,7 +79,7 @@ every kind from `to[].targetRef` (the destination), which keeps `Mesh` / `Mesh*S
 - **Route `backendRefs`** (MeshHTTPRoute/MeshTCPRoute, incl. RequestMirror) accept only MeshService/MeshExternalService/MeshMultiZoneService (kumahq/kuma#18391); a stored `MeshServiceSubset` ref is unresolved and the rule loses its destination
 - **MeshPassthrough non-wildcard `Domain` match** needs `port` (kumahq/kuma#18658); a stored match without one stops applying, and as the only match rejects all passthrough
 - **MeshService**: `selector.dataplaneTags` dropped on read (matches 0 proxies, kumahq/kuma#17749), Universal generated MeshServices keyed per `kuma.io/workload` instead of `kuma.io/service`, `identities[].type: ServiceTag` rejected (kumahq/kuma#17973), `ports[].appProtocol` limited to tcp/http/http2/grpc (Kafka removed, kumahq/kuma#17831; MeshMultiZoneService too)
-- **MeshExternalService** `tls.verification.caCert`/`clientCert`/`clientKey` move to the typed `SecureDataSource` (kumahq/kuma#17899); a stored old-shape resource is dropped from xDS. 2.14 accepts only the old shape, so the rewrite ships with the upgrade
+- **MeshExternalService** `tls.verification.caCert`/`clientCert`/`clientKey` move to the typed `SecureDataSource` (kumahq/kuma#17899); a stored old-shape resource is dropped from xDS. 2.14.6+ accepts both shapes (kumahq/kuma#18867), so rewrite before upgrading
 
 ## Backend / endpoint deprecations
 
