@@ -118,7 +118,7 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   RequestMirror) of a kind other than MeshService/MeshExternalService/MeshMultiZoneService;
   MeshPassthrough non-wildcard `Domain` matches without a `port`.
 - **Dataplanes** — `reachableServices`, builtin `networking.gateway` section, Universal
-  `spec.probes`, Kubernetes pods on virtual probes (`spec.probes` set by the pod converter),
+  `spec.probes`, Kubernetes pods with virtual probes enabled (`spec.probes` set by the pod converter),
   inbounds that set their protocol only through the `kuma.io/protocol` tag or use one 3.0 rejects
   (Kafka), and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible

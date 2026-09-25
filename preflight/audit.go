@@ -779,12 +779,14 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 				"On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.", docAnnotations, qualified(it))
 		}
 		// spec.probes is removed in 3.0. On Kubernetes the pod converter sets it
-		// only for a pod on virtual probes, whose kubelet probes point at a listener
-		// 3.0 no longer builds.
+		// whenever the pod has virtual probes enabled, even when Application Probe
+		// Proxy is also on and takes precedence, so the Dataplane alone cannot tell
+		// whether the kubelet probes point at the virtual probes listener 3.0 no
+		// longer builds.
 		if hasJSON(spec.Probes) {
 			if onK8s {
-				a.rep.addDoc(blocker, "Dataplane probes", "Kubernetes pod uses virtual probes",
-					"3.0 removes virtual probes: this pod's kubelet probes were rewritten to the virtual probes port, which a 3.0 control plane no longer serves, so they fail until the pod is re-injected. Move it to Application Probe Proxy (the default) before upgrading: drop the `kuma.io/virtual-probes` annotation, keep `kuma.io/application-probe-proxy-port` unset or non-zero, and restart the pod.",
+				a.rep.addDoc(blocker, "Dataplane probes", "Kubernetes pod has virtual probes enabled",
+					"3.0 removes virtual probes along with the `kuma.io/virtual-probes*` annotations and the `virtualProbesEnabled` control plane setting. If this pod runs with Application Probe Proxy disabled (`kuma.io/application-probe-proxy-port: \"0\"`), its kubelet probes were rewritten to the virtual probes port, which a 3.0 control plane no longer serves, so they fail until the pod is re-injected; otherwise Application Probe Proxy already serves them and only the stale settings remain. Move it to Application Probe Proxy (the default) before upgrading: drop the `kuma.io/virtual-probes` annotation (and `virtualProbesEnabled` from the control plane config), keep `kuma.io/application-probe-proxy-port` unset or non-zero, and restart the pod.",
 					docDataPlaneProxy, qualified(it))
 			} else {
 				a.rep.addDoc(blocker, "Dataplane probes", "Dataplane has a probes section",
@@ -841,9 +843,9 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		return
 	}
 	for _, in := range net.Inbound {
-		if !supportedInboundProtocol(in.Protocol) {
+		if !supportedInboundProtocol(inboundProtocol(in.Protocol, in.Tags)) {
 			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane inbound uses a protocol 3.0 rejects",
-				"3.0 accepts only `tcp`, `tls`, `http`, `http2`, `grpc` and `mysql` as `networking.inbound[].protocol` (Kafka support is removed) and rejects any other value on write. On Kubernetes the protocol comes from the Service port's `appProtocol`, so change it there; on Universal set a supported protocol (`tcp` for opaque traffic).",
+				"3.0 accepts only `tcp`, `tls`, `http`, `http2`, `grpc` and `mysql` as `networking.inbound[].protocol` (Kafka support is removed) and rejects any other value on write. On Kubernetes the protocol comes from the Service port's `appProtocol` or its `<port>.service.kuma.io/protocol` annotation, so change it there; on Universal set a supported protocol (`tcp` for opaque traffic).",
 				docDataPlaneProxy, qualified(it))
 			break
 		}
@@ -874,7 +876,9 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		var tagged, protocolTagOnly bool
 		for _, in := range net.Inbound {
 			tagged = tagged || len(in.Tags) > 0
-			protocolTagOnly = protocolTagOnly || (in.Protocol == "" && in.Tags[protocolTag] != "")
+			// A tcp tag keeps the default and an unsupported one is flagged above.
+			tag := in.Tags[protocolTag]
+			protocolTagOnly = protocolTagOnly || (in.Protocol == "" && tag != "" && !strings.EqualFold(tag, "tcp") && supportedInboundProtocol(tag))
 		}
 		if tagged {
 			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.inbound[].tags",
@@ -2143,6 +2147,15 @@ func buildManualChecks(k8sObserved bool) []ManualCheck {
 		checks = append(checks, kubernetesManualChecks...)
 	}
 	return checks
+}
+
+// inboundProtocol is the protocol 2.x serves an inbound with: the protocol
+// field, falling back to the kuma.io/protocol tag when the field is unset.
+func inboundProtocol(field string, tags map[string]string) string {
+	if field != "" {
+		return field
+	}
+	return tags[protocolTag]
 }
 
 // supportedInboundProtocol mirrors the 3.0 Dataplane validator, which accepts any

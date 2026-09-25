@@ -75,12 +75,12 @@ func TestDataplaneDeprecatedFeatureReportedAsIssue(t *testing.T) {
 }
 
 // TestDataplaneProbesPerEnvironment confirms spec.probes is flagged with the
-// environment's own remedy: on Kubernetes it marks a pod on virtual probes, which
+// environment's own remedy: on Kubernetes it marks a pod with virtual probes enabled, which
 // 3.0 removes, so the fix is moving it to Application Probe Proxy.
 func TestDataplaneProbesPerEnvironment(t *testing.T) {
 	for _, tc := range []struct{ env, title, other string }{
-		{"kubernetes", "Kubernetes pod uses virtual probes", "Dataplane has a probes section"},
-		{"universal", "Dataplane has a probes section", "Kubernetes pod uses virtual probes"},
+		{"kubernetes", "Kubernetes pod has virtual probes enabled", "Dataplane has a probes section"},
+		{"universal", "Dataplane has a probes section", "Kubernetes pod has virtual probes enabled"},
 	} {
 		t.Run(tc.env, func(t *testing.T) {
 			m := auditDataplane(t, map[string]any{

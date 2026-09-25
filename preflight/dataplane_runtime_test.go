@@ -1,6 +1,9 @@
 package preflight
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // TestInboundProtocol covers the 3.0 inbound protocol rules: the kuma.io/protocol
 // tag no longer sets the protocol, and Kafka is no longer accepted.
@@ -19,6 +22,8 @@ func TestInboundProtocol(t *testing.T) {
 		{"universal tag with field", "universal", map[string]any{"port": 80, "protocol": "http", "tags": map[string]any{"kuma.io/protocol": "http"}}, nil},
 		{"universal kafka field", "universal", map[string]any{"port": 9092, "protocol": "kafka"}, []string{unsupported}},
 		{"kubernetes kafka field", "kubernetes", map[string]any{"port": 9092, "protocol": "kafka"}, []string{unsupported}},
+		{"universal kafka tag without field", "universal", map[string]any{"port": 9092, "tags": map[string]any{"kuma.io/protocol": "kafka"}}, []string{unsupported}},
+		{"universal tcp tag without field", "universal", map[string]any{"port": 80, "tags": map[string]any{"kuma.io/protocol": "tcp"}}, nil},
 		{"universal mysql field", "universal", map[string]any{"port": 3306, "protocol": "MySQL"}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -28,7 +33,7 @@ func TestInboundProtocol(t *testing.T) {
 			})
 			for _, title := range []string{tagOnly, unsupported} {
 				_, got := findFinding(m, "blocker", "Dataplane networking", title)
-				want := len(tc.want) > 0 && tc.want[0] == title
+				want := slices.Contains(tc.want, title)
 				if got != want {
 					t.Errorf("%q flagged = %v, want %v\nfindings: %+v", title, got, want, m.Findings)
 				}
