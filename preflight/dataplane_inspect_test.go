@@ -56,6 +56,50 @@ func TestDataplaneCoreDNSDependencyReported(t *testing.T) {
 	}
 }
 
+// TestDataplaneEmbeddedDNSFeatureMissingReported checks the feature-based
+// legacy-CoreDNS signal (2.14 never reports the `coredns` dependency): only a
+// transparent proxy with a non-empty feature list lacking `feature-embedded-dns`
+// is flagged, and a proxy matching both signals yields a single example.
+func TestDataplaneEmbeddedDNSFeatureMissingReported(t *testing.T) {
+	tp := `"dataplane":{"networking":{"transparentProxying":{"redirectPortInbound":15006}}},`
+	sub := `"subscriptions":[{"version":{"kumaDp":{"version":"2.14.5","kumaCpCompatible":true}}}]`
+	insights := `{"total":5,"items":[
+		{"type":"DataplaneOverview","mesh":"default","name":"coredns-dp",` + tp + `
+		 "dataplaneInsight":{` + sub + `,"metadata":{"features":["feature-unified-resource-naming"]}}},
+		{"type":"DataplaneOverview","mesh":"default","name":"both-dp",` + tp + `
+		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.9.0","kumaCpCompatible":true},"dependencies":{"coredns":"1.11.1"}}}],"metadata":{"features":["feature-unified-resource-naming"]}}},
+		{"type":"DataplaneOverview","mesh":"default","name":"embedded-dp",` + tp + `
+		 "dataplaneInsight":{` + sub + `,"metadata":{"features":["feature-embedded-dns","feature-unified-resource-naming"]}}},
+		{"type":"DataplaneOverview","mesh":"default","name":"no-metadata-dp",` + tp + `
+		 "dataplaneInsight":{` + sub + `}},
+		{"type":"DataplaneOverview","mesh":"default","name":"no-tp-dp",
+		 "dataplane":{"networking":{"inbound":[{"port":8080}]}},
+		 "dataplaneInsight":{` + sub + `,"metadata":{"features":["feature-unified-resource-naming"]}}}
+	],"next":null}`
+	m := auditResponses(t, map[string]string{"/dataplanes+insights": insights})
+	f, ok := findFinding(m, "blocker", "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS")
+	if !ok {
+		t.Fatalf("expected a legacy-CoreDNS blocker, got %+v", m.Findings)
+	}
+	if f.Count != 2 {
+		t.Errorf("count = %d, want 2 (coredns-dp and both-dp, once each), examples %+v", f.Count, f.Examples)
+	}
+	joined := strings.Join(f.Examples, "\n")
+	for _, want := range []string{"coredns-dp", "both-dp", "(coredns 1.11.1)"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("examples should contain %q, got %+v", want, f.Examples)
+		}
+	}
+	for _, unwanted := range []string{"embedded-dp", "no-metadata-dp", "no-tp-dp"} {
+		if strings.Contains(joined, unwanted) {
+			t.Errorf("examples should not contain %q, got %+v", unwanted, f.Examples)
+		}
+	}
+	if !strings.Contains(f.Detail, "KUMA_DNS_PROXY_PORT=15053") {
+		t.Errorf("detail should carry the pre-upgrade remediation, got %q", f.Detail)
+	}
+}
+
 // TestDataplaneMetricsOverrideReported checks that a per-proxy metrics backend on
 // a Dataplane surfaces as a blocker (deprecated → MeshMetric).
 func TestDataplaneMetricsOverrideReported(t *testing.T) {
