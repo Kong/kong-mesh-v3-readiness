@@ -8,6 +8,9 @@
     "inboundTagsDisabled": true,
     "kdsEventBasedWatchdog": { "enabled": true }
   },
+  "defaults": {
+    "restrictOutbound": true
+  },
   "runtime": {
     "kubernetes": {
       "injector": {

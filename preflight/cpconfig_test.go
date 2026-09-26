@@ -7,7 +7,7 @@ import (
 )
 
 // badK8sConfig is a Kubernetes CP config that trips every data-plane-relevant
-// readiness check (7 blockers).
+// readiness check (7 blockers, plus the informational outbound-default note).
 func badK8sConfig() cpConfig {
 	var c cpConfig
 	c.Mode = "zone"
@@ -19,6 +19,7 @@ func badK8sConfig() cpConfig {
 	c.Experimental.DeltaXds = false                                    // blocker
 	c.Experimental.KdsEventBasedWatchdog.Enabled = false               // blocker
 	c.Experimental.SidecarContainers = false                           // blocker
+	c.Defaults.RestrictOutbound = nil                                  // info (unset reads as false)
 	return c
 }
 
@@ -33,6 +34,8 @@ func goodK8sConfig() cpConfig {
 	c.Experimental.DeltaXds = true
 	c.Experimental.KdsEventBasedWatchdog.Enabled = true
 	c.Experimental.SidecarContainers = true
+	restricted := true
+	c.Defaults.RestrictOutbound = &restricted
 	return c
 }
 

@@ -155,6 +155,7 @@ var categoryToGroup = map[string]string{
 	"Dataplane version":         groupDataPlane,
 	"Dataplane features":        groupDataPlane,
 	"Dataplane DNS":             groupDataPlane,
+	"Outbound defaults":         groupDataPlane,
 	"Non-RFC-1035 names":        groupOther,
 	"MeshService selector":      groupOther,
 	"MeshService identities":    groupOther,

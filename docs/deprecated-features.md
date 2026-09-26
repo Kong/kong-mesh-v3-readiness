@@ -37,6 +37,8 @@ All flags under `experimental:` (`ExperimentalConfig`, `pkg/config/app/kuma-cp/c
 | `kdsEventBasedWatchdog.enabled` | `..._KDS_EVENT_BASED_WATCHDOG_ENABLED` | `false` | `true` — event-based KDS snapshot generation |
 | `ingressTagFilters` | `..._INGRESS_TAG_FILTERS` | `[]` | tuning knob — trims ZoneIngress tag size (not a boolean default flip) |
 
+Outside `experimental:`, `defaults.restrictOutbound` (`KUMA_DEFAULTS_RESTRICT_OUTBOUND`) follows the same shape: `false` on 2.14, `true` in 3.0. Preflight tells the three states apart, because since kumahq/kuma#18862 `GET /config` serves the field as `null` when unset (a CP predating the backport — every 2.14 patch up to and including 2.14.5 — omits it, which reads the same). **Unset** gets an info note that the default flips, and its proxies stay blockers. An explicit **`false`** is honored by 3.0, so it gets an info note to carry the setting into the 3.0 configuration, and its proxies drop to info. Once a control plane sets it to `true` the note goes away and the upgrade changes nothing for outbound: a proxy with no `reachableBackends` drops to info (reaching nothing is correct for a workload that calls nothing in the mesh; for any other, setting the field is recommended for security and performance), and so does a mesh with no MeshPassthrough, worded in the present tense. See Outbound denied by default above.
+
 ## `from` field deprecations (→ use `rules`, removal in 3.0)
 
 All have a `deprecated.go` under `pkg/plugins/policies/<name>/api/v1alpha1/`:
@@ -118,6 +120,15 @@ generates the Dataplane and a 3.0 CP regenerates it, so preflight flags these on
 | `networking.outbound[]` without `backendRef` | rejected on write, NACKed over KDS (`dataplane_validator.go`) | `backendRef` to a MeshService / MeshExternalService / MeshMultiZoneService |
 | `networking.transparentProxying.directAccessServices` | only `*` is honored; named services silently ignored (`direct_access_proxy_generator.go`) | `*`, or drop direct access |
 | `networking.transparentProxying.reachableServices` | removed | `reachableBackends` (see core table) |
+
+## Outbound denied by default
+
+Two 2.x defaults flip together in 3.0 (kumahq/kuma#18798) so a workload that configures nothing can neither receive traffic (already true — `MeshTLS` defaults to `Strict`) nor send it. One switch governs both: `defaults.restrictOutbound` (`KUMA_DEFAULTS_RESTRICT_OUTBOUND`), which 2.14 backports defaulted to `false` (kumahq/kuma#18851, renamed from `allowAllOutbound` with inverted meaning by kumahq/kuma#18861 — it ships in the first patch after 2.14.5) and 3.0 defaults to `true`. Setting it to `true` on 2.14 enforces the 3.0 behavior on the current control plane, which is the migration path: surface and fix the breakage before the upgrade rather than during it. Unlike every other item here these are **absence**-triggered — the resource that breaks carries no configuration at all — so preflight reports each as one summary blocker ("N of M"), and flags the switch itself under Experimental config below.
+
+| Default | 2.x behavior | 3.0 behavior | What to do before upgrading |
+|---|---|---|---|
+| `networking.transparentProxying.reachableBackends` unset | every destination in the mesh (`destination_index.go`) | no outbounds at all; a Dataplane with no `transparentProxying` section is treated the same way for transparent-proxy proxies (kumahq/kuma#18800) | list the MeshServices each workload actually calls — `kuma.io/reachable-backends` Pod annotation on Kubernetes, `networking.transparentProxying.reachableBackends.refs` on Universal. An outbound with a `backendRef` short-circuits resolution and is unaffected, as is an explicitly empty `refs` list (the shape zone proxies already ship) |
+| no **MeshPassthrough** matches a proxy | passthrough cluster still created, so the effective default is `passthroughMode: All` (`transparent_proxy_generator.go` adds it, the plugin removes it) | the no-policy case behaves like `None` and external egress is dropped (kumahq/kuma#18801) | add a MeshPassthrough selecting every proxy that needs external egress — a policy that exists but selects no proxy leaves the same gap. A mesh that already sets `networking.outbound.passthrough: false` has nothing to lose. Preflight reads each policy's selection from the control plane (`/meshes/{mesh}/meshpassthroughs/{name}/_resources/dataplanes`) and flags every transparent proxy none selects |
 
 ## Gateway — Kuma exits the gateway business
 
