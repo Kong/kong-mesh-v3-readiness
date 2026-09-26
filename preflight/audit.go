@@ -142,6 +142,7 @@ const (
 	envLabel                 = "kuma.io/env"
 	zoneLabel                = "kuma.io/zone"
 	gatewayLabel             = "kuma.io/gateway"
+	protocolTag              = "kuma.io/protocol"
 	serviceAccountLabel      = "k8s.kuma.io/service-account"
 	listenerZoneIngressLabel = "kuma.io/listener-zoneingress"
 )
@@ -252,7 +253,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	for _, check := range []func(context.Context) error{
 		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkNewPolicies, a.checkDataplanes,
 		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
-		a.checkResourceNames, a.checkMeshTrust,
+		a.checkServiceResources, a.checkMeshTrust,
 		a.checkControlPlaneConfig, a.checkControlPlaneVersions,
 		a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
 	} {
@@ -519,17 +520,86 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 					}
 				}
 			}
+			// A resource is flagged once however many of its refs name a resource.
+			byName := spec.TargetRef != nil && spec.TargetRef.selectsByName()
 			for _, to := range spec.To {
 				if k := to.TargetRef.Kind; k != "" && !allowedToTargetRefKinds[k] {
 					a.rep.addDoc(blocker, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
 						"`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.", docPolicies, ref)
 				}
+				byName = byName || to.TargetRef.selectsByName()
+			}
+			if it.Type == "MeshHTTPRoute" || it.Type == "MeshTCPRoute" {
+				byName = a.checkRouteBackendRefs(it.Type, it.specBytes(), ref) || byName
+			}
+			if byName {
+				a.addSelectsByName(it.Type, ref)
 			}
 			a.checkPolicyFields(it, ref)
 			a.countSystem(it, before)
 		}
 	}
 	return nil
+}
+
+func (a *auditor) addSelectsByName(typ, ref string) {
+	a.rep.addDoc(blocker, "Reference by name", typ+" references a resource by name",
+		"3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
+		docPolicies, ref)
+}
+
+// routeBackendKinds are the only kinds 3.0 accepts in a route backendRef.
+var routeBackendKinds = map[string]bool{"MeshService": true, "MeshExternalService": true, "MeshMultiZoneService": true}
+
+// checkRouteBackendRefs flags MeshHTTPRoute/MeshTCPRoute backendRefs (and the
+// RequestMirror filter's) whose kind 3.0 cannot resolve, once per kind, and
+// reports whether any of them references its resource by name.
+func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref string) bool {
+	var s struct {
+		To []struct {
+			Rules []struct {
+				Default struct {
+					BackendRefs []targetRef `json:"backendRefs"`
+					Filters     []struct {
+						RequestMirror *struct {
+							BackendRef targetRef `json:"backendRef"`
+						} `json:"requestMirror"`
+					} `json:"filters"`
+				} `json:"default"`
+			} `json:"rules"`
+		} `json:"to"`
+	}
+	if json.Unmarshal(spec, &s) != nil {
+		return false
+	}
+	var refs []targetRef
+	for _, t := range s.To {
+		for _, r := range t.Rules {
+			refs = append(refs, r.Default.BackendRefs...)
+			for _, f := range r.Default.Filters {
+				if f.RequestMirror != nil {
+					refs = append(refs, f.RequestMirror.BackendRef)
+				}
+			}
+		}
+	}
+	byName := false
+	flagged := map[string]bool{}
+	for _, br := range refs {
+		switch {
+		case br.Kind != "" && !routeBackendKinds[br.Kind]:
+			if flagged[br.Kind] {
+				continue
+			}
+			flagged[br.Kind] = true
+			a.rep.addDoc(blocker, "Route backendRef", typ+" backendRef kind="+br.Kind,
+				"3.0 routes accept only MeshService, MeshExternalService and MeshMultiZoneService backendRefs (the RequestMirror filter too). A stored ref of another kind is unresolved, so traffic matching the rule loses its destination (a MeshHTTPRoute rule with no resolvable backend answers 500). Selecting endpoints by tag has no equivalent: split the destination into separate MeshServices.",
+				docMeshHTTPRoute, ref)
+		case br.selectsByName():
+			byName = true
+		}
+	}
+	return byName
 }
 
 // checkPolicyFields flags per-policy deprecated fields visible in the spec but not
@@ -583,6 +653,27 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 			if t.Default.HealthyPanicThreshold != nil {
 				a.rep.addDoc(blocker, "Relocated policy fields", "MeshHealthCheck uses healthyPanicThreshold",
 					"`healthyPanicThreshold` moves to MeshCircuitBreaker in 3.0.", docMeshCircuitBreaker, ref)
+				break
+			}
+		}
+	case "MeshPassthrough":
+		var s struct {
+			Default struct {
+				AppendMatch []struct {
+					Type  string `json:"type"`
+					Value string `json:"value"`
+					Port  int    `json:"port"`
+				} `json:"appendMatch"`
+			} `json:"default"`
+		}
+		if json.Unmarshal(spec, &s) != nil {
+			return
+		}
+		for _, m := range s.Default.AppendMatch {
+			if m.Type == "Domain" && m.Port == 0 && !strings.HasPrefix(m.Value, "*") {
+				a.rep.addDoc(blocker, "MeshPassthrough", "MeshPassthrough Domain match has no port",
+					"3.0 resolves a non-wildcard `Domain` match in the sidecar and connects to the resolved address, which needs a `port`. A stored match without one stops applying, and when it was the policy's only match the sidecar rejects all passthrough traffic. Add `port` to the match (duplicate it for each port the domain is used on) and make sure the sidecar can resolve the domain.",
+					docMeshPassthrough, ref)
 				break
 			}
 		}
@@ -706,11 +797,20 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 			a.rep.addDoc(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label",
 				"On Universal the `kuma.io/workload` label groups proxies into a Workload (the 3.0 metrics/traces dimension); without it no Workload is generated for this proxy. Add a `kuma.io/workload` label.", docAnnotations, qualified(it))
 		}
-		// Universal-only: spec.probes is removed in 3.0. On Kubernetes probes are
-		// derived from the pod and need no action, so only flag non-k8s dataplanes.
-		if hasJSON(spec.Probes) && !onK8s {
-			a.rep.addDoc(blocker, "Dataplane probes", "Dataplane has a probes section",
-				"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", docDataPlaneProxy, qualified(it))
+		// spec.probes is removed in 3.0. On Kubernetes the pod converter sets it
+		// whenever the pod has virtual probes enabled, even when Application Probe
+		// Proxy is also on and takes precedence, so the Dataplane alone cannot tell
+		// whether the kubelet probes point at the virtual probes listener 3.0 no
+		// longer builds.
+		if hasJSON(spec.Probes) {
+			if onK8s {
+				a.rep.addDoc(blocker, "Dataplane probes", "Kubernetes pod has virtual probes enabled",
+					"3.0 removes virtual probes along with the `kuma.io/virtual-probes*` annotations and the `virtualProbesEnabled` control plane setting. If this pod runs with Application Probe Proxy disabled (`kuma.io/application-probe-proxy-port: \"0\"`), its kubelet probes were rewritten to the virtual probes port, which a 3.0 control plane no longer serves, so they fail until the pod is re-injected; otherwise Application Probe Proxy already serves them and only the stale settings remain. Move it to Application Probe Proxy (the default) before upgrading: drop the `kuma.io/virtual-probes` annotation (and `virtualProbesEnabled` from the control plane config), keep `kuma.io/application-probe-proxy-port` unset or non-zero, and restart the pod.",
+					docDataPlaneProxy, qualified(it))
+			} else {
+				a.rep.addDoc(blocker, "Dataplane probes", "Dataplane has a probes section",
+					"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", docDataPlaneProxy, qualified(it))
+			}
 		}
 		// A per-proxy metrics backend (on k8s, translated from the deprecated
 		// `prometheus.metrics.kuma.io/*` pod annotations) moves to MeshMetric.
@@ -761,6 +861,14 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 	if net == nil {
 		return
 	}
+	for _, in := range net.Inbound {
+		if !supportedInboundProtocol(inboundProtocol(in.Protocol, in.Tags)) {
+			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane inbound uses a protocol 3.0 rejects",
+				"3.0 accepts only `tcp`, `tls`, `http`, `http2`, `grpc` and `mysql` as `networking.inbound[].protocol` (Kafka support is removed) and rejects any other value on write. On Kubernetes the protocol comes from the Service port's `appProtocol` or its `<port>.service.kuma.io/protocol` annotation, so change it there; on Universal set a supported protocol (`tcp` for opaque traffic).",
+				docDataPlaneProxy, qualified(it))
+			break
+		}
+	}
 	if !onK8s {
 		// 3.0 reserves networking.gateway and marks a delegated gateway with the
 		// kuma.io/gateway label instead. A 2.x Universal gateway carries the marker
@@ -784,13 +892,24 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 				"`networking.advertisedAddress` is removed in 3.0 (the proto field is reserved); drop it and advertise the address through the zone proxy configuration instead.",
 				docDataPlaneProxy, qualified(it))
 		}
+		var tagged, protocolTagOnly bool
 		for _, in := range net.Inbound {
-			if len(in.Tags) > 0 {
-				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.inbound[].tags",
-					"`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService. This pairs with `experimental.inboundTagsDisabled: true` on the control plane.",
-					docMeshService, qualified(it))
-				break
-			}
+			tagged = tagged || len(in.Tags) > 0
+			// A tcp tag keeps the default and an unsupported one is flagged above.
+			tag := in.Tags[protocolTag]
+			protocolTagOnly = protocolTagOnly || (in.Protocol == "" && tag != "" && !strings.EqualFold(tag, "tcp") && supportedInboundProtocol(tag))
+		}
+		if tagged {
+			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.inbound[].tags",
+				"`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService, except `kuma.io/protocol`, which belongs in `networking.inbound[].protocol`. This pairs with `experimental.inboundTagsDisabled: true` on the control plane.",
+				docMeshService, qualified(it))
+		}
+		// 2.x fell back to the kuma.io/protocol tag when the protocol field was
+		// unset; 3.0 reads only the field.
+		if protocolTagOnly {
+			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane inbound sets its protocol only through kuma.io/protocol",
+				"3.0 reads an inbound's protocol only from `networking.inbound[].protocol` and no longer falls back to the `kuma.io/protocol` tag. An inbound without the field is served as plain TCP and silently loses its L7 behavior: HTTP access log fields, MeshTimeout HTTP timeouts, MeshFaultInjection, MeshRateLimit HTTP limits and HTTP routing. Set `protocol` on each such inbound before upgrading.",
+				docDataPlaneProxy, qualified(it))
 		}
 		for _, out := range net.Outbound {
 			if !hasJSON(out.BackendRef) {
@@ -980,21 +1099,135 @@ func (a *auditor) requiredZoneAddresses() []string {
 	return required
 }
 
-// checkResourceNames flags resource names that are not valid RFC-1035 DNS labels
-// (deprecated in 3.0). These resource types are newer than the legacy set; a 404
-// means the CP version does not serve them, which is not a coverage gap.
-func (a *auditor) checkResourceNames(ctx context.Context) error {
-	for _, rc := range []struct{ wsPath, kind string }{
-		{"meshservices", "MeshService"},
-		{"meshexternalservices", "MeshExternalService"},
-		{"meshmultizoneservices", "MeshMultiZoneService"},
+// checkServiceResources flags MeshService, MeshExternalService and
+// MeshMultiZoneService names that are not valid RFC-1035 DNS labels (deprecated
+// in 3.0) and the spec fields 3.0 no longer reads. These resource types are newer
+// than the legacy set; a 404 means the CP version does not serve them, which is
+// not a coverage gap.
+func (a *auditor) checkServiceResources(ctx context.Context) error {
+	for _, rc := range []struct {
+		wsPath, kind string
+		checkSpec    func(resourceItem)
+	}{
+		{"meshservices", "MeshService", a.checkMeshServiceSpec},
+		{"meshexternalservices", "MeshExternalService", a.checkExternalServiceTLS},
+		{"meshmultizoneservices", "MeshMultiZoneService", a.checkMultiZoneServiceSpec},
 	} {
 		items := a.listIfServed(ctx, a.scopedPath(rc.wsPath))
 		for _, it := range items {
 			a.checkName(it, rc.kind)
+			rc.checkSpec(it)
 		}
 	}
 	return nil
+}
+
+type servicePort struct {
+	AppProtocol string `json:"appProtocol"`
+}
+
+// supportedAppProtocol mirrors 3.0's core_meta.SupportedProtocols; an empty value
+// defaults to tcp.
+func supportedAppProtocol(p string) bool {
+	switch strings.ToLower(p) {
+	case "", "tcp", "http", "http2", "grpc":
+		return true
+	}
+	return false
+}
+
+func (a *auditor) addUnsupportedAppProtocol(kind string, ports []servicePort, ref string) {
+	for _, p := range ports {
+		if !supportedAppProtocol(p.AppProtocol) {
+			a.rep.addDoc(blocker, "Service ports", kind+" port uses an appProtocol 3.0 rejects",
+				"3.0 accepts only `tcp`, `http`, `http2` and `grpc` as `ports[].appProtocol` (Kafka support is removed) and rejects any other value on write, so re-applying this resource fails. Set a supported protocol (`tcp` for opaque traffic); for a MeshService generated from a Kubernetes Service, change the Service port's `appProtocol`.",
+				docMeshService, ref)
+			return
+		}
+	}
+}
+
+// checkMeshServiceSpec flags MeshService fields 3.0 removes. Generated
+// MeshServices (kuma.io/managed-by) are regenerated by the 3.0 control plane, so
+// only a Universal one still keyed on kuma.io/service needs attention: 3.0
+// generates per kuma.io/workload instead, which changes its name.
+func (a *auditor) checkMeshServiceSpec(it resourceItem) {
+	ref := qualified(it)
+	var s struct {
+		Selector struct {
+			DataplaneTags map[string]string `json:"dataplaneTags"`
+		} `json:"selector"`
+		Identities []struct {
+			Type string `json:"type"`
+		} `json:"identities"`
+		Ports []servicePort `json:"ports"`
+	}
+	if !a.unmarshalSpec(it, &s, ref) {
+		return
+	}
+	managedBy := it.Labels["kuma.io/managed-by"]
+	if len(s.Selector.DataplaneTags) > 0 {
+		switch managedBy {
+		case "":
+			a.rep.addDoc(blocker, "MeshService selector", "MeshService selects proxies by dataplaneTags",
+				"3.0 removes `spec.selector.dataplaneTags` and drops it on read, so this MeshService matches no proxies, produces no endpoints and goes `Unavailable`. Move the selector to `spec.selector.dataplaneLabels.matchLabels` using labels that exist on the Dataplanes themselves (Pod labels on Kubernetes, Dataplane `labels` on Universal).",
+				docMeshService, ref)
+		case "k8s-controller":
+		default:
+			a.rep.addDoc(blocker, "MeshService selector", "Generated MeshService is keyed on kuma.io/service",
+				"3.0 generates Universal MeshServices per `kuma.io/workload` label instead of per `kuma.io/service` tag, so this one is replaced by a MeshService named after the proxies' workload unless the two names already match. Update every targetRef, backendRef and `reachableBackends` entry that selects it by `kuma.io/display-name`.",
+				docMeshService, ref)
+		}
+	}
+	// 2.14 generators always emit a ServiceTag identity and 3.0 regenerates it
+	// SpiffeID-only, so only a hand-written MeshService needs the rewrite.
+	for _, id := range s.Identities {
+		if managedBy == "" && id.Type == "ServiceTag" {
+			a.rep.addDoc(blocker, "MeshService identities", "MeshService declares a ServiceTag identity",
+				"3.0 accepts only `SpiffeID` entries in `spec.identities` and rejects a `ServiceTag` one on write. Replace it with the SPIFFE ID of the workload before upgrading.",
+				docMeshService, ref)
+			break
+		}
+	}
+	a.addUnsupportedAppProtocol("MeshService", s.Ports, ref)
+}
+
+func (a *auditor) checkMultiZoneServiceSpec(it resourceItem) {
+	ref := qualified(it)
+	var s struct {
+		Ports []servicePort `json:"ports"`
+	}
+	if a.unmarshalSpec(it, &s, ref) {
+		a.addUnsupportedAppProtocol("MeshMultiZoneService", s.Ports, ref)
+	}
+}
+
+// checkExternalServiceTLS flags TLS material in the 2.x DataSource shape (a flat
+// secret/inline/inlineString with no `type`), which 3.0 cannot read. 2.14.6+ also
+// accepts the typed shape (kumahq/kuma#18867), so it can be rewritten before upgrading.
+func (a *auditor) checkExternalServiceTLS(it resourceItem) {
+	ref := qualified(it)
+	var s struct {
+		TLS *struct {
+			Verification *struct {
+				CaCert     map[string]json.RawMessage `json:"caCert"`
+				ClientCert map[string]json.RawMessage `json:"clientCert"`
+				ClientKey  map[string]json.RawMessage `json:"clientKey"`
+			} `json:"verification"`
+		} `json:"tls"`
+	}
+	if !a.unmarshalSpec(it, &s, ref) || s.TLS == nil || s.TLS.Verification == nil {
+		return
+	}
+	v := s.TLS.Verification
+	for _, ds := range []map[string]json.RawMessage{v.CaCert, v.ClientCert, v.ClientKey} {
+		if _, typed := ds["type"]; len(ds) > 0 && !typed {
+			a.rep.addDoc(blocker, "MeshExternalService TLS", "MeshExternalService TLS uses the removed DataSource shape",
+				"3.0 reads `tls.verification.caCert`, `clientCert` and `clientKey` only as a typed `SecureDataSource`. A stored MeshExternalService in the old shape is not rejected, but the control plane cannot read its TLS material and drops the destination from every proxy's config. Rewrite it before upgrading: `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: <name>` becomes `type: Secret` with `secretRef: {kind: Secret, name: <name>}`.",
+				docMeshExternalService, ref)
+			return
+		}
+	}
 }
 
 // checkMeshTrust flags MeshTrust resources still carrying the deprecated
@@ -1423,6 +1656,7 @@ func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch 
 // verdict for each connected proxy, plus the dependency versions kuma-dp reports
 // (e.g. a bundled `coredns`, which signals the legacy embedded-DNS path).
 type dpInsight struct {
+	Dataplane        dataplaneSpec `json:"dataplane"`
 	DataplaneInsight struct {
 		Subscriptions []struct {
 			Version struct {
@@ -1453,6 +1687,14 @@ type dpInsight struct {
 // flag is off, or on but the proxy has not reconnected yet.
 const featureUnifiedNaming = "feature-unified-resource-naming"
 
+// 2.14 never persists the `coredns` dependency, so this feature is the only CoreDNS signal there.
+const featureEmbeddedDNS = "feature-embedded-dns"
+
+// featureReadinessUnixSocket is advertised by kuma-dp older than 2.14, which
+// serves readiness on a Unix socket. 3.0 always points the readiness cluster at
+// the TCP readiness port, so such a proxy never reports ready.
+const featureReadinessUnixSocket = "feature-readiness-unix-socket"
+
 // checkDataplaneVersions flags data planes the control plane itself reports as
 // version-incompatible (`kumaCpCompatible: false`): they are already outside the
 // supported CP/DP skew window and must be upgraded before a major-version bump.
@@ -1478,14 +1720,10 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
 				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
 		}
-		// A reported `coredns` dependency means kuma-dp launched the bundled
-		// CoreDNS, i.e. the proxy is on the legacy CoreDNS + Envoy DNS-filter
-		// path that 3.0 removes. This is a free, every-proxy signal from a
-		// payload already fetched here; --inspect-dataplanes deep-confirms it.
-		if v := last.Dependencies["coredns"]; v != "" {
+		if ref, ok := legacyCoreDNSRef(it, ins, last.Dependencies["coredns"]); ok {
 			a.rep.addDoc(blocker, "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS",
-				"This proxy reports a bundled CoreDNS dependency; 3.0 removes the CoreDNS + Envoy DNS-filter path — upgrade kuma-dp.",
-				docDNS, qualified(it)+" (coredns "+v+")")
+				"This proxy resolves mesh names through the bundled CoreDNS (a transparent proxy not advertising `feature-embedded-dns`, or one reporting a `coredns` dependency). 3.0 removes the CoreDNS + Envoy DNS-filter path, so this proxy loses mesh DNS as soon as its control plane runs 3.0. Before upgrading, switch it to the embedded DNS proxy: on Universal set `KUMA_DNS_PROXY_PORT=15053` (or `--dns-proxy-port` / `dns.proxyPort`) on kuma-dp and restart it; on Kubernetes set `runtime.kubernetes.injector.builtinDNS.experimentalProxy: true` on the control plane and restart the pods. A proxy running with DNS disabled (`KUMA_DNS_ENABLED=false`) does not advertise the feature either and can be ignored.",
+				docDNS, ref)
 		}
 		// unified-resource-naming is advertised only when the CP has it enabled and
 		// the proxy has (re)connected since, so a proxy whose feature list omits it
@@ -1498,8 +1736,26 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 				"This proxy does not advertise the `feature-unified-resource-naming` capability, so it is not emitting the unified (KRI-based) resource names Kuma 3.0 requires. Enable `unifiedResourceNamingEnabled` on the control plane (if not already) and restart/re-inject the proxy so it adopts unified naming before upgrading.",
 				docKumaCPReference, qualified(it))
 		}
+		if slices.Contains(ins.DataplaneInsight.Metadata.Features, featureReadinessUnixSocket) {
+			a.rep.addDoc(blocker, "Dataplane features", "Dataplane reports readiness over a Unix socket",
+				"This proxy advertises `feature-readiness-unix-socket`, which kuma-dp stopped sending in 2.14. A 3.0 control plane always points the readiness cluster at the TCP readiness port, so this proxy never reports ready. Upgrade its kuma-dp to 2.14 before upgrading the control plane.",
+				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
+		}
 	}
 	return nil
+}
+
+func legacyCoreDNSRef(it resourceItem, ins dpInsight, corednsVersion string) (string, bool) {
+	if corednsVersion != "" {
+		return qualified(it) + " (coredns " + corednsVersion + ")", true
+	}
+	feats := ins.DataplaneInsight.Metadata.Features
+	net := ins.Dataplane.Networking
+	// empty features: an older CP that reports no metadata, inconclusive
+	if len(feats) > 0 && !slices.Contains(feats, featureEmbeddedDNS) && net != nil && net.TransparentProxying != nil {
+		return qualified(it), true
+	}
+	return "", false
 }
 
 // dnsFilterMarker is the Envoy UDP DNS filter name; its presence in a proxy's
@@ -1616,8 +1872,24 @@ type policySpec struct {
 }
 
 type targetRef struct {
-	Kind       string   `json:"kind"`
-	ProxyTypes []string `json:"proxyTypes"`
+	Kind       string            `json:"kind"`
+	ProxyTypes []string          `json:"proxyTypes"`
+	Name       string            `json:"name"`
+	Namespace  string            `json:"namespace"`
+	Mesh       string            `json:"mesh"`
+	Labels     map[string]string `json:"labels"`
+}
+
+// labelSelectedKinds are the targetRef/backendRef kinds 3.0 resolves by labels only.
+var labelSelectedKinds = map[string]bool{
+	"Dataplane": true, "MeshService": true, "MeshExternalService": true,
+	"MeshMultiZoneService": true, "MeshHTTPRoute": true,
+}
+
+// selectsByName reports a ref to a real resource that names it instead of
+// selecting it by labels. 3.0 drops name/namespace/mesh, which leaves it empty.
+func (t targetRef) selectsByName() bool {
+	return labelSelectedKinds[t.Kind] && len(t.Labels) == 0 && (t.Name != "" || t.Namespace != "" || t.Mesh != "")
 }
 
 type ruleEntry struct {
@@ -1637,7 +1909,8 @@ type dataplaneSpec struct {
 		AdvertisedAddress string          `json:"advertisedAddress"`
 		Gateway           *gatewaySection `json:"gateway"`
 		Inbound           []struct {
-			Tags map[string]string `json:"tags"`
+			Tags     map[string]string `json:"tags"`
+			Protocol string            `json:"protocol"`
 		} `json:"inbound"`
 		Outbound []struct {
 			BackendRef json.RawMessage `json:"backendRef"`
@@ -1731,7 +2004,7 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // checkControlPlaneConfig, Universal Dataplane labels and networking fields by
 // checkDataplanes, zone names and per-zone MeshZoneAddress coverage by
 // checkZoneNames/checkMeshZoneAddresses, and the legacy CoreDNS path by
-// checkDataplaneVersions (a reported `coredns` dependency) plus the
+// checkDataplaneVersions plus the
 // --inspect-dataplanes deep check, so none is repeated here.
 var manualChecks = []ManualCheck{
 	{
@@ -1906,4 +2179,23 @@ func buildManualChecks(k8sObserved bool) []ManualCheck {
 		checks = append(checks, kubernetesManualChecks...)
 	}
 	return checks
+}
+
+// inboundProtocol is the protocol 2.x serves an inbound with: the protocol
+// field, falling back to the kuma.io/protocol tag when the field is unset.
+func inboundProtocol(field string, tags map[string]string) string {
+	if field != "" {
+		return field
+	}
+	return tags[protocolTag]
+}
+
+// supportedInboundProtocol mirrors the 3.0 Dataplane validator, which accepts any
+// protocol core_meta.ParseProtocol knows; an empty value defaults to tcp.
+func supportedInboundProtocol(p string) bool {
+	switch strings.ToLower(p) {
+	case "", "tcp", "tls", "http", "http2", "grpc", "mysql":
+		return true
+	}
+	return false
 }

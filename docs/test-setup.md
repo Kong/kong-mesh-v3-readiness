@@ -294,6 +294,7 @@ current binary:
 | Multizone global fan-out | ✅ yes | Against `mode: global`, the data-plane config checks run **per zone** from `GET /zones+insights` (`ZoneInsight.subscriptions[].config`, the zone's own sanitized config shipped over KDS) — examples read `zone <name>: …`. Global keeps only the global-on-k8s blocker; a zone with no reported config (or `/zones+insights` 404) → coverage gap; no zones → info. A directly-connected zone/standalone CP is unchanged (audited from its own `/config`). |
 | Dataplane version compatibility | ✅ yes | `checkDataplaneVersions` from `/dataplanes+insights`: warns on proxies with `kumaCpCompatible: false`. (preview/dev kuma-dp is bypassed by the CP → no warning on the preview fixture) |
 | Dataplane per-proxy metrics override | ✅ yes | `checkDataplanes` flags non-empty `spec.metrics` (k8s: translated from `prometheus.metrics.kuma.io/*` pod annotations) → MeshMetric |
+| Legacy CoreDNS (always-on) | ✅ yes | `checkDataplaneVersions` from `/dataplanes+insights`: blocks transparent-proxy dataplanes whose non-empty `metadata.features` omit `feature-embedded-dns`, or that report a `coredns` dependency |
 | Envoy DNS filter (`--inspect-dataplanes N`) | ⚙️ opt-in | `checkDataplaneEnvoyConfig` fetches up to N config dumps; warns on `envoy.filters.udp.dns_filter`. Off by default (expensive per-proxy fetch) |
 
 ---
