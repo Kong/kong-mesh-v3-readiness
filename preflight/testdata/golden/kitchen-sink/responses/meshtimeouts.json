@@ -1,5 +1,5 @@
 {
-  "total": 5,
+  "total": 6,
   "items": [
     {
       "type": "MeshTimeout",
@@ -9,6 +9,16 @@
       "spec": {
         "targetRef": { "kind": "Dataplane", "labels": { "kuma.io/service": "backend" } },
         "to": [ { "targetRef": { "kind": "Mesh" }, "default": { "idleTimeout": "1h" } } ]
+      }
+    },
+    {
+      "type": "MeshTimeout",
+      "mesh": "default",
+      "name": "mt-producer",
+      "labels": { "kuma.io/policy-role": "producer", "k8s.kuma.io/namespace": "backend-ns", "kuma.io/zone": "east" },
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [ { "targetRef": { "kind": "MeshService", "name": "backend" }, "default": { "idleTimeout": "1h" } } ]
       }
     },
     {

@@ -169,6 +169,10 @@ type auditOptions struct {
 }
 
 type auditor struct {
+	// externalServiceMeshes are the meshes with a MeshExternalService, recorded by
+	// checkServiceResources for checkExternalServiceIdentity.
+	externalServiceMeshes map[string]bool
+
 	c                    *client
 	meshFilter           string
 	inspectDataplanes    int
@@ -254,7 +258,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	for _, check := range []func(context.Context) error{
 		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkNewPolicies, a.checkDataplanes,
 		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
-		a.checkServiceResources, a.checkMeshTrust,
+		a.checkServiceResources, a.checkExternalServiceIdentity, a.checkMeshTrust,
 		a.checkControlPlaneConfig, a.checkControlPlaneVersions,
 		a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
 	} {
@@ -335,6 +339,13 @@ func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 // unregistered (404) — for resource types newer than the CP may serve, where a
 // 404 is "not applicable", not a coverage gap (cf. listColl).
 func (a *auditor) listIfServed(ctx context.Context, path string) []resourceItem {
+	items, _ := a.listServed(ctx, path)
+	return items
+}
+
+// listServed is listIfServed that also reports whether the result is complete:
+// false after a read error, which is recorded as a coverage gap.
+func (a *auditor) listServed(ctx context.Context, path string) ([]resourceItem, bool) {
 	items, found, err := a.c.list(ctx, path)
 	if err != nil {
 		var listErr *listError
@@ -344,12 +355,12 @@ func (a *auditor) listIfServed(ctx context.Context, path string) []resourceItem 
 				a.resourceLimitGapRecorded = true
 			}
 		}
-		return items
+		return items, false
 	}
 	if !found {
-		return nil
+		return nil, true
 	}
-	return items
+	return items, true
 }
 
 // unmarshalSpec decodes the resource spec into v, recording a parse error +
@@ -519,6 +530,11 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 			}
 			a.checkPolicyFields(it, ref)
 			a.checkReservedLabels(it, ref)
+			if it.Labels[policyRoleLabel] == "producer" && !staysProducer(it, spec.To) {
+				a.rep.addDoc(blocker, "Policy role", it.Type+" stops being a producer policy",
+					"3.0 keeps a policy producer (applied to clients in every namespace and synced to the other zones) only when every `to[].targetRef` is a MeshService or MeshHTTPRoute selected by exactly three labels: `kuma.io/display-name`, `k8s.kuma.io/namespace` equal to the policy's own namespace and `kuma.io/zone` equal to its own zone. Anything else makes it a consumer policy that applies only inside its namespace, so clients elsewhere silently lose its rules; mixing both kinds of item is rejected on write. Rewrite each item as `labels: {kuma.io/display-name: <name>, k8s.kuma.io/namespace: <namespace>, kuma.io/zone: <zone>}`.",
+					docPolicies, ref)
+			}
 			var sel selectorSpec
 			if json.Unmarshal(it.specBytes(), &sel) == nil {
 				a.addSelectorOnRemovedLabel(it.Type, ref, sel.labelSets()...)
@@ -1112,6 +1128,12 @@ func (a *auditor) checkServiceResources(ctx context.Context) error {
 				a.checkReservedLabels(it, qualified(it))
 			}
 			rc.checkSpec(it)
+			if rc.kind == "MeshExternalService" {
+				if a.externalServiceMeshes == nil {
+					a.externalServiceMeshes = map[string]bool{}
+				}
+				a.externalServiceMeshes[it.Mesh] = true
+			}
 		}
 	}
 	return nil
@@ -2330,4 +2352,51 @@ func (a *auditor) addSelectorOnRemovedLabel(typ, ref string, sets ...map[string]
 			"3.0 no longer puts `kuma.io/service`, `kuma.io/proxy-type`, `kuma.io/gateway` or any other reserved label outside its registry on Dataplanes and services, so a selector keyed on one (targetRef or backendRef `labels`, MeshService `dataplaneLabels`, MeshMultiZoneService `meshService` labels, MeshLoadBalancingStrategy `affinityTags`) matches nothing after the upgrade. Select on your own labels, `kuma.io/workload` or `kuma.io/display-name` instead.",
 			docPolicies, ref+" ("+strings.Join(keys, ", ")+")")
 	}
+}
+
+// staysProducer mirrors 3.0's ComputePolicyRole: a policy is producer only when
+// every to[] item is a MeshService or MeshHTTPRoute pinned to one resource of the
+// policy's own namespace and zone by exactly display-name, namespace and zone.
+func staysProducer(it resourceItem, to []ruleEntry) bool {
+	ns, zone := it.Labels["k8s.kuma.io/namespace"], it.Labels[zoneLabel]
+	if len(to) == 0 || zone == "" {
+		return false
+	}
+	for _, t := range to {
+		tr := t.TargetRef
+		if tr.Kind != "MeshService" && tr.Kind != "MeshHTTPRoute" {
+			return false
+		}
+		if len(tr.Labels) != 3 || tr.Labels["kuma.io/display-name"] == "" ||
+			tr.Labels["k8s.kuma.io/namespace"] != ns || tr.Labels[zoneLabel] != zone {
+			return false
+		}
+	}
+	return true
+}
+
+// checkExternalServiceIdentity flags meshes with MeshExternalServices but no
+// MeshIdentity: 3.0 gives a client proxy without a workload identity no cluster
+// for a MeshExternalService. An unreadable MeshIdentity list is a coverage gap,
+// never read as "none".
+func (a *auditor) checkExternalServiceIdentity(ctx context.Context) error {
+	if len(a.externalServiceMeshes) == 0 {
+		return nil
+	}
+	ids, complete := a.listServed(ctx, a.scopedPath("meshidentities"))
+	if !complete {
+		return nil
+	}
+	withIdentity := map[string]bool{}
+	for _, id := range ids {
+		withIdentity[id.Mesh] = true
+	}
+	for _, m := range slices.Sorted(maps.Keys(a.externalServiceMeshes)) {
+		if !withIdentity[m] {
+			a.rep.addDoc(blocker, "MeshIdentity coverage", "Mesh has MeshExternalServices but no MeshIdentity",
+				"3.0 gives a client proxy without a workload identity no cluster for a MeshExternalService, so its requests fail locally with a 503 (`cluster_not_found`). Create a MeshIdentity in this mesh that selects every proxy calling a MeshExternalService before upgrading.",
+				docMeshIdentity, m)
+		}
+	}
+	return nil
 }
