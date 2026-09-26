@@ -74,19 +74,26 @@ func TestDataplaneDeprecatedFeatureReportedAsIssue(t *testing.T) {
 	}
 }
 
-// TestDataplaneProbesIgnoredOnKubernetes confirms the probes check is
-// Universal-only: on Kubernetes probes are derived from the pod and need no
-// action, so they must not be flagged.
-func TestDataplaneProbesIgnoredOnKubernetes(t *testing.T) {
-	m := auditDataplane(t, map[string]any{
-		"labels": map[string]any{"kuma.io/env": "kubernetes"},
-		"probes": map[string]any{"port": 9000},
-	})
-	if _, ok := findFinding(m, "blocker", "Dataplane probes", "Dataplane has a probes section"); ok {
-		t.Errorf("probes on a Kubernetes dataplane must not be flagged\nfindings: %+v", m.Findings)
-	}
-	if m.Status != StatusClean {
-		t.Errorf("status = %q, want %q", m.Status, StatusClean)
+// TestDataplaneProbesPerEnvironment confirms spec.probes is flagged with the
+// environment's own remedy: on Kubernetes it marks a pod with virtual probes enabled, which
+// 3.0 removes, so the fix is moving it to Application Probe Proxy.
+func TestDataplaneProbesPerEnvironment(t *testing.T) {
+	for _, tc := range []struct{ env, title, other string }{
+		{"kubernetes", "Kubernetes pod has virtual probes enabled", "Dataplane has a probes section"},
+		{"universal", "Dataplane has a probes section", "Kubernetes pod has virtual probes enabled"},
+	} {
+		t.Run(tc.env, func(t *testing.T) {
+			m := auditDataplane(t, map[string]any{
+				"labels": map[string]any{"kuma.io/env": tc.env, "kuma.io/workload": "w"},
+				"probes": map[string]any{"port": 9000},
+			})
+			if _, ok := findFinding(m, "blocker", "Dataplane probes", tc.title); !ok {
+				t.Errorf("missing %q\nfindings: %+v", tc.title, m.Findings)
+			}
+			if _, ok := findFinding(m, "blocker", "Dataplane probes", tc.other); ok {
+				t.Errorf("wrongly flagged %q", tc.other)
+			}
+		})
 	}
 }
 

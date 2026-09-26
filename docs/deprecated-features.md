@@ -77,6 +77,11 @@ every kind from `to[].targetRef` (the destination), which keeps `Mesh` / `Mesh*S
 - **Top-level targetRef** restricted to only `Mesh` and `Dataplane` (all other kinds dropped)
 - **`to[].targetRef`** drops the subset/selector kinds (`MeshSubset`, `MeshServiceSubset`) and `MeshGateway`; `Mesh` (all outbound — also the only kind allowed for MeshGateway-targeted policies), the `Mesh*Service` kinds (`MeshService` / `MeshExternalService` / `MeshMultiZoneService`) and `MeshHTTPRoute` stay valid
 - **`proxyTypes` in targetRef** (`api/common/v1alpha1/targetref.go:101`) → dropped (Gateway/Sidecar proxy-type filtering)
+- **`name` / `namespace` / `mesh` in targetRef and route backendRef** → dropped, selection is by `labels` only (kumahq/kuma#17761, #17756, #17740). A stored name-only ref loses the name: top-level `kind: Dataplane` widens to every Dataplane in the mesh, a `to[]` targetRef or backendRef resolves to nothing. Map `name` → `kuma.io/display-name`, `namespace` → `k8s.kuma.io/namespace`
+- **Route `backendRefs`** (MeshHTTPRoute/MeshTCPRoute, incl. RequestMirror) accept only MeshService/MeshExternalService/MeshMultiZoneService (kumahq/kuma#18391); a stored `MeshServiceSubset` ref is unresolved and the rule loses its destination
+- **MeshPassthrough non-wildcard `Domain` match** needs `port` (kumahq/kuma#18658); a stored match without one stops applying, and as the only match rejects all passthrough
+- **MeshService**: `selector.dataplaneTags` dropped on read (matches 0 proxies, kumahq/kuma#17749), Universal generated MeshServices keyed per `kuma.io/workload` instead of `kuma.io/service`, `identities[].type: ServiceTag` rejected (kumahq/kuma#17973), `ports[].appProtocol` limited to tcp/http/http2/grpc (Kafka removed, kumahq/kuma#17831; MeshMultiZoneService too)
+- **MeshExternalService** `tls.verification.caCert`/`clientCert`/`clientKey` move to the typed `SecureDataSource` (kumahq/kuma#17899); a stored old-shape resource is dropped from xDS. 2.14.6+ accepts both shapes (kumahq/kuma#18867), so rewrite before upgrading
 
 ## Backend / endpoint deprecations
 
@@ -162,7 +167,9 @@ All gateway functionality delegated to Kong / third-party (delegated gateway). D
 - **MeshMultiZoneService**: names > 63 chars deprecated
 - **`kuma.io/mesh` annotation** → use label
 - **MeshGatewayInstance**: `kuma.io/service` tag → auto-generated `serviceName`
-- **Dataplane `spec.probes`** → removed for Universal; not needed on Kubernetes
+- **Dataplane `spec.probes`** and virtual probes → removed (kumahq/kuma#17901). On Universal drop the field; on Kubernetes `spec.probes` marks a pod with virtual probes enabled; when Application Probe Proxy is off for it (`kuma.io/application-probe-proxy-port: "0"`) its rewritten kubelet probes fail on 3.0 until re-injected, so move it to Application Probe Proxy first. The Dataplane alone cannot tell the two apart, so every such pod is flagged
+- **`kuma.io/protocol` inbound tag** no longer sets the protocol (kumahq/kuma#17861): a Universal inbound without `networking.inbound[].protocol` is served as plain TCP and loses its L7 filters. Inbound `protocol: kafka` is rejected (kumahq/kuma#17831)
+- **Unix-socket readiness** removed (kumahq/kuma#18637): a kuma-dp older than 2.14 advertising `feature-readiness-unix-socket` never reports ready against a 3.0 CP
 - **`kuma.io/gateway`** moved from Pod annotation to Dataplane **label**, and the value is now a boolean: only `"true"` marks a delegated gateway (`mesh_proto.IsDelegatedGateway`). The 2.x annotation value `enabled` carried over as a label silently stops marking the proxy
 - **`k8s.kuma.io/service-account`** is control-plane-owned in 3.0: the admission webhook rejects a user-applied resource carrying it (unless the caller is the CP or in `runtime.kubernetes.allowedUsers`) and xDS auth refuses a proxy whose label does not match its Pod's ServiceAccount. Preflight flags it on Universal Dataplanes (where it has no source at all); the GitOps-on-Kubernetes case is a manual check, since a CP-created Dataplane legitimately carries it
 - **`kuma.io/tags` Pod annotation** → no reader in 3.0 (`pkg/plugins/runtime/k8s/metadata/annotations.go`); it is ignored rather than warned about. Manual check
