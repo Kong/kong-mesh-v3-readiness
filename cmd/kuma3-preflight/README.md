@@ -118,9 +118,16 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   RequestMirror) of a kind other than MeshService/MeshExternalService/MeshMultiZoneService;
   MeshPassthrough non-wildcard `Domain` matches without a `port`.
 - **Dataplanes** — `reachableServices`, builtin `networking.gateway` section, Universal
-  `spec.probes`, and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
+  `spec.probes`, Kubernetes pods with virtual probes enabled (`spec.probes` set by the pod converter),
+  inbounds that set their protocol only through the `kuma.io/protocol` tag or use one 3.0 rejects
+  (Kafka), and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible
-  (`kumaCpCompatible: false`), read from `/dataplanes+insights`.
+  (`kumaCpCompatible: false`), or that still advertise Unix-socket readiness
+  (`feature-readiness-unix-socket`, kuma-dp older than 2.14), read from `/dataplanes+insights`.
+- **Legacy CoreDNS** — transparent-proxy dataplanes whose advertised features
+  (`/dataplanes+insights` `metadata.features`) omit `feature-embedded-dns`, or that report a
+  `coredns` dependency: they still run the bundled CoreDNS, which loses mesh DNS under a 3.0
+  CP. Fix before upgrading with `KUMA_DNS_PROXY_PORT=15053` on Universal kuma-dp (Kubernetes: `builtinDNS.experimentalProxy: true` on the CP), then restart the proxies.
 - **Control plane version** — flags a CP (or, on a **global**, any connected zone CP) not on
   the latest 2.14 patch, the only supported 3.0 upgrade source (older patch/minor → blocker).
   The latest patch is looked up from the `kumahq/kuma` GitHub releases at run time (Kong Mesh
@@ -153,6 +160,6 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   dumps and flags use of the legacy Envoy DNS filter.
 
 It also lists **manual checks** for the remaining 3.0 drops that aren't observable
-through the CP API (Gateway API/GAMMA migration, observability install command, CoreDNS,
+through the CP API (Gateway API/GAMMA migration, observability install command,
 old inspect-API clients, pod-vs-container resources, Workload adoption, HMAC256 signing-key
 rotation, `kuma.io/mesh` annotation→label).
