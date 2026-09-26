@@ -136,8 +136,9 @@ const ExampleCap = 10
 const policyRoleLabel = "kuma.io/policy-role"
 
 // Dataplane labels the checks read. envLabel/zoneLabel are stamped by the control
-// plane; gatewayLabel and serviceAccountLabel change meaning in 3.0 (see
-// checkDataplaneLabels), and listenerZoneIngressLabel marks a unified Zone Proxy.
+// plane; 3.0 removes gatewayLabel (checkGatewayMarking) and owns
+// serviceAccountLabel (checkDataplaneLabels); listenerZoneIngressLabel marks a
+// unified Zone Proxy.
 const (
 	envLabel                 = "kuma.io/env"
 	zoneLabel                = "kuma.io/zone"
@@ -598,16 +599,22 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 			From []struct {
 				Default backendConf `json:"default"`
 			} `json:"from"`
+			Rules []struct {
+				Default backendConf `json:"default"`
+			} `json:"rules"`
 		}
 		if json.Unmarshal(spec, &s) != nil {
 			return
 		}
-		confs := make([]backendConf, 0, len(s.To)+len(s.From))
+		confs := make([]backendConf, 0, len(s.To)+len(s.From)+len(s.Rules))
 		for _, t := range s.To {
 			confs = append(confs, t.Default)
 		}
 		for _, f := range s.From {
 			confs = append(confs, f.Default)
+		}
+		for _, r := range s.Rules {
+			confs = append(confs, r.Default)
 		}
 		if hasOtelEndpoint(confs...) {
 			a.addOtelEndpoint(it.Type, ref)
@@ -800,25 +807,19 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 				"`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.", docMeshMetric, qualified(it))
 		}
 		a.checkDataplaneLabels(it, onK8s)
+		var gw *gatewaySection
+		if spec.Networking != nil {
+			gw = spec.Networking.Gateway
+		}
+		a.checkGatewayMarking(it, gw, onK8s)
 		a.checkDataplaneNetworking(it, spec, onK8s)
 	}
 	return nil
 }
 
-// checkDataplaneLabels flags the two Dataplane labels whose meaning changes in
-// 3.0: the delegated-gateway marker (only "true" marks a gateway now) and the
-// Kubernetes ServiceAccount label, which 3.0 treats as control-plane-owned.
+// checkDataplaneLabels flags the Kubernetes ServiceAccount label, which 3.0
+// treats as control-plane-owned.
 func (a *auditor) checkDataplaneLabels(it resourceItem, onK8s bool) {
-	// 3.0 marks a delegated gateway with the kuma.io/gateway *label* and reads it
-	// as a boolean: only "true" is a gateway. Universal-only: on Kubernetes the
-	// label is recomputed from the Pod's kuma.io/gateway annotation on every
-	// reconcile (and deleted when the Pod is not a gateway), so a stray value
-	// there fixes itself — and "set it to true" would be actively wrong advice.
-	if v, ok := it.Labels[gatewayLabel]; !onK8s && ok && v != "true" && v != "false" {
-		a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane kuma.io/gateway label is not a boolean",
-			"3.0 marks a delegated gateway with the `kuma.io/gateway` label and accepts only `true`/`false`; any other value (e.g. the 2.x `enabled` annotation value) leaves the proxy silently unmarked as a gateway. Set the label to `true` (current: "+v+").",
-			docDelegatedGateway, qualified(it))
-	}
 	// k8s.kuma.io/service-account is computed by the control plane from the Pod and
 	// feeds the proxy's identity. In 3.0 the admission webhook rejects a
 	// user-applied resource carrying it, and xDS auth refuses a proxy whose label
@@ -830,6 +831,33 @@ func (a *auditor) checkDataplaneLabels(it resourceItem, onK8s bool) {
 		a.rep.addDoc(blocker, "Dataplane identity", "Universal Dataplane carries the k8s.kuma.io/service-account label",
 			"`k8s.kuma.io/service-account` is a control-plane-computed Kubernetes identity label; on Universal it has no source and 3.0 rejects user-applied resources that carry it. Remove the label from this Dataplane before upgrading.",
 			docMeshIdentity, qualified(it))
+	}
+}
+
+// gatewayMarkingEffects lists what else 3.0 drops with the kuma.io/gateway marking.
+const gatewayMarkingEffects = " 3.0 also stops reporting `gateway` as the MeshMetric `kuma.proxy_role` (a former gateway reports `sidecar`) and ignores the `?gateway=` filter on `/dataplanes/_overview`; update dashboards and scripts that rely on either."
+
+// checkGatewayMarking flags gateways relying on the kuma.io/gateway marking (Pod
+// annotation, Dataplane label, networking.gateway), all removed in 3.0: a marked
+// proxy becomes an ordinary workload whose inbound traffic goes through Envoy,
+// so MeshTrafficPermission rejects clients outside the mesh. A stray Pod label on
+// Kubernetes is not flagged: 3.0 no longer copies reserved Pod labels.
+func (a *auditor) checkGatewayMarking(it resourceItem, g *gatewaySection, onK8s bool) {
+	switch _, labeled := it.Labels[gatewayLabel]; {
+	case g != nil && strings.EqualFold(g.Type, "BUILTIN"):
+		if !onK8s {
+			a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane is a builtin gateway",
+				"`networking.gateway.type: BUILTIN` is removed in 3.0 along with the rest of Kuma's own gateway support; migrate this proxy to a delegated gateway (Kong or another third-party) before upgrading.",
+				docDelegatedGateway, qualified(it))
+		}
+	case onK8s && g != nil:
+		a.rep.addDoc(blocker, "Gateway in Dataplane", "Kubernetes gateway relies on the kuma.io/gateway annotation",
+			"3.0 ignores the `kuma.io/gateway` Pod annotation: the Pod is injected as an ordinary workload and its inbound traffic is redirected through Envoy, so MeshTrafficPermission rejects clients outside the mesh instead of letting them reach the gateway. Replace the annotation with `traffic.kuma.io/exclude-inbound-ports` listing every port the gateway listens on (there is no all-ports value) and restart the Pods; annotate the fronting Service with `kuma.io/ignore: \"true\"` so it does not become a MeshService with no endpoints."+gatewayMarkingEffects,
+			docUpgrade, qualified(it))
+	case !onK8s && (g != nil || labeled):
+		a.rep.addDoc(blocker, "Gateway in Dataplane", "Universal Dataplane uses the removed kuma.io/gateway marking",
+			"3.0 removes `networking.gateway` and the `kuma.io/gateway` label: it deletes the label the next time the Dataplane is written, and a gateway marked either way becomes an ordinary proxy. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own."+gatewayMarkingEffects,
+			docUpgrade, qualified(it))
 	}
 }
 
@@ -851,23 +879,6 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		}
 	}
 	if !onK8s {
-		// 3.0 reserves networking.gateway and marks a delegated gateway with the
-		// kuma.io/gateway label instead. A 2.x Universal gateway carries the marker
-		// only in the spec (2.x never computes the label), so on 3.0 it silently
-		// becomes a proxy with no inbounds and no gateway marking, selected by no
-		// policy. Builtin gateways have no replacement at all.
-		if g := net.Gateway; g != nil {
-			switch {
-			case strings.EqualFold(g.Type, "BUILTIN"):
-				a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane is a builtin gateway",
-					"`networking.gateway.type: BUILTIN` is removed in 3.0 along with the rest of Kuma's own gateway support; migrate this proxy to a delegated gateway (Kong or another third-party) before upgrading.",
-					docDelegatedGateway, qualified(it))
-			case it.Labels[gatewayLabel] != "true":
-				a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway",
-					"3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy still carries the marker in its spec and does not carry the label, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Set the `kuma.io/gateway` label to `\"true\"` before upgrading.",
-					docDelegatedGateway, qualified(it))
-			}
-		}
 		if net.AdvertisedAddress != "" {
 			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.advertisedAddress",
 				"`networking.advertisedAddress` is removed in 3.0 (the proto field is reserved); drop it and advertise the address through the zone proxy configuration instead.",
@@ -1877,8 +1888,8 @@ type ruleEntry struct {
 	TargetRef targetRef `json:"targetRef"`
 }
 
-// gatewaySection is the Dataplane's 2.x networking.gateway block: the field 3.0
-// reserves in favor of the kuma.io/gateway label. Type defaults to DELEGATED.
+// gatewaySection is the Dataplane's 2.x networking.gateway block, which 3.0
+// removes with the rest of the kuma.io/gateway marking. Type defaults to DELEGATED.
 type gatewaySection struct {
 	Type string `json:"type"`
 }
@@ -1989,21 +2000,36 @@ func hasOtelEndpoint(confs ...backendConf) bool {
 // --inspect-dataplanes deep check, so none is repeated here.
 var manualChecks = []ManualCheck{
 	{
-		Title: "Old inspect APIs removed (switch to the new inspect API)",
-		Detail: "Kuma 3.0 removes the old dataplane rules-inspection endpoint (`_rules`) and " +
-			"keeps only the redesigned, KRI-based inspect API. The dropped endpoint returned " +
-			"every policy's rules for a proxy in one nested blob (fromRules/toRules/inboundRules/" +
-			"toResourceRules), and it goes away together with `kuma.io/service` routing support. " +
-			"The new API splits that into per-scope endpoints that reference resources by KRI, " +
-			"listed below. The control-plane API cannot tell you which clients still call the old " +
-			"endpoint, whether that's kumactl, the GUI, dashboards, scripts, or monitoring, so you " +
-			"have to find and migrate those consumers yourself; a 2.x kumactl or GUI pointed at a " +
-			"3.0 CP gets a 404. Upgrade kumactl and the GUI to their 3.0 builds, which already use " +
-			"the new endpoints.",
-		Command: `# Removed in 3.0
-GET /meshes/{mesh}/dataplanes/{name}/_rules
+		Title: "Migrate clients of removed inspect and overview endpoints",
+		Detail: "Kuma 3.0 removes several legacy REST endpoints, which then answer 404: the " +
+			"dataplane `rules` inspect endpoint, the per-policy `{policy}/{name}/dataplanes` " +
+			"inspect paths, the MeshService `_resources/dataplanes` path, the `dataplanes+insights` " +
+			"and `zones+insights` overview aliases, the ZoneIngress/ZoneEgress overview and Envoy " +
+			"admin endpoints, and `service-insights`, which the control plane stops computing. " +
+			"The `_rules` endpoint stays but no longer returns `toRules`/`fromRules`, and the " +
+			"`?gateway=` overview filter is ignored. The control-plane API cannot tell you which " +
+			"clients still call these paths, whether that's kumactl, the GUI, dashboards, scripts, " +
+			"or monitoring, so find and migrate those consumers yourself using the mapping below, " +
+			"and upgrade kumactl and the GUI together with the control plane.",
+		Command: `# Removed in 3.0 (404)                                   -> replacement
+GET /meshes/{mesh}/dataplanes/{name}/rules                  -> /meshes/{mesh}/dataplanes/{name}/_policies
+GET /meshes/{mesh}/{policyType}/{name}/dataplanes           -> /meshes/{mesh}/{policyType}/{name}/_resources/dataplanes
+GET /meshes/{mesh}/meshservices/{name}/_resources/dataplanes -> /meshes/{mesh}/meshservices/{name}/_dataplanes
+GET /meshes/{mesh}/dataplanes+insights[/{name}]             -> /meshes/{mesh}/dataplanes/_overview (/{name}/_overview)
+GET /zones+insights[/{name}]                                -> /zones/_overview (/zones/{name}/_overview)
+GET /meshes/{mesh}/service-insights[/{name}]                -> MeshService / MeshExternalService status
+GET /zoneingresses+insights, /zoneegressoverviews           -> none (ZoneIngress/ZoneEgress are removed)
+GET /zoneingresses/{name}/{xds,stats,clusters}              -> none
+GET /zoneegresses/{name}/{xds,stats,clusters}               -> none
 
-# Replacement endpoints (new KRI-based inspect API)
+# Changed
+GET /meshes/{mesh}/dataplanes/{name}/_rules                 -> no toRules/fromRules; read toResourceRules/inboundRules
+GET /meshes/{mesh}/dataplanes/_overview?gateway=            -> filter ignored
+
+# Deprecated, still served
+GET /meshes/{mesh}/dataplanes/{name}/policies               -> /meshes/{mesh}/dataplanes/{name}/_policies
+
+# KRI-based inspect API
 GET /meshes/{mesh}/dataplanes/{name}/_layout
 GET /meshes/{mesh}/dataplanes/{name}/_policies
 GET /meshes/{mesh}/dataplanes/{name}/_inbounds/{inbound_kri}/_policies

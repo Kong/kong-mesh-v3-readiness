@@ -127,7 +127,7 @@ All gateway functionality delegated to Kong / third-party (delegated gateway). D
 - Builtin gateway type
 - Gateway API + GAMMA built-in support
 - `proxyTypes` in policy targetRef (see targetRef section)
-- `networking.gateway` section in Dataplane
+- `networking.gateway` section in Dataplane and the `kuma.io/gateway` marking (see below)
 
 ## Observability
 
@@ -143,7 +143,7 @@ All gateway functionality delegated to Kong / third-party (delegated gateway). D
 - **Delta xDS** → the only option (SOTW path removed, not just defaulted on)
 - **CoreDNS + Envoy DNS filter** → dropped (DNS handling reworked)
 - **eBPF** transparent proxy → dropped
-- **Old inspect APIs** → dropped (new inspect API only)
+- **Legacy inspect and overview endpoints** → removed (`dataplanes/{name}/rules`, `{policy}/{name}/dataplanes`, `meshservices/{name}/_resources/dataplanes`, `dataplanes+insights`, `zones+insights`, zone proxy overviews and Envoy admin, `service-insights`); `_rules` stays without `toRules`/`fromRules`, `dataplanes/{name}/policies` is deprecated but still served. Manual check with the replacement mapping
 - **Pod resources** instead of container resources
 - **`KUMA_RUNTIME_KUBERNETES_INJECTOR_BUILTIN_DNS_LOGGING`** (embedded DNS logging) → dropped
 - Routing MeshExternalService through a specific zone → dropped
@@ -159,7 +159,7 @@ All gateway functionality delegated to Kong / third-party (delegated gateway). D
 - **Dataplane `spec.probes`** and virtual probes → removed (kumahq/kuma#17901). On Universal drop the field; on Kubernetes `spec.probes` marks a pod with virtual probes enabled; when Application Probe Proxy is off for it (`kuma.io/application-probe-proxy-port: "0"`) its rewritten kubelet probes fail on 3.0 until re-injected, so move it to Application Probe Proxy first. The Dataplane alone cannot tell the two apart, so every such pod is flagged
 - **`kuma.io/protocol` inbound tag** no longer sets the protocol (kumahq/kuma#17861): a Universal inbound without `networking.inbound[].protocol` is served as plain TCP and loses its L7 filters. Inbound `protocol: kafka` is rejected (kumahq/kuma#17831)
 - **Unix-socket readiness** removed (kumahq/kuma#18637): a kuma-dp older than 2.14 advertising `feature-readiness-unix-socket` never reports ready against a 3.0 CP
-- **`kuma.io/gateway`** moved from Pod annotation to Dataplane **label**, and the value is now a boolean: only `"true"` marks a delegated gateway (`mesh_proto.IsDelegatedGateway`). The 2.x annotation value `enabled` carried over as a label silently stops marking the proxy
+- **`kuma.io/gateway` removed** (kumahq/kuma#18662): the Pod annotation, the Dataplane label and `networking.gateway` are all gone. A marked gateway becomes an ordinary workload whose inbound traffic is redirected through Envoy, so MeshTrafficPermission rejects clients outside the mesh. A leftover `kuma.io/gateway` Dataplane label is not rejected but stripped: 3.0 deletes it the next time the Dataplane is written (`removedLabels` in `pkg/core/resources/labels/compute.go`), so a `targetRef` or MeshLoadBalancingStrategy affinity key selecting on it stops matching. Replace the marking with `traffic.kuma.io/exclude-inbound-ports` listing every listen port (k8s; plus `kuma.io/ignore: "true"` on the fronting Service) or `kuma-dp --exclude-inbound-ports` (Universal). The MeshMetric `gateway` proxy role and the `?gateway=` overview filter go with it. Preflight flags k8s Dataplanes with `networking.gateway` and Universal Dataplanes with `networking.gateway` or the label
 - **`k8s.kuma.io/service-account`** is control-plane-owned in 3.0: the admission webhook rejects a user-applied resource carrying it (unless the caller is the CP or in `runtime.kubernetes.allowedUsers`) and xDS auth refuses a proxy whose label does not match its Pod's ServiceAccount. Preflight flags it on Universal Dataplanes (where it has no source at all); the GitOps-on-Kubernetes case is a manual check, since a CP-created Dataplane legitimately carries it
 - **`kuma.io/tags` Pod annotation** → no reader in 3.0 (`pkg/plugins/runtime/k8s/metadata/annotations.go`); it is ignored rather than warned about. Manual check
 - **Legacy HMAC256 signing keys** (pre-1.4.x) → asymmetric RSA/ECDSA (`pkg/core/tokens/signing_key_accessor.go`)
