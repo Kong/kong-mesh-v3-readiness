@@ -160,6 +160,7 @@ var categoryToGroup = map[string]string{
 	"MeshService selector":      groupOther,
 	"MeshService identities":    groupOther,
 	"Service ports":             groupOther,
+	"Reserved labels":           groupOther,
 	"MeshExternalService TLS":   groupOther,
 	"MeshIdentity coverage":     groupOther,
 	"Unparseable resources":     groupOther,

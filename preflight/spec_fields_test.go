@@ -91,6 +91,24 @@ func TestRouteBackendRefs(t *testing.T) {
 			}
 		}
 	})
+	t.Run("one route counts once", func(t *testing.T) {
+		spec := route(map[string]any{"backendRefs": []any{
+			map[string]any{"kind": "MeshService", "name": "a", "weight": 50},
+			map[string]any{"kind": "MeshService", "name": "b", "weight": 50},
+			subset, subset,
+		}})
+		spec["to"].([]any)[0].(map[string]any)["targetRef"] = map[string]any{"kind": "MeshService", "name": "backend"}
+		m := auditResponses(t, map[string]string{"/meshhttproutes": policyBody(t, "MeshHTTPRoute", spec, nil)})
+		for _, w := range []struct{ category, title string }{
+			{"Reference by name", "MeshHTTPRoute references a resource by name"},
+			{"Route backendRef", "MeshHTTPRoute backendRef kind=MeshServiceSubset"},
+		} {
+			f, ok := findFinding(m, "blocker", w.category, w.title)
+			if !ok || f.Count != 1 {
+				t.Errorf("%q: found=%v count=%d, want count 1\nfindings: %+v", w.title, ok, f.Count, m.Findings)
+			}
+		}
+	})
 }
 
 func TestMeshPassthroughDomainPort(t *testing.T) {
@@ -152,6 +170,18 @@ func TestServiceResourceSpecs(t *testing.T) {
 			"ServiceTag identity", "/meshservices", "MeshService", "MeshService identities", "MeshService declares a ServiceTag identity",
 			map[string]any{"identities": []any{map[string]any{"type": "ServiceTag", "value": "redis"}}},
 			nil, true,
+		},
+		{
+			"k8s-generated ServiceTag identity", "/meshservices", "MeshService", "MeshService identities", "MeshService declares a ServiceTag identity",
+			map[string]any{"identities": []any{map[string]any{"type": "ServiceTag", "value": "redis"}}},
+			map[string]any{"kuma.io/managed-by": "k8s-controller"},
+			false,
+		},
+		{
+			"universal-generated ServiceTag identity", "/meshservices", "MeshService", "MeshService identities", "MeshService declares a ServiceTag identity",
+			map[string]any{"identities": []any{map[string]any{"type": "ServiceTag", "value": "redis"}}},
+			map[string]any{"kuma.io/managed-by": "meshservice-generator"},
+			false,
 		},
 		{
 			"kafka appProtocol", "/meshservices", "MeshService", "Service ports", "MeshService port uses an appProtocol 3.0 rejects",
