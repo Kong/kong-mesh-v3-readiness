@@ -496,9 +496,28 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 					a.rep.addDoc(blocker, "Top-level targetRef kind", it.Type+" top-level targetRef.kind="+k,
 						"Top-level targetRef must be Mesh or Dataplane; use labels.", docPolicies, ref)
 				}
-				if len(spec.TargetRef.ProxyTypes) > 0 {
-					a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
-						"`proxyTypes` is removed (gateway support dropped).", docDelegatedGateway, ref)
+				if pt := spec.TargetRef.ProxyTypes; len(pt) > 0 {
+					gateway, sidecar := slices.Contains(pt, "Gateway"), slices.Contains(pt, "Sidecar")
+					switch {
+					case gateway && !sidecar:
+						detail := "3.0 drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. " +
+							"Do not just remove the field. Delete the policy (which also clears its other findings), or retarget it to the gateway with `kind: Dataplane` and `labels`."
+						if it.Type == "MeshTimeout" {
+							detail += " The 2.x default `mesh-gateways-timeout-all-<mesh>` sets `streamIdleTimeout: 5s`, which left in place fails every sidecar HTTP response slower than 5s with 504. " +
+								"Defaults are generated once per Mesh, so a deleted one stays deleted unless the Mesh is recreated; if yours is (e.g. GitOps replace), add `MeshTimeout` to its `skipCreatingInitialPolicies`."
+						}
+						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to gateways with targetRef.proxyTypes",
+							detail, docDelegatedGateway, ref)
+					case sidecar && !gateway:
+						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to sidecars with targetRef.proxyTypes",
+							"3.0 drops `proxyTypes`, so this policy will also apply to gateways. "+
+								"Remove the field if that is intended, otherwise retarget it with `kind: Dataplane` and `labels`.",
+							docDelegatedGateway, ref)
+					default:
+						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
+							"3.0 drops `proxyTypes`. It already covers every proxy here, so remove the field.",
+							docDelegatedGateway, ref)
+					}
 				}
 			}
 			// A resource is flagged once however many of its refs name a resource.

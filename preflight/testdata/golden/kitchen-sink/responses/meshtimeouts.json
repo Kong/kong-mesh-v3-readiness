@@ -1,5 +1,5 @@
 {
-  "total": 4,
+  "total": 7,
   "items": [
     {
       "type": "MeshTimeout",
@@ -36,6 +36,37 @@
       "spec": {
         "targetRef": { "kind": "Mesh" },
         "to": [ { "targetRef": { "kind": "MeshSubset", "tags": { "kuma.io/service": "backend" } }, "default": { "idleTimeout": "1h" } } ]
+      }
+    },
+    {
+      "type": "MeshTimeout",
+      "mesh": "default",
+      "name": "mesh-gateways-timeout-all-default",
+      "labels": { "kuma.io/policy-role": "system" },
+      "spec": {
+        "targetRef": { "kind": "Mesh", "proxyTypes": [ "Gateway" ] },
+        "from": [ { "targetRef": { "kind": "Mesh" }, "default": { "idleTimeout": "5m", "http": { "streamIdleTimeout": "5s", "requestHeadersTimeout": "500ms" } } } ],
+        "to": [ { "targetRef": { "kind": "Mesh" }, "default": { "idleTimeout": "1h", "http": { "streamIdleTimeout": "5s" } } } ]
+      }
+    },
+    {
+      "type": "MeshTimeout",
+      "mesh": "default",
+      "name": "mesh-timeout-all-default",
+      "labels": { "kuma.io/policy-role": "system" },
+      "spec": {
+        "targetRef": { "kind": "Mesh", "proxyTypes": [ "Sidecar" ] },
+        "from": [ { "targetRef": { "kind": "Mesh" }, "default": { "connectionTimeout": "10s", "idleTimeout": "2h", "http": { "requestTimeout": "0s", "streamIdleTimeout": "1h", "maxStreamDuration": "0s" } } } ],
+        "to": [ { "targetRef": { "kind": "Mesh" }, "default": { "idleTimeout": "1h" } } ]
+      }
+    },
+    {
+      "type": "MeshTimeout",
+      "mesh": "default",
+      "name": "mt-all-proxy-types",
+      "spec": {
+        "targetRef": { "kind": "Mesh", "proxyTypes": [ "Sidecar", "Gateway" ] },
+        "to": [ { "targetRef": { "kind": "Mesh" }, "default": { "idleTimeout": "1h" } } ]
       }
     }
   ],
