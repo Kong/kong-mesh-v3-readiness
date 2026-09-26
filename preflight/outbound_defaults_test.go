@@ -294,20 +294,20 @@ func TestPassthroughDefaultSkipsUnaffectedMeshes(t *testing.T) {
 }
 
 // A control plane already set to true denies this traffic today, so the upgrade
-// changes nothing for a proxy without reachableBackends: it drops to info with a
-// recommendation. The mesh missing a MeshPassthrough stays a blocker in the
-// present tense, and the note about the coming change goes away.
+// changes nothing for a proxy without reachableBackends or MeshPassthrough: both
+// drop to info in the present tense, and the note about the coming change goes
+// away.
 func TestRestrictedControlPlaneStillVerifiesReachableBackends(t *testing.T) {
 	m := auditResponses(t, map[string]string{
 		"/meshes":              listBody(t, meshItem(nil)),
 		"/dataplanes+insights": listBody(t, overview("dp-1", universalLabels, tproxySpec(nil), nil)),
 	})
-	if m.Status != StatusBlockers {
-		t.Fatalf("status = %q, want %q\nfindings: %+v", m.Status, StatusBlockers, m.Findings)
+	if m.Status != StatusClean {
+		t.Fatalf("status = %q, want %q\nfindings: %+v", m.Status, StatusClean, m.Findings)
 	}
 	for _, tc := range []struct{ sev, title string }{
 		{SeverityInfo, titleUniversalDeny},
-		{"blocker", titleNoMeshPassthrough},
+		{SeverityInfo, titleNoMeshPassthrough},
 	} {
 		f, ok := findFinding(m, tc.sev, categoryOutboundDefaults, tc.title)
 		if !ok {

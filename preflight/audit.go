@@ -1032,17 +1032,18 @@ func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
 	}
 	const fix = "Add a MeshPassthrough selecting every proxy that needs external egress, or model those destinations as MeshExternalServices."
 	for _, mode := range []outboundMode{outboundUnset, outboundAllowed, outboundRestricted} {
-		sev := blocker
+		sev := info
 		var impact string
 		switch mode {
 		case outboundUnset:
+			sev = blocker
 			impact = "In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. " +
 				fix + " " + restrictOutboundRemediation
 		case outboundAllowed:
-			sev = info
 			impact = "`defaults.restrictOutbound` is explicitly `false` here, which 3.0 honors, so these proxies keep their passthrough cluster after the upgrade as long as the 3.0 control plane keeps that setting. " +
 				"Selecting them with a MeshPassthrough is required before switching to `true`. " + fix
 		case outboundRestricted:
+			// The CP already drops this egress, so the upgrade changes nothing.
 			impact = "`defaults.restrictOutbound` is already `true` here, so a proxy matched by no MeshPassthrough has no passthrough cluster today and its external egress is already dropped — the upgrade will not change that. " + fix
 		}
 		a.rep.addSummary(sev, "Outbound defaults", "Transparent proxies selected by no MeshPassthrough",
