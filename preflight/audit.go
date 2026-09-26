@@ -796,7 +796,7 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		for _, ref := range rb.Refs {
 			if len(ref.Labels) == 0 {
 				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane reachableBackends ref selects by name",
-					"3.0 removes `name`/`namespace` from `reachableBackends.refs[]` (and the `kuma.io/reachable-backends` annotation) and requires `labels`. Existing refs resolve to nothing, so the proxy gets no outbounds even with `KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND=true`, and on Kubernetes the pod converter rejects the annotation. Rewrite each ref with labels: `name` becomes `kuma.io/display-name`, `namespace` becomes `k8s.kuma.io/namespace`.",
+					"3.0 removes `name`/`namespace` from `reachableBackends.refs[]` (and the `kuma.io/reachable-backends` annotation) and requires `labels`. Existing refs resolve to nothing, so the proxy gets no outbounds even with `KUMA_DEFAULTS_ALLOW_ALL_OUTBOUND=true`, and on Kubernetes the pod converter rejects the annotation. Rewrite each ref with labels: `name` becomes `kuma.io/display-name`, `namespace` becomes `k8s.kuma.io/namespace`. `kuma.io/display-name` alone selects more than before: a `MeshService` name ref resolved only in the proxy's own zone and namespace (when `namespace` was omitted), so also add `k8s.kuma.io/namespace` (the proxy's namespace if it was omitted) and, in multi-zone, `kuma.io/zone` (the proxy's zone) to keep the same scope.",
 					docReachableBackends, qualified(it))
 				break
 			}

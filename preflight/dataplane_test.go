@@ -1,6 +1,9 @@
 package preflight
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // auditDataplane audits a mock control plane whose only Dataplane is the given
 // one (no meshes, every other collection empty), so dataplane findings stand
@@ -157,6 +160,13 @@ func TestReachableBackendsNameRefs(t *testing.T) {
 			}
 			if got && f.Count != 1 {
 				t.Errorf("count = %d, want 1 per Dataplane", f.Count)
+			}
+			// display-name alone widens a name ref's scope; the remediation
+			// must keep it pinned to the proxy's namespace and zone.
+			for _, want := range []string{"`k8s.kuma.io/namespace`", "`kuma.io/zone`"} {
+				if got && !strings.Contains(f.Detail, want) {
+					t.Errorf("detail missing %s: %q", want, f.Detail)
+				}
 			}
 		})
 	}
