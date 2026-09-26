@@ -67,6 +67,9 @@ func TestDataplaneNetworkingChecksSkipKubernetes(t *testing.T) {
 			"advertisedAddress": "10.0.0.9",
 			"inbound":           []any{map[string]any{"port": 8080, "tags": map[string]any{"kuma.io/service": "backend"}}},
 			"outbound":          []any{map[string]any{"port": 10001, "tags": map[string]any{"kuma.io/service": "frontend"}}},
+			// Every k8s sidecar is transparent; this keeps the reachableBackends
+			// default check (covered elsewhere) out of this test.
+			"transparentProxying": map[string]any{"reachableBackends": map[string]any{}},
 		},
 	})
 	for _, f := range m.Findings {

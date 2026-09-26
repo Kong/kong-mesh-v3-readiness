@@ -910,17 +910,15 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		}
 	}
 	tp := net.TransparentProxying
+	if missingReachableBackends(it, spec, onK8s) {
+		a.noReachableBackends = append(a.noReachableBackends, it)
+	}
 	if tp == nil {
 		return
 	}
 	if len(tp.ReachableServices) > 0 {
 		a.rep.addDoc(blocker, "reachableServices", "Dataplane uses reachableServices",
 			"Replace `reachableServices` with `reachableBackends` (MeshService-based).", docReachableBackends, qualified(it))
-	}
-	// An explicit `reachableBackends: {}` already means "none" on 2.x, so only an
-	// absent one changes behavior (checkOutboundDefaults).
-	if tp.ReachableBackends == nil {
-		a.noReachableBackends = append(a.noReachableBackends, it)
 	}
 	// Only the named entries matter: a list that also carries `*` already grants
 	// direct access to everything, so 3.0 dropping per-service matching changes
@@ -930,6 +928,39 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 			"3.0 honors only the `*` entry in `networking.transparentProxying.directAccessServices` — per-service matching relied on a removed tag and is silently ignored, so this proxy loses direct access entirely. Replace the named services with `*`, or drop direct access for this proxy.",
 			docTransparentProxy, qualified(it))
 	}
+}
+
+// missingReachableBackends reports whether 3.0's `defaults.restrictOutbound`
+// leaves this transparent proxy with no outbounds (checkOutboundDefaults).
+func missingReachableBackends(it resourceItem, spec dataplaneSpec, onK8s bool) bool {
+	net := spec.Networking
+	if net == nil {
+		return false
+	}
+	// Every injected k8s sidecar runs a transparent proxy (the injector refuses to
+	// disable it), and when its config comes from the ConfigMap the pod converter
+	// leaves the transparentProxying section nil, while 3.0 reads tproxy from
+	// kuma-dp metadata. Builtin gateways and zone proxies are not injected
+	// sidecars (a builtin gateway is flagged as removed on its own).
+	builtinGW := net.Gateway != nil && strings.EqualFold(net.Gateway.Type, "BUILTIN")
+	k8sSidecar := onK8s && !builtinGW && it.Labels[listenerZoneIngressLabel] == ""
+	tp := net.TransparentProxying
+	if tp == nil && !k8sSidecar {
+		return false
+	}
+	// An explicit `reachableBackends: {}` already means "none" on 2.x, so only an
+	// absent one changes behavior.
+	if tp != nil && tp.ReachableBackends != nil {
+		return false
+	}
+	// GetReachableBackends returns the proxy's own backendRef outbounds before it
+	// looks at reachableBackends, so those proxies keep their outbounds.
+	for _, out := range net.Outbound {
+		if hasJSON(out.BackendRef) {
+			return false
+		}
+	}
+	return true
 }
 
 // outboundRestricted reports whether the CP governing this Dataplane already
@@ -954,7 +985,7 @@ func (a *auditor) checkOutboundDefaults(context.Context) error {
 			continue
 		}
 		a.rep.addDoc(blocker, "Dataplane networking", "Transparent-proxy Dataplane has no reachableBackends",
-			"3.0 defaults `defaults.restrictOutbound` to `true`, so a transparent proxy without `reachableBackends` gets no outbounds and cannot reach any service. List the destinations it calls in `networking.transparentProxying.reachableBackends` (the `kuma.io/reachable-backends` annotation on Kubernetes), or set `KUMA_DEFAULTS_RESTRICT_OUTBOUND=false` explicitly on the control plane to keep allow-all.",
+			"3.0 defaults `defaults.restrictOutbound` to `true`, so a transparent proxy without `reachableBackends` gets no outbounds and cannot reach any service. List the destinations it calls in `networking.transparentProxying.reachableBackends` (the `kuma.io/reachable-backends` annotation on Kubernetes).",
 			docReachableBackends, qualified(it))
 	}
 	return nil

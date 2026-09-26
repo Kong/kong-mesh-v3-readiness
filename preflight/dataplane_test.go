@@ -139,8 +139,9 @@ func TestCleanDataplaneHasNoIssues(t *testing.T) {
 
 // TestReachableBackendsDefault covers the 3.0 restrictOutbound=true default:
 // only a transparent proxy whose reachableBackends is absent loses its outbounds.
-// An explicit empty object already means "none" on 2.x, and a proxy without a
-// transparentProxying section never goes through reachable-backend filtering.
+// An explicit empty object already means "none" on 2.x, and a Universal proxy
+// without a transparentProxying section never goes through reachable-backend
+// filtering. Every k8s sidecar is transparent, section or not.
 func TestReachableBackendsDefault(t *testing.T) {
 	const title = "Transparent-proxy Dataplane has no reachableBackends"
 	tp := func(fields map[string]any) map[string]any {
@@ -152,23 +153,38 @@ func TestReachableBackendsDefault(t *testing.T) {
 		f["reachableBackends"] = rb
 		return f
 	}
+	inboundOnly := map[string]any{"inbound": []any{map[string]any{"port": 8080}}}
+	backendRefOutbound := func(n map[string]any) map[string]any {
+		n = maps.Clone(n)
+		n["outbound"] = []any{map[string]any{"port": 10001, "backendRef": map[string]any{"kind": "MeshService", "name": "backend", "port": 80}}}
+		return n
+	}
 	cases := []struct {
 		name       string
 		env        string
+		labels     map[string]any
 		networking map[string]any
 		want       bool
 	}{
-		{"universal transparent proxy without reachableBackends", "universal", tp(redirect), true},
-		{"kubernetes transparent proxy without reachableBackends", "kubernetes", tp(redirect), true},
-		{"null reachableBackends counts as absent", "universal", tp(withBackends(nil)), true},
-		{"empty reachableBackends already restricts", "universal", tp(withBackends(map[string]any{})), false},
-		{"reachableBackends with refs", "kubernetes", tp(withBackends(map[string]any{"refs": []any{map[string]any{"kind": "MeshService", "labels": map[string]any{"kuma.io/display-name": "backend"}}}})), false},
-		{"no transparent proxy", "universal", map[string]any{"inbound": []any{map[string]any{"port": 8080}}}, false},
+		{"universal transparent proxy without reachableBackends", "universal", nil, tp(redirect), true},
+		{"kubernetes transparent proxy without reachableBackends", "kubernetes", nil, tp(redirect), true},
+		{"null reachableBackends counts as absent", "universal", nil, tp(withBackends(nil)), true},
+		{"empty reachableBackends already restricts", "universal", nil, tp(withBackends(map[string]any{})), false},
+		{"reachableBackends with refs", "kubernetes", nil, tp(withBackends(map[string]any{"refs": []any{map[string]any{"kind": "MeshService", "labels": map[string]any{"kuma.io/display-name": "backend"}}}})), false},
+		{"no transparent proxy", "universal", nil, inboundOnly, false},
+		// Tproxy config from the injector ConfigMap leaves the section nil on k8s.
+		{"kubernetes sidecar without transparentProxying section", "kubernetes", nil, inboundOnly, true},
+		{"kubernetes builtin gateway", "kubernetes", nil, map[string]any{"gateway": map[string]any{"type": "BUILTIN"}}, false},
+		{"kubernetes zone proxy", "kubernetes", map[string]any{"kuma.io/listener-zoneingress": "enabled"}, inboundOnly, false},
+		// Resolved backendRef outbounds win over reachableBackends in 3.0.
+		{"universal transparent proxy with backendRef outbounds", "universal", nil, backendRefOutbound(tp(redirect)), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			labels := map[string]any{"kuma.io/env": tc.env, "kuma.io/workload": "dp-1"}
+			maps.Copy(labels, tc.labels)
 			m := auditDataplane(t, map[string]any{
-				"labels":     map[string]any{"kuma.io/env": tc.env, "kuma.io/workload": "dp-1"},
+				"labels":     labels,
 				"networking": tc.networking,
 			})
 			if _, got := findFinding(m, "blocker", "Dataplane networking", title); got != tc.want {
