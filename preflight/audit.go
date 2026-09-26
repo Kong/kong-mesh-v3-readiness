@@ -192,6 +192,14 @@ type auditor struct {
 	// meshZones maps each mesh to the zones its Dataplanes were observed in, so
 	// checkMeshZoneAddresses can tell a zone-spanning mesh from a zone-local one.
 	meshZones map[string]map[string]bool
+
+	// defaults.restrictOutbound as reported by the audited zone/standalone CP
+	// (restrictOutboundCP) or by each zone behind a global. True means proxies
+	// already run with the 3.0 outbound defaults (checkOutboundDefaults).
+	restrictOutboundCP    bool
+	restrictOutboundZones map[string]bool
+	// noReachableBackends are transparent proxies with no reachableBackends.
+	noReachableBackends []resourceItem
 }
 
 // zoneInsights fetches /zones+insights once and caches the result (items, whether
@@ -254,7 +262,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkNewPolicies, a.checkDataplanes,
 		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
 		a.checkServiceResources, a.checkMeshTrust,
-		a.checkControlPlaneConfig, a.checkControlPlaneVersions,
+		a.checkControlPlaneConfig, a.checkOutboundDefaults, a.checkControlPlaneVersions,
 		a.checkDataplaneVersions, a.checkDataplaneEnvoyConfig,
 	} {
 		if err := ctx.Err(); err != nil {
@@ -902,6 +910,9 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		}
 	}
 	tp := net.TransparentProxying
+	if missingReachableBackends(it, spec, onK8s) {
+		a.noReachableBackends = append(a.noReachableBackends, it)
+	}
 	if tp == nil {
 		return
 	}
@@ -917,6 +928,67 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 			"3.0 honors only the `*` entry in `networking.transparentProxying.directAccessServices` — per-service matching relied on a removed tag and is silently ignored, so this proxy loses direct access entirely. Replace the named services with `*`, or drop direct access for this proxy.",
 			docTransparentProxy, qualified(it))
 	}
+}
+
+// missingReachableBackends reports whether 3.0's `defaults.restrictOutbound`
+// leaves this transparent proxy with no outbounds (checkOutboundDefaults).
+func missingReachableBackends(it resourceItem, spec dataplaneSpec, onK8s bool) bool {
+	net := spec.Networking
+	if net == nil {
+		return false
+	}
+	// Every injected k8s sidecar runs a transparent proxy (the injector refuses to
+	// disable it), and when its config comes from the ConfigMap the pod converter
+	// leaves the transparentProxying section nil, while 3.0 reads tproxy from
+	// kuma-dp metadata. Builtin gateways and zone proxies are not injected
+	// sidecars (a builtin gateway is flagged as removed on its own).
+	builtinGW := net.Gateway != nil && strings.EqualFold(net.Gateway.Type, "BUILTIN")
+	k8sSidecar := onK8s && !builtinGW && it.Labels[listenerZoneIngressLabel] == ""
+	tp := net.TransparentProxying
+	if tp == nil && !k8sSidecar {
+		return false
+	}
+	// An explicit `reachableBackends: {}` already means "none" on 2.x, so only an
+	// absent one changes behavior.
+	if tp != nil && tp.ReachableBackends != nil {
+		return false
+	}
+	// GetReachableBackends returns the proxy's own backendRef outbounds before it
+	// looks at reachableBackends, so those proxies keep their outbounds.
+	for _, out := range net.Outbound {
+		if hasJSON(out.BackendRef) {
+			return false
+		}
+	}
+	return true
+}
+
+// outboundRestricted reports whether the CP governing this Dataplane already
+// runs with `defaults.restrictOutbound: true`, i.e. the 3.0 outbound defaults.
+// A CP whose /config was unreadable counts as unrestricted (the 2.14 default).
+func (a *auditor) outboundRestricted(it resourceItem) bool {
+	if a.restrictOutboundCP {
+		return true
+	}
+	z := it.Labels[zoneLabel]
+	return z != "" && a.restrictOutboundZones[z]
+}
+
+// checkOutboundDefaults flags transparent proxies with no reachableBackends:
+// 3.0 defaults `defaults.restrictOutbound` to true, so they get no outbounds.
+// It runs after checkControlPlaneConfig so a CP that already sets the flag on
+// 2.14 is not flagged. /config cannot tell an explicit false from the 2.14
+// default, so every other proxy is flagged.
+func (a *auditor) checkOutboundDefaults(context.Context) error {
+	for _, it := range a.noReachableBackends {
+		if a.outboundRestricted(it) {
+			continue
+		}
+		a.rep.addDoc(blocker, "Dataplane networking", "Transparent-proxy Dataplane has no reachableBackends",
+			"3.0 defaults `defaults.restrictOutbound` to `true`, so a transparent proxy without `reachableBackends` gets no outbounds and cannot reach any service. List the destinations it calls in `networking.transparentProxying.reachableBackends` (the `kuma.io/reachable-backends` annotation on Kubernetes).",
+			docReachableBackends, qualified(it))
+	}
+	return nil
 }
 
 func (a *auditor) checkZoneProxies(ctx context.Context) error {
@@ -1234,6 +1306,12 @@ func (a *auditor) checkMeshTrust(ctx context.Context) error {
 type cpConfig struct {
 	Mode        string `json:"mode"`
 	Environment string `json:"environment"`
+	// Defaults.RestrictOutbound applies the 3.0 outbound defaults (no outbounds
+	// without reachableBackends, no passthrough without MeshPassthrough). 2.14
+	// defaults it to false and 3.0 to true; builds without the key read false.
+	Defaults struct {
+		RestrictOutbound bool `json:"restrictOutbound"`
+	} `json:"defaults"`
 	// Multizone carries the zone CP's own configured name — the only place a
 	// directly audited zone CP exposes it (Zone resources live on the global and
 	// are not synced down), so it is what checkZoneNames falls back to there.
@@ -1366,6 +1444,12 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	// too would double-count the same zone.
 	if zone == "" {
 		a.addZoneNameFinding(cfg.Multizone.Zone.Name, "multizone.zone.name="+cfg.Multizone.Zone.Name)
+		a.restrictOutboundCP = cfg.Defaults.RestrictOutbound
+	} else if cfg.Defaults.RestrictOutbound {
+		if a.restrictOutboundZones == nil {
+			a.restrictOutboundZones = map[string]bool{}
+		}
+		a.restrictOutboundZones[zone] = true
 	}
 
 	// Hard removals — the upgrade breaks while these are in use.
@@ -1897,7 +1981,12 @@ type dataplaneSpec struct {
 			BackendRef json.RawMessage `json:"backendRef"`
 		} `json:"outbound"`
 		TransparentProxying *struct {
-			ReachableServices    []string `json:"reachableServices"`
+			ReachableServices []string `json:"reachableServices"`
+			ReachableBackends *struct {
+				Refs []struct {
+					Labels map[string]string `json:"labels"`
+				} `json:"refs"`
+			} `json:"reachableBackends"`
 			DirectAccessServices []string `json:"directAccessServices"`
 		} `json:"transparentProxying"`
 	} `json:"networking"`
