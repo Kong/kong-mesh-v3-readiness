@@ -806,8 +806,9 @@ func (a *auditor) checkZoneProxies(ctx context.Context) error {
 		for _, it := range items {
 			// A ZoneIngress makes its zone a cross-zone destination, which is what
 			// MeshZoneAddress has to advertise in 3.0 (checkMeshZoneAddresses).
-			// 2.14 sets kuma.io/env only on Kubernetes ZoneIngresses, so anything
-			// else is Universal.
+			// A Universal ZoneIngress registered by kuma-dp carries no kuma.io/env
+			// (only one applied through the API gets `universal`), so anything not
+			// labeled `kubernetes` is Universal.
 			if wsPath == "zoneingresses" && it.Labels[envLabel] != "kubernetes" {
 				a.noteZoneProxy(zoneOf(it))
 			}
