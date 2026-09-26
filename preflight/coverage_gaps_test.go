@@ -109,94 +109,84 @@ func TestOutboundWithBackendRefIsClean(t *testing.T) {
 	}
 }
 
-// TestGatewayLabelValue checks the delegated-gateway marker: 3.0 reads
-// kuma.io/gateway as a boolean, so the 2.x annotation value carried over as a
-// label is a blocker while "true"/"false" are not. An empty label value is not a
-// boolean either, so it is flagged too.
-func TestGatewayLabelValue(t *testing.T) {
-	const title = "Dataplane kuma.io/gateway label is not a boolean"
+// TestGatewayLabelIsReserved checks the delegated-gateway label: 3.0 removes
+// kuma.io/gateway (kumahq/kuma#18662) and rejects it on write like any other
+// unregistered reserved label, whatever its value. On Kubernetes the Dataplane is
+// CP-written from the Pod, so a label there is not flagged.
+func TestGatewayLabelIsReserved(t *testing.T) {
+	const title = "Dataplane carries a reserved label 3.0 rejects"
 	for _, tc := range []struct {
-		value    string
-		wantFlag bool
+		env, value string
+		wantFlag   bool
 	}{
-		{"enabled", true},
-		{"", true},
-		{"true", false},
-		{"false", false},
+		{"universal", "true", true},
+		{"universal", "enabled", true},
+		{"universal", "", true},
+		{"kubernetes", "enabled", false},
 	} {
-		t.Run("value="+tc.value, func(t *testing.T) {
+		t.Run(tc.env+"/value="+tc.value, func(t *testing.T) {
 			m := auditDataplane(t, map[string]any{"labels": map[string]any{
-				"kuma.io/env": "universal", "kuma.io/workload": "backend", "kuma.io/gateway": tc.value,
+				"kuma.io/env": tc.env, "kuma.io/workload": "backend", "kuma.io/gateway": tc.value,
 			}})
-			_, got := findFinding(m, "blocker", "Gateway in Dataplane", title)
-			if got != tc.wantFlag {
-				t.Errorf("kuma.io/gateway=%q flagged = %v, want %v\nfindings: %+v", tc.value, got, tc.wantFlag, m.Findings)
+			f, got := findFinding(m, "blocker", "Reserved labels", title)
+			if got != tc.wantFlag || (got && !slices.Equal(f.Examples, []string{"default/dp-1 (kuma.io/gateway)"})) {
+				t.Errorf("kuma.io/gateway=%q on %s: finding = %+v (found %v), want %v\nfindings: %+v", tc.value, tc.env, f, got, tc.wantFlag, m.Findings)
+			}
+			for _, f := range m.Findings {
+				if f.Category == "Gateway in Dataplane" {
+					t.Errorf("label alone wrongly flagged as a gateway: %q", f.Title)
+				}
 			}
 		})
 	}
 }
 
-// TestGatewayLabelCheckSkipsKubernetes guards against advice that would be wrong
-// on Kubernetes: 2.14 merges Pod labels onto the Dataplane, so a stray
-// kuma.io/gateway lands there, and the 3.0 pod controller recomputes the label
-// from the Pod annotation (deleting it for a non-gateway). Telling an operator to
-// set it to "true" would convert a sidecar into a gateway.
-func TestGatewayLabelCheckSkipsKubernetes(t *testing.T) {
-	m := auditDataplane(t, map[string]any{"labels": map[string]any{
-		"kuma.io/env": "kubernetes", "kuma.io/gateway": "enabled",
-	}})
-	if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane kuma.io/gateway label is not a boolean"); ok {
-		t.Errorf("k8s dataplane wrongly flagged for a stray gateway label\nfindings: %+v", m.Findings)
-	}
-	if m.Status != StatusClean {
-		t.Errorf("status = %q, want %q", m.Status, StatusClean)
-	}
-}
-
-// TestUniversalGatewaySpecMigration covers the marker a real 2.14 Universal
-// gateway actually carries: networking.gateway in the spec. 2.14 never computes
-// the kuma.io/gateway label, so without this the whole delegated-gateway
-// migration is invisible to the audit.
-func TestUniversalGatewaySpecMigration(t *testing.T) {
+// TestGatewaySpecMigration covers the marker a real 2.14 gateway carries:
+// networking.gateway in the spec. 3.0 removes it along with the kuma.io/gateway
+// label and Pod annotation (kumahq/kuma#18662), so every delegated gateway must
+// exclude its listen ports from inbound redirection, whatever label it carries.
+func TestGatewaySpecMigration(t *testing.T) {
 	dp := func(gateway map[string]any, labels map[string]any) map[string]any {
 		l := map[string]any{"kuma.io/env": "universal", "kuma.io/workload": "gw"}
 		maps.Copy(l, labels)
 		return map[string]any{"labels": l, "networking": map[string]any{"gateway": gateway}}
 	}
 	delegated := map[string]any{"type": "DELEGATED", "tags": map[string]any{"kuma.io/service": "gw"}}
+	const title = "Dataplane marks a gateway with networking.gateway"
 
-	t.Run("delegated gateway without the label is flagged", func(t *testing.T) {
-		m := auditDataplane(t, dp(delegated, nil))
-		if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway"); !ok {
-			t.Fatalf("universal delegated gateway not flagged\nfindings: %+v", m.Findings)
-		}
-	})
-	t.Run("gateway with no explicit type defaults to delegated", func(t *testing.T) {
-		m := auditDataplane(t, dp(map[string]any{"tags": map[string]any{"kuma.io/service": "gw"}}, nil))
-		if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway"); !ok {
-			t.Fatalf("gateway with no type not flagged\nfindings: %+v", m.Findings)
-		}
-	})
-	t.Run("already migrated gateway is not flagged", func(t *testing.T) {
-		m := auditDataplane(t, dp(delegated, map[string]any{"kuma.io/gateway": "true"}))
-		if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane marks a gateway with networking.gateway"); ok {
-			t.Errorf("gateway already carrying the label wrongly flagged\nfindings: %+v", m.Findings)
-		}
-	})
-	t.Run("builtin gateway is flagged as removed", func(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		gateway    map[string]any
+		labels     map[string]any
+		wantDetail string
+	}{
+		{"universal delegated gateway", delegated, nil, "--exclude-inbound-ports"},
+		{"universal gateway with no explicit type defaults to delegated", map[string]any{"tags": map[string]any{"kuma.io/service": "gw"}}, nil, "--exclude-inbound-ports"},
+		{"universal gateway already carrying the label", delegated, map[string]any{"kuma.io/gateway": "true"}, "--exclude-inbound-ports"},
+		{"kubernetes delegated gateway", delegated, map[string]any{"kuma.io/env": "kubernetes"}, "traffic.kuma.io/exclude-inbound-ports"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := auditDataplane(t, dp(tc.gateway, tc.labels))
+			f, ok := findFinding(m, "blocker", "Gateway in Dataplane", title)
+			if !ok {
+				t.Fatalf("delegated gateway not flagged\nfindings: %+v", m.Findings)
+			}
+			if !strings.Contains(f.Detail, tc.wantDetail) {
+				t.Errorf("detail = %q, want it to mention %q", f.Detail, tc.wantDetail)
+			}
+		})
+	}
+	t.Run("universal builtin gateway is flagged as removed", func(t *testing.T) {
 		m := auditDataplane(t, dp(map[string]any{"type": "BUILTIN", "tags": map[string]any{"kuma.io/service": "gw"}}, nil))
 		if _, ok := findFinding(m, "blocker", "Gateway in Dataplane", "Dataplane is a builtin gateway"); !ok {
 			t.Fatalf("builtin gateway not flagged\nfindings: %+v", m.Findings)
 		}
 	})
-	t.Run("kubernetes gateway is not flagged", func(t *testing.T) {
-		m := auditDataplane(t, map[string]any{
-			"labels":     map[string]any{"kuma.io/env": "kubernetes"},
-			"networking": map[string]any{"gateway": delegated},
-		})
+	t.Run("kubernetes builtin gateway is left to MeshGateway", func(t *testing.T) {
+		m := auditDataplane(t, dp(map[string]any{"type": "BUILTIN"}, map[string]any{"kuma.io/env": "kubernetes"}))
 		for _, f := range m.Findings {
 			if f.Category == "Gateway in Dataplane" {
-				t.Errorf("k8s gateway wrongly flagged: %q", f.Title)
+				t.Errorf("k8s builtin gateway wrongly flagged: %q", f.Title)
 			}
 		}
 	})
