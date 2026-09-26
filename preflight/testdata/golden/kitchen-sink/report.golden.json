@@ -374,8 +374,20 @@
       "severity": "blocker",
       "group": "data_plane_and_workloads",
       "category": "Gateway in Dataplane",
+      "title": "Dataplane kuma.io/gateway label is not a boolean",
+      "detail": "3.0 marks a delegated gateway with the `kuma.io/gateway` label and accepts only `true`/`false`; any other value (e.g. the 2.x `enabled` annotation value) leaves the proxy silently unmarked as a gateway. Set the label to `true` (current: enabled).",
+      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
+      "count": 1,
+      "example_resources": [
+        "default/dp-legacy-universal [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Gateway in Dataplane",
       "title": "Dataplane marks a gateway with networking.gateway",
-      "detail": "3.0 removes `networking.gateway` and the `kuma.io/gateway` label, so this gateway becomes an ordinary proxy whose inbound traffic is redirected through Envoy: clients outside the mesh are rejected instead of reaching the gateway. Drop the `networking.gateway` block and any `kuma.io/gateway` label, and run `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts` in the transparent proxy config) covering every port the gateway listens on.",
+      "detail": "3.0 reserves `networking.gateway` and marks a delegated gateway with the `kuma.io/gateway: \"true\"` label instead. This proxy still carries the marker in its spec and does not carry the label, so on 3.0 it becomes a proxy with no inbounds and no gateway marking, selected by no policy. Set the `kuma.io/gateway` label to `\"true\"` before upgrading.",
       "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
       "count": 1,
       "example_resources": [
@@ -428,18 +440,6 @@
       "count": 1,
       "example_resources": [
         "eu.west"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "other",
-      "category": "Reserved labels",
-      "title": "Dataplane carries a reserved label 3.0 rejects",
-      "detail": "3.0 rejects creating or updating a resource with a `kuma.io/` or `k8s.kuma.io/` label it does not know (for example `kuma.io/service`, `kuma.io/protocol`, `kuma.io/instance`, `k8s.kuma.io/service-port`), through the API and the Kubernetes webhook alike. The stored resource keeps working, but re-applying it (GitOps, `kumactl apply`) fails. Remove the label, or move it outside the reserved prefixes.",
-      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
-      "count": 1,
-      "example_resources": [
-        "default/dp-legacy-universal [zone:east] (kuma.io/gateway)"
       ]
     },
     {
