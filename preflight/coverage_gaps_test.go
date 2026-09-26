@@ -457,7 +457,7 @@ func TestMeshHTTPRouteCatchAll(t *testing.T) {
 			"spec": map[string]any{
 				"targetRef": map[string]any{"kind": "Mesh"},
 				"to": []any{map[string]any{
-					"targetRef": map[string]any{"kind": "MeshService", "name": "backend"},
+					"targetRef": map[string]any{"kind": "MeshService", "labels": map[string]any{"kuma.io/display-name": "backend"}},
 					"rules":     rules,
 				}},
 			},
