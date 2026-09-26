@@ -29,6 +29,16 @@ func TestProducerPolicyRole(t *testing.T) {
 			"targetRef": map[string]any{"kind": "Mesh"},
 			"to":        []any{map[string]any{"targetRef": map[string]any{"kind": "MeshService", "name": "backend"}}},
 		}, role, true},
+		{"other zone", to("MeshService", map[string]any{"kuma.io/display-name": "backend", "k8s.kuma.io/namespace": "ns", "kuma.io/zone": "west"}), role, true},
+		{"policy without zone", to("MeshService", map[string]any{"kuma.io/display-name": "backend", "k8s.kuma.io/namespace": "ns", "kuma.io/zone": ""}), map[string]any{"kuma.io/policy-role": "producer", "k8s.kuma.io/namespace": "ns"}, true},
+		{"MeshExternalService item", to("MeshExternalService", pinned), role, true},
+		{"mixed items", map[string]any{
+			"targetRef": map[string]any{"kind": "Mesh"},
+			"to": []any{
+				map[string]any{"targetRef": map[string]any{"kind": "MeshService", "labels": pinned}},
+				map[string]any{"targetRef": map[string]any{"kind": "Mesh"}},
+			},
+		}, role, true},
 		{"consumer policy", to("MeshService", map[string]any{"kuma.io/display-name": "backend"}), map[string]any{"kuma.io/policy-role": "consumer"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
