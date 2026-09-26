@@ -96,6 +96,39 @@ func TestSelectorOnRemovedLabel(t *testing.T) {
 			true,
 		},
 		{
+			"route RequestMirror backendRef", "/meshhttproutes", "MeshHTTPRoute",
+			map[string]any{"targetRef": map[string]any{"kind": "Mesh"}, "to": []any{map[string]any{
+				"targetRef": map[string]any{"kind": "MeshService", "labels": displayNameLabels("web")},
+				"rules": []any{map[string]any{"default": map[string]any{"filters": []any{map[string]any{
+					"type": "RequestMirror", "requestMirror": map[string]any{"backendRef": map[string]any{"kind": "MeshService", "labels": svc}},
+				}}}}},
+			}}},
+			true,
+		},
+		{
+			"tcp route backendRef", "/meshtcproutes", "MeshTCPRoute",
+			map[string]any{"targetRef": map[string]any{"kind": "Mesh"}, "to": []any{map[string]any{
+				"targetRef": map[string]any{"kind": "MeshService", "labels": displayNameLabels("web")},
+				"rules":     []any{map[string]any{"default": map[string]any{"backendRefs": []any{map[string]any{"kind": "MeshService", "labels": svc}}}}},
+			}}},
+			true,
+		},
+		{
+			"proxy-ready selector", "/meshtimeouts", "MeshTimeout",
+			map[string]any{"targetRef": map[string]any{"kind": "Dataplane", "labels": map[string]any{"kuma.io/proxy-ready": "true"}}},
+			true,
+		},
+		{
+			"meshmultizoneservice meshService selector", "/meshmultizoneservices", "MeshMultiZoneService",
+			map[string]any{"selector": map[string]any{"meshService": map[string]any{"matchLabels": svc}}},
+			true,
+		},
+		{
+			"meshmultizoneservice registry selector", "/meshmultizoneservices", "MeshMultiZoneService",
+			map[string]any{"selector": map[string]any{"meshService": map[string]any{"matchLabels": map[string]any{"kuma.io/display-name": "web", "k8s.kuma.io/namespace": "ns"}}}},
+			false,
+		},
+		{
 			"registry and custom labels", "/meshtimeouts", "MeshTimeout",
 			map[string]any{"targetRef": map[string]any{"kind": "Dataplane", "labels": map[string]any{"kuma.io/workload": "w", "k8s.kuma.io/namespace": "ns", "app": "web"}}},
 			false,

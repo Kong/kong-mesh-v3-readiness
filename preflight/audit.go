@@ -1192,10 +1192,16 @@ func (a *auditor) checkMeshServiceSpec(it resourceItem) {
 func (a *auditor) checkMultiZoneServiceSpec(it resourceItem) {
 	ref := qualified(it)
 	var s struct {
+		Selector struct {
+			MeshService struct {
+				MatchLabels map[string]string `json:"matchLabels"`
+			} `json:"meshService"`
+		} `json:"selector"`
 		Ports []servicePort `json:"ports"`
 	}
 	if a.unmarshalSpec(it, &s, ref) {
 		a.addUnsupportedAppProtocol("MeshMultiZoneService", s.Ports, ref)
+		a.addSelectorOnRemovedLabel("MeshMultiZoneService", ref, s.Selector.MeshService.MatchLabels)
 	}
 }
 
@@ -2318,7 +2324,7 @@ func (a *auditor) addSelectorOnRemovedLabel(typ, ref string, sets ...map[string]
 	}
 	if keys := unknownReservedKeys(merged, nil); len(keys) > 0 {
 		a.rep.addDoc(blocker, "Reserved labels", typ+" selects on a label 3.0 no longer sets",
-			"3.0 no longer puts `kuma.io/service`, `kuma.io/proxy-type`, `kuma.io/gateway` or any other reserved label outside its registry on Dataplanes and services, so a selector keyed on one (targetRef or backendRef `labels`, MeshService `dataplaneLabels`, MeshLoadBalancingStrategy `affinityTags`) matches nothing after the upgrade. Select on your own labels, `kuma.io/workload` or `kuma.io/display-name` instead.",
+			"3.0 no longer puts `kuma.io/service`, `kuma.io/proxy-type`, `kuma.io/gateway` or any other reserved label outside its registry on Dataplanes and services, so a selector keyed on one (targetRef or backendRef `labels`, MeshService `dataplaneLabels`, MeshMultiZoneService `meshService` labels, MeshLoadBalancingStrategy `affinityTags`) matches nothing after the upgrade. Select on your own labels, `kuma.io/workload` or `kuma.io/display-name` instead.",
 			docPolicies, ref+" ("+strings.Join(keys, ", ")+")")
 	}
 }
