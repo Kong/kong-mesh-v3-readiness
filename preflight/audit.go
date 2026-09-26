@@ -853,11 +853,11 @@ func (a *auditor) checkGatewayMarking(it resourceItem, g *gatewaySection, onK8s 
 	case onK8s && g != nil:
 		a.rep.addDoc(blocker, "Gateway in Dataplane", "Kubernetes gateway relies on the kuma.io/gateway annotation",
 			"3.0 ignores the `kuma.io/gateway` Pod annotation: the Pod is injected as an ordinary workload and its inbound traffic is redirected through Envoy, so MeshTrafficPermission rejects clients outside the mesh instead of letting them reach the gateway. Replace the annotation with `traffic.kuma.io/exclude-inbound-ports` listing every port the gateway listens on (there is no all-ports value) and restart the Pods; annotate the fronting Service with `kuma.io/ignore: \"true\"` so it does not become a MeshService with no endpoints."+gatewayMarkingEffects,
-			docDelegatedGateway, qualified(it))
+			docUpgrade, qualified(it))
 	case !onK8s && (g != nil || labeled):
 		a.rep.addDoc(blocker, "Gateway in Dataplane", "Universal Dataplane uses the removed kuma.io/gateway marking",
-			"3.0 removes `networking.gateway` and the `kuma.io/gateway` label: it rejects a write carrying the label, and a gateway marked either way becomes an ordinary proxy. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own."+gatewayMarkingEffects,
-			docDelegatedGateway, qualified(it))
+			"3.0 removes `networking.gateway` and the `kuma.io/gateway` label: it deletes the label the next time the Dataplane is written, and a gateway marked either way becomes an ordinary proxy. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own."+gatewayMarkingEffects,
+			docUpgrade, qualified(it))
 	}
 }
 

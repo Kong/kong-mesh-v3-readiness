@@ -111,7 +111,8 @@ func TestOutboundWithBackendRefIsClean(t *testing.T) {
 
 // TestGatewayMarking covers the kuma.io/gateway marking 3.0 removes. Every marked
 // gateway is flagged with its environment's replacement (excluded inbound ports),
-// a Universal label of any value is flagged because 3.0 rejects it on write, and
+// a Universal label of any value is flagged because 3.0 strips it on the next
+// write (so selectors on it stop matching), and
 // a stray Kubernetes Pod label is not, since 3.0 no longer copies it.
 func TestGatewayMarking(t *testing.T) {
 	const (

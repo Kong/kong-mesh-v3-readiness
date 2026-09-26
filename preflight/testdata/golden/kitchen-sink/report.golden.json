@@ -375,8 +375,8 @@
       "group": "data_plane_and_workloads",
       "category": "Gateway in Dataplane",
       "title": "Universal Dataplane uses the removed kuma.io/gateway marking",
-      "detail": "3.0 removes `networking.gateway` and the `kuma.io/gateway` label: it rejects a write carrying the label, and a gateway marked either way becomes an ordinary proxy. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own. 3.0 also stops reporting `gateway` as the MeshMetric `kuma.proxy_role` (a former gateway reports `sidecar`) and ignores the `?gateway=` filter on `/dataplanes/_overview`; update dashboards and scripts that rely on either.",
-      "doc_url": "https://developer.konghq.com/mesh/gateway-delegated/",
+      "detail": "3.0 removes `networking.gateway` and the `kuma.io/gateway` label: it deletes the label the next time the Dataplane is written, and a gateway marked either way becomes an ordinary proxy. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own. 3.0 also stops reporting `gateway` as the MeshMetric `kuma.proxy_role` (a former gateway reports `sidecar`) and ignores the `?gateway=` filter on `/dataplanes/_overview`; update dashboards and scripts that rely on either.",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 2,
       "example_resources": [
         "default/dp-legacy-universal [zone:east]",
