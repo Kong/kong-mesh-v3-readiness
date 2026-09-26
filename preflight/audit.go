@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -517,6 +518,11 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 				a.addSelectsByName(it.Type, ref)
 			}
 			a.checkPolicyFields(it, ref)
+			a.checkReservedLabels(it, ref)
+			var sel selectorSpec
+			if json.Unmarshal(it.specBytes(), &sel) == nil {
+				a.addSelectorOnRemovedLabel(it.Type, ref, sel.labelSets()...)
+			}
 			a.countSystem(it, before)
 		}
 	}
@@ -800,6 +806,11 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 				"`Dataplane.spec.metrics` (from `prometheus.metrics.kuma.io/*` annotations on k8s) is deprecated; move per-proxy metrics to the MeshMetric policy.", docMeshMetric, qualified(it))
 		}
 		a.checkDataplaneLabels(it, onK8s)
+		// On Kubernetes the Dataplane is CP-written from the Pod, so only a
+		// Universal one can carry a label an operator applied.
+		if !onK8s {
+			a.checkReservedLabels(it, qualified(it))
+		}
 		a.checkDataplaneNetworking(it, spec, onK8s)
 	}
 	return nil
@@ -1097,6 +1108,9 @@ func (a *auditor) checkServiceResources(ctx context.Context) error {
 		items := a.listIfServed(ctx, a.scopedPath(rc.wsPath))
 		for _, it := range items {
 			a.checkName(it, rc.kind)
+			if it.Labels["kuma.io/managed-by"] == "" {
+				a.checkReservedLabels(it, qualified(it))
+			}
 			rc.checkSpec(it)
 		}
 	}
@@ -1136,7 +1150,10 @@ func (a *auditor) checkMeshServiceSpec(it resourceItem) {
 	ref := qualified(it)
 	var s struct {
 		Selector struct {
-			DataplaneTags map[string]string `json:"dataplaneTags"`
+			DataplaneTags   map[string]string `json:"dataplaneTags"`
+			DataplaneLabels *struct {
+				MatchLabels map[string]string `json:"matchLabels"`
+			} `json:"dataplaneLabels"`
 		} `json:"selector"`
 		Identities []struct {
 			Type string `json:"type"`
@@ -1171,15 +1188,24 @@ func (a *auditor) checkMeshServiceSpec(it resourceItem) {
 		}
 	}
 	a.addUnsupportedAppProtocol("MeshService", s.Ports, ref)
+	if dl := s.Selector.DataplaneLabels; dl != nil {
+		a.addSelectorOnRemovedLabel("MeshService", ref, dl.MatchLabels)
+	}
 }
 
 func (a *auditor) checkMultiZoneServiceSpec(it resourceItem) {
 	ref := qualified(it)
 	var s struct {
+		Selector struct {
+			MeshService struct {
+				MatchLabels map[string]string `json:"matchLabels"`
+			} `json:"meshService"`
+		} `json:"selector"`
 		Ports []servicePort `json:"ports"`
 	}
 	if a.unmarshalSpec(it, &s, ref) {
 		a.addUnsupportedAppProtocol("MeshMultiZoneService", s.Ports, ref)
+		a.addSelectorOnRemovedLabel("MeshMultiZoneService", ref, s.Selector.MeshService.MatchLabels)
 	}
 }
 
@@ -2179,4 +2205,129 @@ func supportedInboundProtocol(p string) bool {
 		return true
 	}
 	return false
+}
+
+// knownReservedLabels mirrors the 3.0 label registry
+// (pkg/core/resources/labels/registry.go). 3.0 rejects a user write carrying any
+// other kuma.io/ or k8s.kuma.io/ label, and no longer sets one on Dataplanes or
+// services, so a selector keyed on it matches nothing.
+var knownReservedLabels = map[string]bool{
+	"kuma.io/origin": true, "kuma.io/zone": true, "kuma.io/mesh": true,
+	"kuma.io/policy-role": true, "kuma.io/display-name": true, "kuma.io/env": true,
+	"k8s.kuma.io/namespace": true, "k8s.kuma.io/service-account": true,
+	"kuma.io/listener-zoneingress": true, "kuma.io/listener-zoneegress": true,
+	"kuma.io/workload": true, "kuma.io/managed-by": true,
+	"kuma.io/deletion-grace-period-started-at": true, "k8s.kuma.io/service-name": true,
+	"k8s.kuma.io/is-headless-service": true, "kuma.io/kds-sync": true, "kuma.io/effect": true,
+}
+
+// cpStampedLabels are reserved labels the 2.14 control plane writes itself; 3.0
+// drops them on its next write, so their presence is not an operator's doing.
+// kuma.io/gateway is left to checkGatewayMarking.
+var cpStampedLabels = map[string]bool{"kuma.io/proxy-type": true, "kuma.io/proxy-ready": true, gatewayLabel: true}
+
+func unknownReservedLabel(k string) bool {
+	return (strings.HasPrefix(k, "kuma.io/") || strings.HasPrefix(k, "k8s.kuma.io/")) && !knownReservedLabels[k]
+}
+
+// unknownReservedKeys returns the sorted keys of labels that are reserved but
+// unknown to 3.0, skipping the ones in skip.
+func unknownReservedKeys(labels map[string]string, skip map[string]bool) []string {
+	var keys []string
+	for k := range labels {
+		if unknownReservedLabel(k) && !skip[k] {
+			keys = append(keys, k)
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// checkReservedLabels flags a user-authored resource carrying reserved labels 3.0
+// does not know: the resource keeps working, but re-applying it fails.
+func (a *auditor) checkReservedLabels(it resourceItem, ref string) {
+	if keys := unknownReservedKeys(it.Labels, cpStampedLabels); len(keys) > 0 {
+		a.rep.addDoc(blocker, "Reserved labels", it.Type+" carries a reserved label 3.0 rejects",
+			"3.0 rejects creating or updating a resource with a `kuma.io/` or `k8s.kuma.io/` label it does not know (for example `kuma.io/service`, `kuma.io/protocol`, `kuma.io/instance`, `k8s.kuma.io/service-port`), through the API and the Kubernetes webhook alike. The stored resource keeps working, but re-applying it (GitOps, `kumactl apply`) fails. Remove the label, or move it outside the reserved prefixes.",
+			docPolicies, ref+" ("+strings.Join(keys, ", ")+")")
+	}
+}
+
+// selectorSpec gathers every label selector a policy can carry: targetRefs,
+// route backendRefs (RequestMirror included) and MeshLoadBalancingStrategy
+// affinity tag keys.
+type selectorSpec struct {
+	TargetRef *struct {
+		Labels map[string]string `json:"labels"`
+	} `json:"targetRef"`
+	To []struct {
+		TargetRef struct {
+			Labels map[string]string `json:"labels"`
+		} `json:"targetRef"`
+		Default struct {
+			LocalityAwareness *struct {
+				LocalZone *struct {
+					AffinityTags []struct {
+						Key string `json:"key"`
+					} `json:"affinityTags"`
+				} `json:"localZone"`
+			} `json:"localityAwareness"`
+		} `json:"default"`
+		Rules []struct {
+			Default struct {
+				BackendRefs []struct {
+					Labels map[string]string `json:"labels"`
+				} `json:"backendRefs"`
+				Filters []struct {
+					RequestMirror *struct {
+						BackendRef struct {
+							Labels map[string]string `json:"labels"`
+						} `json:"backendRef"`
+					} `json:"requestMirror"`
+				} `json:"filters"`
+			} `json:"default"`
+		} `json:"rules"`
+	} `json:"to"`
+}
+
+func (s selectorSpec) labelSets() []map[string]string {
+	var sets []map[string]string
+	if s.TargetRef != nil {
+		sets = append(sets, s.TargetRef.Labels)
+	}
+	for _, t := range s.To {
+		sets = append(sets, t.TargetRef.Labels)
+		if la := t.Default.LocalityAwareness; la != nil && la.LocalZone != nil {
+			keys := map[string]string{}
+			for _, at := range la.LocalZone.AffinityTags {
+				keys[at.Key] = ""
+			}
+			sets = append(sets, keys)
+		}
+		for _, r := range t.Rules {
+			for _, br := range r.Default.BackendRefs {
+				sets = append(sets, br.Labels)
+			}
+			for _, f := range r.Default.Filters {
+				if f.RequestMirror != nil {
+					sets = append(sets, f.RequestMirror.BackendRef.Labels)
+				}
+			}
+		}
+	}
+	return sets
+}
+
+// addSelectorOnRemovedLabel flags a resource whose selectors key on a reserved
+// label 3.0 no longer sets, which then matches nothing.
+func (a *auditor) addSelectorOnRemovedLabel(typ, ref string, sets ...map[string]string) {
+	merged := map[string]string{}
+	for _, s := range sets {
+		maps.Copy(merged, s)
+	}
+	if keys := unknownReservedKeys(merged, nil); len(keys) > 0 {
+		a.rep.addDoc(blocker, "Reserved labels", typ+" selects on a label 3.0 no longer sets",
+			"3.0 no longer puts `kuma.io/service`, `kuma.io/proxy-type`, `kuma.io/gateway` or any other reserved label outside its registry on Dataplanes and services, so a selector keyed on one (targetRef or backendRef `labels`, MeshService `dataplaneLabels`, MeshMultiZoneService `meshService` labels, MeshLoadBalancingStrategy `affinityTags`) matches nothing after the upgrade. Select on your own labels, `kuma.io/workload` or `kuma.io/display-name` instead.",
+			docPolicies, ref+" ("+strings.Join(keys, ", ")+")")
+	}
 }
