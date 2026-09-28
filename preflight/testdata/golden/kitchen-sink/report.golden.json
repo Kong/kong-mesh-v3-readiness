@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 42,
+    "blockers": 45,
     "warnings": 0,
     "info": 1,
     "coverage_gaps": 3,
@@ -179,6 +179,18 @@
     {
       "severity": "blocker",
       "group": "policies",
+      "category": "Policy role",
+      "title": "MeshTimeout stops being a producer policy",
+      "detail": "3.0 keeps a policy producer (applied to clients in every namespace and synced to the other zones) only when every `to[].targetRef` is a MeshService or MeshHTTPRoute selected by exactly three labels: `kuma.io/display-name`, `k8s.kuma.io/namespace` equal to the policy's own namespace and `kuma.io/zone` equal to its own zone. Anything else makes it a consumer policy that applies only inside its namespace, so clients elsewhere silently lose its rules; mixing both kinds of item is rejected on write. Rewrite each item as `labels: {kuma.io/display-name: \u003cname\u003e, k8s.kuma.io/namespace: \u003cnamespace\u003e, kuma.io/zone: \u003czone\u003e}`.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "example_resources": [
+        "default/mt-producer [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
       "category": "Reference by name",
       "title": "MeshHTTPRoute references a resource by name",
       "detail": "3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
@@ -208,8 +220,9 @@
       "title": "MeshTimeout references a resource by name",
       "detail": "3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
-      "count": 1,
+      "count": 2,
       "example_resources": [
+        "default/mt-producer [zone:east]",
         "default/mt-to-route"
       ]
     },
@@ -416,6 +429,18 @@
       "count": 1,
       "example_resources": [
         "default/dp-1 [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "other",
+      "category": "MeshIdentity coverage",
+      "title": "Mesh has MeshExternalServices but no MeshIdentity",
+      "detail": "3.0 gives a client proxy without a workload identity no cluster for a MeshExternalService, so its requests fail locally with a 503 (`cluster_not_found`). Create a MeshIdentity in this mesh that selects every proxy calling a MeshExternalService before upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
+      "count": 1,
+      "example_resources": [
+        "default"
       ]
     },
     {
