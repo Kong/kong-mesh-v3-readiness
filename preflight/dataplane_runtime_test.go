@@ -50,7 +50,7 @@ func TestReadinessUnixSocket(t *testing.T) {
 		return map[string]any{
 			"type": "DataplaneOverview", "mesh": "default", "name": "dp-1",
 			"dataplaneInsight": map[string]any{
-				"subscriptions": []any{map[string]any{"version": map[string]any{"kumaDp": map[string]any{"version": "2.13.4"}}}},
+				"subscriptions": []any{map[string]any{"version": map[string]any{"kumaDp": map[string]any{"version": "2.13.4", "kumaCpCompatible": true}}}},
 				"metadata":      map[string]any{"features": features},
 			},
 		}
