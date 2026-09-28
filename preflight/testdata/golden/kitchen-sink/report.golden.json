@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 40,
+    "blockers": 42,
     "warnings": 0,
     "info": 1,
     "coverage_gaps": 3,
@@ -440,6 +440,30 @@
       "count": 1,
       "example_resources": [
         "eu.west"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "other",
+      "category": "Reserved labels",
+      "title": "MeshTimeout carries a reserved label 3.0 rejects",
+      "detail": "3.0 rejects creating or updating a resource with a `kuma.io/` or `k8s.kuma.io/` label it does not know (for example `kuma.io/service`, `kuma.io/protocol`, `kuma.io/instance`, `k8s.kuma.io/service-port`), through the API and the Kubernetes webhook alike. The stored resource keeps working, but re-applying it (GitOps, `kumactl apply`) fails. Remove the label, or move it outside the reserved prefixes.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "example_resources": [
+        "default/mt-reserved-labels [zone:east] (kuma.io/service)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "other",
+      "category": "Reserved labels",
+      "title": "MeshTimeout selects on a label 3.0 no longer sets",
+      "detail": "3.0 no longer puts `kuma.io/service`, `kuma.io/proxy-type`, `kuma.io/gateway` or any other reserved label outside its registry on Dataplanes and services, so a selector keyed on one (targetRef or backendRef `labels`, MeshService `dataplaneLabels`, MeshMultiZoneService `meshService` labels, MeshLoadBalancingStrategy `affinityTags`) matches nothing after the upgrade. Select on your own labels, `kuma.io/workload` or `kuma.io/display-name` instead.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "example_resources": [
+        "default/mt-reserved-labels [zone:east] (kuma.io/service)"
       ]
     },
     {
