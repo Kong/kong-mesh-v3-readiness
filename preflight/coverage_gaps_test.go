@@ -151,6 +151,14 @@ func TestGatewayMarking(t *testing.T) {
 			for _, f := range m.Findings {
 				if f.Category == "Gateway in Dataplane" {
 					got = append(got, f.Title)
+					// 3.0 has no delegated gateway to migrate to, only a plain
+					// Dataplane with excluded inbound ports.
+					if strings.Contains(f.Detail, "delegated gateway") {
+						t.Errorf("%q presents a delegated gateway as the 3.0 target: %s", f.Title, f.Detail)
+					}
+					if f.Doc != docUpgrade {
+						t.Errorf("%q doc_url = %q, want %q", f.Title, f.Doc, docUpgrade)
+					}
 				}
 			}
 			var want []string

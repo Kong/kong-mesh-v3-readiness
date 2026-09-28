@@ -45,7 +45,6 @@ const (
 	docHostnameGenerator    = docBase + "/mesh/hostnamegenerator/"
 
 	docMeshIdentity     = docBase + "/mesh/issue-identity-with-meshidentity/"
-	docDelegatedGateway = docBase + "/mesh/gateway-delegated/"
 	docZoneProxies      = docBase + "/mesh/zone-proxies/"
 	docZoneEgress       = docBase + "/mesh/zone-egress/"
 	docDNS              = docBase + "/mesh/dns/"
@@ -85,8 +84,8 @@ var legacyMeshScoped = []legacyType{
 	{"proxytemplates", "ProxyTemplate", "MeshProxyPatch", docMeshProxyPatch, true},
 	{"virtual-outbounds", "VirtualOutbound", "unified naming + MeshService hostnames", docMeshService, false},
 	{"external-services", "ExternalService", "MeshExternalService", docMeshExternalService, false},
-	{"meshgateways", "MeshGateway", "delegated gateway (Kong / third-party)", docDelegatedGateway, false},
-	{"meshgatewayroutes", "MeshGatewayRoute", "delegated gateway (Kong / third-party)", docDelegatedGateway, false},
+	{"meshgateways", "MeshGateway", gatewayReplacement, docUpgrade, false},
+	{"meshgatewayroutes", "MeshGatewayRoute", gatewayReplacement, docUpgrade, false},
 }
 
 // Categories for removed kinds. Removed classic policies render under the Policies
@@ -511,7 +510,7 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 				}
 				if len(spec.TargetRef.ProxyTypes) > 0 {
 					a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
-						"`proxyTypes` is removed (gateway support dropped).", docDelegatedGateway, ref)
+						"`proxyTypes` is removed with the gateway proxy type: 3.0 has no gateway concept, so select the proxy with a Dataplane `targetRef` on its labels instead.", docUpgrade, ref)
 				}
 			}
 			// A resource is flagged once however many of its refs name a resource.
@@ -861,29 +860,35 @@ func (a *auditor) checkDataplaneLabels(it resourceItem, onK8s bool) {
 	}
 }
 
+// gatewayReplacement is the 3.0 stand-in for a Kuma gateway: 3.0 drops the
+// gateway concept (builtin and delegated), so a gateway is an ordinary proxy that
+// keeps its listen ports out of inbound redirection.
+const gatewayReplacement = "a Kong or third-party gateway running as a plain Dataplane whose listen ports are excluded from inbound redirection (`traffic.kuma.io/exclude-inbound-ports` on Kubernetes, `kuma-dp --exclude-inbound-ports` on Universal)"
+
 // gatewayMarkingEffects lists what else 3.0 drops with the kuma.io/gateway marking.
 const gatewayMarkingEffects = " 3.0 also stops reporting `gateway` as the MeshMetric `kuma.proxy_role` (a former gateway reports `sidecar`) and ignores the `?gateway=` filter on `/dataplanes/_overview`; update dashboards and scripts that rely on either."
 
 // checkGatewayMarking flags gateways relying on the kuma.io/gateway marking (Pod
-// annotation, Dataplane label, networking.gateway), all removed in 3.0: a marked
-// proxy becomes an ordinary workload whose inbound traffic goes through Envoy,
-// so MeshTrafficPermission rejects clients outside the mesh. A stray Pod label on
-// Kubernetes is not flagged: 3.0 no longer copies reserved Pod labels.
+// annotation, Dataplane label, networking.gateway), all removed in 3.0 with the
+// delegated gateway concept itself: a marked proxy becomes an ordinary workload
+// whose inbound traffic goes through Envoy, so MeshTrafficPermission rejects
+// clients outside the mesh. A stray Pod label on Kubernetes is not flagged: 3.0
+// no longer copies reserved Pod labels.
 func (a *auditor) checkGatewayMarking(it resourceItem, g *gatewaySection, onK8s bool) {
 	switch _, labeled := it.Labels[gatewayLabel]; {
 	case g != nil && strings.EqualFold(g.Type, "BUILTIN"):
 		if !onK8s {
 			a.rep.addDoc(blocker, "Gateway in Dataplane", "Dataplane is a builtin gateway",
-				"`networking.gateway.type: BUILTIN` is removed in 3.0 along with the rest of Kuma's own gateway support; migrate this proxy to a delegated gateway (Kong or another third-party) before upgrading.",
-				docDelegatedGateway, qualified(it))
+				"`networking.gateway.type: BUILTIN` is removed in 3.0 together with the MeshGateway resources that configured it, and 3.0 has no gateway proxy type at all. Replace it before upgrading with "+gatewayReplacement+".",
+				docUpgrade, qualified(it))
 		}
 	case onK8s && g != nil:
 		a.rep.addDoc(blocker, "Gateway in Dataplane", "Kubernetes gateway relies on the kuma.io/gateway annotation",
-			"3.0 ignores the `kuma.io/gateway` Pod annotation: the Pod is injected as an ordinary workload and its inbound traffic is redirected through Envoy, so MeshTrafficPermission rejects clients outside the mesh instead of letting them reach the gateway. Replace the annotation with `traffic.kuma.io/exclude-inbound-ports` listing every port the gateway listens on (there is no all-ports value) and restart the Pods; annotate the fronting Service with `kuma.io/ignore: \"true\"` so it does not become a MeshService with no endpoints."+gatewayMarkingEffects,
+			"3.0 ignores the `kuma.io/gateway` Pod annotation: the Pod is injected as an ordinary workload and its inbound traffic is redirected through Envoy, so MeshTrafficPermission rejects clients outside the mesh instead of letting them reach the gateway. 3.0 has no gateway concept; a gateway is a plain Dataplane whose listen ports skip inbound redirection. Replace the annotation with `traffic.kuma.io/exclude-inbound-ports` listing every port the gateway listens on (there is no all-ports value) and restart the Pods; annotate the fronting Service with `kuma.io/ignore: \"true\"` so it does not become a MeshService with no endpoints."+gatewayMarkingEffects,
 			docUpgrade, qualified(it))
 	case !onK8s && (g != nil || labeled):
 		a.rep.addDoc(blocker, "Gateway in Dataplane", "Universal Dataplane uses the removed kuma.io/gateway marking",
-			"3.0 removes `networking.gateway` and the `kuma.io/gateway` label: it deletes the label the next time the Dataplane is written, and a gateway marked either way becomes an ordinary proxy. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own."+gatewayMarkingEffects,
+			"3.0 removes `networking.gateway` and the `kuma.io/gateway` label, and with them the gateway concept: a gateway marked either way becomes an ordinary proxy. The control plane deletes the label the next time it writes the Dataplane (kuma-dp registration included), but re-applying a manifest that still carries it through the REST API or `kumactl apply` fails, because `kuma.io/gateway` is now an unknown reserved label. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own."+gatewayMarkingEffects,
 			docUpgrade, qualified(it))
 	}
 }
@@ -1944,7 +1949,8 @@ type ruleEntry struct {
 }
 
 // gatewaySection is the Dataplane's 2.x networking.gateway block, which 3.0
-// removes with the rest of the kuma.io/gateway marking. Type defaults to DELEGATED.
+// removes with the rest of the kuma.io/gateway marking. Type defaults to the 2.x
+// DELEGATED.
 type gatewaySection struct {
 	Type string `json:"type"`
 }
