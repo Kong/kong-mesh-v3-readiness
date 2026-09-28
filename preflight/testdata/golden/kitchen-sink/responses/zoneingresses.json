@@ -5,7 +5,7 @@
       "type": "ZoneIngress",
       "name": "zi-1",
       "zone": "east",
-      "labels": { "kuma.io/env": "universal" }
+      "labels": { "kuma.io/display-name": "zi-1", "kuma.io/origin": "zone", "kuma.io/zone": "east" }
     }
   ],
   "next": null
