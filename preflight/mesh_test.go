@@ -1,6 +1,9 @@
 package preflight
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // auditMesh audits a mock control plane whose only resource is the given Mesh
 // (every other collection answers an empty list).
@@ -110,5 +113,33 @@ func TestCleanMeshHasNoIssues(t *testing.T) {
 	}
 	if len(m.Findings) != 0 {
 		t.Errorf("expected no findings for a clean mesh, got %+v", m.Findings)
+	}
+}
+
+// TestResourceNameUsesDisplayName checks the RFC-1035 rule against the logical
+// name: a KDS-synced copy stored as "<name>-<hash>.<system-ns>" on a Kubernetes
+// zone must be judged by its kuma.io/display-name, not by the stored name.
+func TestResourceNameUsesDisplayName(t *testing.T) {
+	const title = "MeshService name is not a valid RFC-1035 DNS label"
+	ms := func(name string, labels map[string]any) map[string]any {
+		return map[string]any{"type": "MeshService", "mesh": "default", "name": name, "labels": labels}
+	}
+	m := auditResponses(t, map[string]string{"/meshservices": listBody(t,
+		ms("fraud-44cdzv5v8599f4x9.kuma-system", map[string]any{"kuma.io/display-name": "fraud", "kuma.io/origin": "global"}),
+		ms("api.shop", map[string]any{"kuma.io/display-name": "api", "k8s.kuma.io/namespace": "shop"}),
+		ms("legacy.api-888xx44854f4z282.kuma-system", map[string]any{"kuma.io/display-name": "legacy.api", "kuma.io/origin": "global"}),
+		ms("dotted.name", nil),
+	)})
+	f, ok := findFinding(m, "blocker", "Non-RFC-1035 names", title)
+	if !ok {
+		t.Fatalf("invalid names not flagged\nfindings: %+v", m.Findings)
+	}
+	if f.Count != 2 {
+		t.Errorf("count = %d, want 2 (synced copy of legacy.api and label-less dotted.name)\nexamples: %v", f.Count, f.Examples)
+	}
+	for _, ex := range f.Examples {
+		if strings.Contains(ex, "fraud") || strings.Contains(ex, "api.shop") {
+			t.Errorf("valid logical name flagged: %s", ex)
+		}
 	}
 }
