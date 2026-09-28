@@ -171,6 +171,8 @@ func TestReachableBackendsDefault(t *testing.T) {
 		{"null reachableBackends counts as absent", "universal", nil, tp(withBackends(nil)), true},
 		{"empty reachableBackends already restricts", "universal", nil, tp(withBackends(map[string]any{})), false},
 		{"reachableBackends with refs", "kubernetes", nil, tp(withBackends(map[string]any{"refs": []any{map[string]any{"kind": "MeshService", "labels": map[string]any{"kuma.io/display-name": "backend"}}}})), false},
+		// A name ref is TestReachableBackendsNameRefs' finding, not this one.
+		{"reachableBackends with name refs", "kubernetes", nil, tp(withBackends(map[string]any{"refs": []any{map[string]any{"kind": "MeshService", "name": "backend"}}})), false},
 		{"no transparent proxy", "universal", nil, inboundOnly, false},
 		// Tproxy config from the injector ConfigMap leaves the section nil on k8s.
 		{"kubernetes sidecar without transparentProxying section", "kubernetes", nil, inboundOnly, true},
@@ -238,4 +240,49 @@ func TestReachableBackendsDefaultAlreadyRestricted(t *testing.T) {
 			t.Errorf("flagged = %v, want %v", f.Examples, want)
 		}
 	})
+}
+
+// TestReachableBackendsNameRefs covers 3.0 dropping name/namespace from
+// reachableBackends refs: any ref without labels (a 2.x name ref) is flagged,
+// once per Dataplane, while label refs and an empty list are clean.
+func TestReachableBackendsNameRefs(t *testing.T) {
+	const title = "Dataplane reachableBackends ref selects by name"
+	nameRef := map[string]any{"kind": "MeshService", "name": "backend", "namespace": "shop"}
+	labelRef := map[string]any{"kind": "MeshService", "labels": map[string]any{"kuma.io/display-name": "backend"}}
+	cases := []struct {
+		name string
+		env  string
+		rb   map[string]any
+		want bool
+	}{
+		{"kubernetes name ref", "kubernetes", map[string]any{"refs": []any{nameRef}}, true},
+		{"universal name ref", "universal", map[string]any{"refs": []any{map[string]any{"kind": "MeshExternalService", "name": "httpbin"}}}, true},
+		{"name ref among label refs", "kubernetes", map[string]any{"refs": []any{labelRef, nameRef}}, true},
+		{"label refs only", "kubernetes", map[string]any{"refs": []any{labelRef}}, false},
+		{"empty reachableBackends", "kubernetes", map[string]any{}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := auditDataplane(t, map[string]any{
+				"labels": map[string]any{"kuma.io/env": tc.env, "kuma.io/workload": "dp-1"},
+				"networking": map[string]any{"transparentProxying": map[string]any{
+					"redirectPortOutbound": 15001, "reachableBackends": tc.rb,
+				}},
+			})
+			f, got := findFinding(m, "blocker", "Dataplane networking", title)
+			if got != tc.want {
+				t.Fatalf("finding %q present = %v, want %v\nfindings: %+v", title, got, tc.want, m.Findings)
+			}
+			if got && f.Count != 1 {
+				t.Errorf("count = %d, want 1 per Dataplane", f.Count)
+			}
+			// display-name alone widens a name ref's scope; the remediation
+			// must keep it pinned to the proxy's namespace and zone.
+			for _, want := range []string{"`k8s.kuma.io/namespace`", "`kuma.io/zone`"} {
+				if got && !strings.Contains(f.Detail, want) {
+					t.Errorf("detail missing %s: %q", want, f.Detail)
+				}
+			}
+		})
+	}
 }

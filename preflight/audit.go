@@ -947,6 +947,18 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		a.rep.addDoc(blocker, "reachableServices", "Dataplane uses reachableServices",
 			"Replace `reachableServices` with `reachableBackends` (MeshService-based).", docReachableBackends, qualified(it))
 	}
+	// 2.x accepts a ref by name/namespace or by labels, never both, so a ref
+	// without labels is a name ref; 3.0 requires labels and drops name/namespace.
+	if rb := tp.ReachableBackends; rb != nil {
+		for _, ref := range rb.Refs {
+			if len(ref.Labels) == 0 {
+				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane reachableBackends ref selects by name",
+					"3.0 removes `name`/`namespace` from `reachableBackends.refs[]` (and the `kuma.io/reachable-backends` annotation) and requires `labels`. Existing refs resolve to nothing, so the proxy gets no outbounds even with allow-all (`KUMA_DEFAULTS_RESTRICT_OUTBOUND=false`), and on Kubernetes the pod converter rejects the annotation. Rewrite each ref with labels: `name` becomes `kuma.io/display-name`, `namespace` becomes `k8s.kuma.io/namespace`. `kuma.io/display-name` alone selects more than before: a `MeshService` name ref resolved only in the proxy's own zone and namespace (when `namespace` was omitted), so also add `k8s.kuma.io/namespace` (the proxy's namespace if it was omitted) and, in multi-zone, `kuma.io/zone` (the proxy's zone) to keep the same scope.",
+					docReachableBackends, qualified(it))
+				break
+			}
+		}
+	}
 	// Only the named entries matter: a list that also carries `*` already grants
 	// direct access to everything, so 3.0 dropping per-service matching changes
 	// nothing for it.
