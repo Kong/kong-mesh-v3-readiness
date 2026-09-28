@@ -118,7 +118,7 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   RequestMirror) of a kind other than MeshService/MeshExternalService/MeshMultiZoneService;
   MeshPassthrough non-wildcard `Domain` matches without a `port`.
 - **Dataplanes** — `reachableServices`, the removed 2.x gateway marking (`kuma.io/gateway`, builtin or delegated `networking.gateway`), Universal
-  `spec.probes`, Kubernetes pods with virtual probes enabled (`spec.probes` set by the pod converter),
+  `spec.probes`, Kubernetes pods with virtual probes enabled (`spec.probes` endpoints set by the pod converter),
   inbounds that set their protocol only through the `kuma.io/protocol` tag or use one 3.0 rejects
   (Kafka), and a per-proxy `spec.metrics` override (deprecated → MeshMetric).
 - **Dataplane versions** — proxies the CP reports as version-incompatible
@@ -165,7 +165,8 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
 - **Service resources** — MeshService `selector.dataplaneTags` (user-authored, or Universal
   generated from `kuma.io/service`, which 3.0 renames after `kuma.io/workload`), `ServiceTag`
   identities, and `ports[].appProtocol` outside tcp/http/http2/grpc (MeshMultiZoneService too);
-  MeshExternalService TLS material in the old untyped DataSource shape.
+  MeshExternalService TLS material in the old untyped DataSource shape, or emptied to `{}` (a
+  typed rewrite applied before 2.14.6).
 - **Zone proxies** — flags ZoneIngress/ZoneEgress (the separate resources are replaced by
   the unified Zone Proxy in 3.0).
 - **Envoy config (opt-in, `--inspect-dataplanes N`)** — fetches up to N proxies' config

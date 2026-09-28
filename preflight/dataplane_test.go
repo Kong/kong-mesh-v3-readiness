@@ -88,13 +88,37 @@ func TestDataplaneProbesPerEnvironment(t *testing.T) {
 		t.Run(tc.env, func(t *testing.T) {
 			m := auditDataplane(t, map[string]any{
 				"labels": map[string]any{"kuma.io/env": tc.env, "kuma.io/workload": "w"},
-				"probes": map[string]any{"port": 9000},
+				"probes": map[string]any{"port": 9000, "endpoints": []any{map[string]any{"inboundPort": 8080, "path": "/8080/healthz"}}},
 			})
 			if _, ok := findFinding(m, "blocker", "Dataplane probes", tc.title); !ok {
 				t.Errorf("missing %q\nfindings: %+v", tc.title, m.Findings)
 			}
 			if _, ok := findFinding(m, "blocker", "Dataplane probes", tc.other); ok {
 				t.Errorf("wrongly flagged %q", tc.other)
+			}
+		})
+	}
+}
+
+// TestDataplaneProbesWithoutEndpoints confirms a Kubernetes pod with no kubelet
+// HTTP probes (the converter still writes `probes` with only a port) is not
+// flagged, while a Universal Dataplane with the same section still is: 3.0
+// removes the field there regardless of endpoints.
+func TestDataplaneProbesWithoutEndpoints(t *testing.T) {
+	for _, tc := range []struct {
+		env, title string
+		want       bool
+	}{
+		{"kubernetes", "Kubernetes pod has virtual probes enabled", false},
+		{"universal", "Dataplane has a probes section", true},
+	} {
+		t.Run(tc.env, func(t *testing.T) {
+			m := auditDataplane(t, map[string]any{
+				"labels": map[string]any{"kuma.io/env": tc.env, "kuma.io/workload": "w"},
+				"probes": map[string]any{"port": 9000},
+			})
+			if _, got := findFinding(m, "blocker", "Dataplane probes", tc.title); got != tc.want {
+				t.Errorf("flagged %q = %v, want %v\nfindings: %+v", tc.title, got, tc.want, m.Findings)
 			}
 		})
 	}

@@ -208,6 +208,27 @@ func TestServiceResourceSpecs(t *testing.T) {
 			map[string]any{"tls": map[string]any{"verification": map[string]any{"caCert": map[string]any{"type": "Secret", "secretRef": map[string]any{"kind": "Secret", "name": "ca"}}}}},
 			nil, false,
 		},
+		{
+			// What a pre-2.14.6 CP stores after a typed rewrite: the certificate is gone.
+			"external service emptied DataSource", "/meshexternalservices", "MeshExternalService", "MeshExternalService TLS", "MeshExternalService TLS data source is empty",
+			map[string]any{"tls": map[string]any{"verification": map[string]any{"mode": "Secured", "caCert": map[string]any{}}}},
+			nil, true,
+		},
+		{
+			"external service emptied DataSource is not the old shape", "/meshexternalservices", "MeshExternalService", "MeshExternalService TLS", "MeshExternalService TLS uses the removed DataSource shape",
+			map[string]any{"tls": map[string]any{"verification": map[string]any{"caCert": map[string]any{}}}},
+			nil, false,
+		},
+		{
+			"external service without TLS material", "/meshexternalservices", "MeshExternalService", "MeshExternalService TLS", "MeshExternalService TLS data source is empty",
+			map[string]any{"tls": map[string]any{"enabled": true, "verification": map[string]any{"mode": "Secured"}}},
+			nil, false,
+		},
+		{
+			"external service null DataSource", "/meshexternalservices", "MeshExternalService", "MeshExternalService TLS", "MeshExternalService TLS data source is empty",
+			map[string]any{"tls": map[string]any{"verification": map[string]any{"caCert": nil}}},
+			nil, false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditResponses(t, map[string]string{tc.path: policyBody(t, tc.typ, tc.spec, tc.labels)})

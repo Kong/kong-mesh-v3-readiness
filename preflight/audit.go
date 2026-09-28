@@ -884,13 +884,19 @@ func (a *auditor) checkDataplanes(ctx context.Context) error {
 		// whenever the pod has virtual probes enabled, even when Application Probe
 		// Proxy is also on and takes precedence, so the Dataplane alone cannot tell
 		// whether the kubelet probes point at the virtual probes listener 3.0 no
-		// longer builds.
+		// longer builds. A pod with no HTTP kubelet probes gets `probes` with no
+		// endpoints: nothing was rewritten, so nothing breaks.
 		if hasJSON(spec.Probes) {
-			if onK8s {
+			var probes struct {
+				Endpoints []json.RawMessage `json:"endpoints"`
+			}
+			rewritten := json.Unmarshal(spec.Probes, &probes) != nil || len(probes.Endpoints) > 0
+			switch {
+			case onK8s && rewritten:
 				a.rep.addDoc(blocker, "Dataplane probes", "Kubernetes pod has virtual probes enabled",
 					"3.0 removes virtual probes along with the `kuma.io/virtual-probes*` annotations and the `virtualProbesEnabled` control plane setting. If this pod runs with Application Probe Proxy disabled (`kuma.io/application-probe-proxy-port: \"0\"`), its kubelet probes were rewritten to the virtual probes port, which a 3.0 control plane no longer serves, so they fail until the pod is re-injected; otherwise Application Probe Proxy already serves them and only the stale settings remain. Move it to Application Probe Proxy (the default) before upgrading: drop the `kuma.io/virtual-probes` annotation (and `virtualProbesEnabled` from the control plane config), keep `kuma.io/application-probe-proxy-port` unset or non-zero, and restart the pod.",
 					docDataPlaneProxy, qualified(it))
-			} else {
+			case !onK8s:
 				a.rep.addDoc(blocker, "Dataplane probes", "Dataplane has a probes section",
 					"Dataplane `spec.probes` is removed for Universal in 3.0 (app-probe-proxy supersedes it).", docDataPlaneProxy, qualified(it))
 			}
@@ -1562,13 +1568,23 @@ func (a *auditor) checkExternalServiceTLS(it resourceItem) {
 		return
 	}
 	v := s.TLS.Verification
-	for _, ds := range []map[string]json.RawMessage{v.CaCert, v.ClientCert, v.ClientKey} {
-		if _, typed := ds["type"]; len(ds) > 0 && !typed {
-			a.rep.addDoc(blocker, "MeshExternalService TLS", "MeshExternalService TLS uses the removed DataSource shape",
-				"3.0 reads `tls.verification.caCert`, `clientCert` and `clientKey` only as a typed `SecureDataSource`. A stored MeshExternalService in the old shape is not rejected, but the control plane cannot read its TLS material and drops the destination from every proxy's config. Rewrite it before upgrading: `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: <name>` becomes `type: Secret` with `secretRef: {kind: Secret, name: <name>}`.",
-				docMeshExternalService, ref)
-			return
-		}
+	sources := []map[string]json.RawMessage{v.CaCert, v.ClientCert, v.ClientKey}
+	if slices.ContainsFunc(sources, func(ds map[string]json.RawMessage) bool {
+		_, typed := ds["type"]
+		return len(ds) > 0 && !typed
+	}) {
+		a.rep.addDoc(blocker, "MeshExternalService TLS", "MeshExternalService TLS uses the removed DataSource shape",
+			"3.0 reads `tls.verification.caCert`, `clientCert` and `clientKey` only as a typed `SecureDataSource`. A stored MeshExternalService in the old shape is not rejected, but the control plane cannot read its TLS material and drops the destination from every proxy's config. Rewrite it before upgrading, on 2.14.6 or later: earlier 2.14 patches accept the typed shape on write but store it empty, which loses the certificate. `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: <name>` becomes `type: Secret` with `secretRef: {kind: Secret, name: <name>}`.",
+			docMeshExternalService, ref)
+	}
+	// A typed rewrite applied before 2.14.6 is stored as `{}`: present (non-nil
+	// after decoding) but empty, so the certificate is gone.
+	if slices.ContainsFunc(sources, func(ds map[string]json.RawMessage) bool {
+		return ds != nil && len(ds) == 0
+	}) {
+		a.rep.addDoc(blocker, "MeshExternalService TLS", "MeshExternalService TLS data source is empty",
+			"`tls.verification.caCert`, `clientCert` or `clientKey` is stored as an empty object, so this MeshExternalService has no TLS material. This is what a control plane older than 2.14.6 stores when the typed `SecureDataSource` shape is applied to it: it accepts the write but drops the fields. Re-apply the TLS material on 2.14.6 or later in the typed shape (`type: Secret` with `secretRef`, or `type: InsecureInline` with `insecureInline.value`).",
+			docMeshExternalService, ref)
 	}
 }
 
