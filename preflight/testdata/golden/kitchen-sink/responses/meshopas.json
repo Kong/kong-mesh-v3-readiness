@@ -1,0 +1,40 @@
+{
+  "total": 3,
+  "items": [
+    {
+      "type": "MeshOPA",
+      "mesh": "default",
+      "name": "opa-flat-datasource",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "default": {
+          "agentConfig": { "secret": "opa-agent-config" },
+          "appendPolicies": [ { "rego": { "inlineString": "package envoy.authz\ndefault allow = true" } } ]
+        }
+      }
+    },
+    {
+      "type": "MeshOPA",
+      "mesh": "default",
+      "name": "opa-meshservice",
+      "spec": {
+        "targetRef": { "kind": "MeshService", "name": "backend" },
+        "default": {
+          "appendPolicies": [ { "rego": { "type": "InsecureInline", "insecureInline": { "value": "package envoy.authz\ndefault allow = true" } } } ]
+        }
+      }
+    },
+    {
+      "type": "MeshOPA",
+      "mesh": "default",
+      "name": "opa-clean",
+      "spec": {
+        "targetRef": { "kind": "Dataplane", "labels": { "app": "backend" } },
+        "default": {
+          "agentConfig": { "type": "Secret", "secretRef": { "kind": "Secret", "name": "opa-agent-config" } }
+        }
+      }
+    }
+  ],
+  "next": null
+}

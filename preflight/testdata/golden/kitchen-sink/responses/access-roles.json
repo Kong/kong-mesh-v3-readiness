@@ -1,0 +1,40 @@
+{
+  "total": 3,
+  "items": [
+    {
+      "type": "AccessRole",
+      "name": "legacy-policy-admin",
+      "rules": [
+        {
+          "types": [ "TrafficPermission", "TrafficRoute", "MeshGateway" ],
+          "mesh": "default",
+          "access": [ "CREATE", "UPDATE", "DELETE" ],
+          "when": [ { "sources": { "match": { "kuma.io/service": "frontend" } } } ]
+        }
+      ]
+    },
+    {
+      "type": "AccessRole",
+      "name": "backend-team",
+      "rules": [
+        {
+          "types": [ "MeshTimeout", "MeshTrafficPermission" ],
+          "mesh": "default",
+          "access": [ "CREATE", "UPDATE", "DELETE" ],
+          "when": [
+            { "targetRef": { "kind": "MeshService", "name": "backend" } },
+            { "targetRef": { "kind": "Dataplane", "name": "backend-1" } },
+            { "from": { "targetRef": { "kind": "Mesh" } } },
+            { "to": { "targetRef": { "kind": "MeshServiceSubset", "name": "backend", "tags": { "version": "v1" } } } }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "AccessRole",
+      "name": "admin",
+      "rules": [ { "access": [ "CREATE", "UPDATE", "DELETE", "GENERATE_DATAPLANE_TOKEN", "VIEW_CONTROL_PLANE_METADATA" ] } ]
+    }
+  ],
+  "next": null
+}

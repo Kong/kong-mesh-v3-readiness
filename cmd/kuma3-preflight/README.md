@@ -168,6 +168,17 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   MeshExternalService TLS material in the old untyped DataSource shape.
 - **Zone proxies** — flags ZoneIngress/ZoneEgress (the separate resources are replaced by
   the unified Zone Proxy in 3.0).
+- **Kong Mesh (enterprise)** — any `MeshGlobalRateLimit` or legacy `OPAPolicy` (removed
+  in 3.0); MeshOPA through the same targetRef checks as the other policies, plus `agentConfig`
+  and `appendPolicies[].rego` still in the flat `secret`/`inline`/`inlineString` DataSource
+  shape, which has to be rewritten to the typed shape before the global CP is upgraded (a
+  global on 3.0 syncing to 2.14 zones breaks either shape, so this needs a 2.14 patch that
+  accepts both); AccessRole `when[]` qualifiers 3.0 rejects (top-level `targetRef` kinds other
+  than Mesh/Dataplane, `from`, `to` subset/MeshGateway kinds, `sources`/`destinations`/`selectors`)
+  and AccessRole/AccessAudit `rules[].types` naming a removed kind (all blockers), plus an info
+  note for qualifiers matching a `targetRef` by `name`, which 3.0 narrows to a
+  `kuma.io/display-name` label match. These collections are enterprise-only: a 404 (OSS Kuma)
+  is not a coverage gap, a 403 is.
 - **Envoy config (opt-in, `--inspect-dataplanes N`)** — fetches up to N proxies' config
   dumps and flags use of the legacy Envoy DNS filter.
 

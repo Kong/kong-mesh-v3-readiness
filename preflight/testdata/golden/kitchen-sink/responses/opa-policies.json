@@ -1,0 +1,13 @@
+{
+  "total": 1,
+  "items": [
+    {
+      "type": "OPAPolicy",
+      "mesh": "default",
+      "name": "legacy-opa",
+      "selectors": [ { "match": { "kuma.io/service": "*" } } ],
+      "conf": { "policies": [ { "inlineString": "package envoy.authz\ndefault allow = true" } ] }
+    }
+  ],
+  "next": null
+}
