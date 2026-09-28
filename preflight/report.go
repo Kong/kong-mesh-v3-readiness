@@ -102,3 +102,20 @@ func (r *collector) count(sev severity) int {
 	}
 	return n
 }
+
+// addSummary records a finding whose count and examples are known up front — an
+// aggregate check reporting "N of M" rather than one resource at a time. A zero
+// count records nothing, so a caller can hand over an empty tally unguarded.
+func (r *collector) addSummary(sev severity, category, title, detail, doc string, count int, examples []string) {
+	if count <= 0 {
+		return
+	}
+	r.total += count
+	if len(examples) > ExampleCap {
+		examples = examples[:ExampleCap]
+	}
+	r.findings = append(r.findings, rawFinding{
+		severity: sev, category: category, title: title, detail: detail,
+		doc: doc, count: count, examples: append([]string(nil), examples...),
+	})
+}
