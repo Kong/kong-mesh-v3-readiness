@@ -11,6 +11,9 @@
   "defaults": {
     "restrictOutbound": true
   },
+  "monitoringAssignmentServer": {
+    "enabled": false
+  },
   "runtime": {
     "kubernetes": {
       "injector": {

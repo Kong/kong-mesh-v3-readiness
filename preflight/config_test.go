@@ -69,6 +69,42 @@ func TestControlPlaneConfigDeprecatedSettingReported(t *testing.T) {
 			severity: "blocker", title: "Native sidecar containers not enabled",
 			detail: cpConfigDetail("experimental.sidecarContainers", "false", "true"),
 		},
+		{
+			name:     "adminClientCerts authn",
+			config:   `{"defaults":{"restrictOutbound":true},"monitoringAssignmentServer":{"enabled":false},"environment":"kubernetes","mode":"zone","apiServer":{"authn":{"type":"adminClientCerts"}},"experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "API server adminClientCerts authn removed",
+			detail: cpConfigDetail("apiServer.authn.type", "adminClientCerts", "tokens"),
+		},
+		{
+			name:     "clientCertsDir set",
+			config:   `{"defaults":{"restrictOutbound":true},"monitoringAssignmentServer":{"enabled":false},"environment":"kubernetes","mode":"zone","apiServer":{"authn":{"type":"tokens"},"auth":{"clientCertsDir":"/etc/kuma/client-certs"}},"experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "API server clientCertsDir ignored in 3.0",
+			detail: cpConfigDetail("apiServer.auth.clientCertsDir", "/etc/kuma/client-certs", "unset"),
+		},
+		{
+			name:     "readiness port 0",
+			config:   `{"defaults":{"restrictOutbound":true},"monitoringAssignmentServer":{"enabled":false},"environment":"kubernetes","mode":"zone","bootstrapServer":{"params":{"readinessPort":0}},"experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "Readiness port 0 fails 3.0 startup",
+			detail: cpConfigDetail("bootstrapServer.params.readinessPort", "0", "9902"),
+		},
+		{
+			name:     "zone proxy metrics exposed",
+			config:   `{"defaults":{"restrictOutbound":true},"monitoringAssignmentServer":{"enabled":false},"environment":"kubernetes","mode":"zone","experimental":{"exposeZoneProxyMetrics":true,"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "Zone proxy metrics exposure removed",
+			detail: cpConfigDetail("experimental.exposeZoneProxyMetrics", "true", "false"),
+		},
+		{
+			name:     "mads on kubernetes",
+			config:   `{"defaults":{"restrictOutbound":true},"monitoringAssignmentServer":{"enabled":true},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "MADS not served on Kubernetes in 3.0",
+			detail: cpConfigDetail("monitoringAssignmentServer.enabled", "true", "false"),
+		},
+		{
+			name:     "mads on kubernetes by default",
+			config:   `{"defaults":{"restrictOutbound":true},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
+			severity: "blocker", title: "MADS not served on Kubernetes in 3.0",
+			detail: cpConfigDetail("monitoringAssignmentServer.enabled", "true", "false"),
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -157,9 +193,9 @@ func TestControlPlaneConfigDetailsShareOneShape(t *testing.T) {
 		{
 			name: "zone control plane tripping every config check",
 			responses: map[string]string{
-				"/config": `{"defaults":{"restrictOutbound":true},"environment":"kubernetes","mode":"zone","experimental":{"autoReachableServices":true,"deltaXds":false,"sidecarContainers":false,"inboundTagsDisabled":false,"kdsEventBasedWatchdog":{"enabled":false}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":false,"ebpf":{"enabled":true}}}}}`,
+				"/config": `{"defaults":{"restrictOutbound":true},"apiServer":{"authn":{"type":"adminClientCerts"},"auth":{"clientCertsDir":"/certs"}},"bootstrapServer":{"params":{"readinessPort":0}},"monitoringAssignmentServer":{"enabled":true},"environment":"kubernetes","mode":"zone","experimental":{"exposeZoneProxyMetrics":true,"autoReachableServices":true,"deltaXds":false,"sidecarContainers":false,"inboundTagsDisabled":false,"kdsEventBasedWatchdog":{"enabled":false}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":false,"ebpf":{"enabled":true}}}}}`,
 			},
-			want: 7,
+			want: 12,
 		},
 		{
 			name: "global control plane with no zones connected",
@@ -188,6 +224,61 @@ func TestControlPlaneConfigDetailsShareOneShape(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("config findings = %d, want %d (%+v)", got, tc.want, m.Findings)
+			}
+		})
+	}
+}
+
+// TestControlPlaneConfigStartupChecksScoping verifies where the 3.0 startup and
+// removal checks apply: the API server settings on every CP (a global runs the
+// API server too), the bootstrap, MADS and zone-proxy settings only on a CP that
+// runs proxies, MADS only on Kubernetes, and a readiness port the CP does not
+// serve is never read as 0.
+func TestControlPlaneConfigStartupChecksScoping(t *testing.T) {
+	const ready = `"experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}},"defaults":{"restrictOutbound":true}`
+	cases := []struct {
+		name    string
+		config  string
+		present []string
+		absent  []string
+	}{
+		{
+			name:    "global runs the API server but no proxies",
+			config:  `{"mode":"global","environment":"universal","apiServer":{"authn":{"type":"adminClientCerts"},"auth":{"clientCertsDir":"/certs"}},"bootstrapServer":{"params":{"readinessPort":0}},"monitoringAssignmentServer":{"enabled":true},"experimental":{"exposeZoneProxyMetrics":true}}`,
+			present: []string{"API server adminClientCerts authn removed", "API server clientCertsDir ignored in 3.0"},
+			absent:  []string{"Readiness port 0 fails 3.0 startup", "Zone proxy metrics exposure removed", "MADS not served on Kubernetes in 3.0"},
+		},
+		{
+			name:   "universal zone keeps MADS",
+			config: `{"mode":"zone","environment":"universal","monitoringAssignmentServer":{"enabled":true},` + ready + `}`,
+			absent: []string{"MADS not served on Kubernetes in 3.0"},
+		},
+		{
+			name:   "readiness port not served",
+			config: `{"mode":"zone","environment":"kubernetes","monitoringAssignmentServer":{"enabled":false},"bootstrapServer":{"params":{}},` + ready + `}`,
+			absent: []string{"Readiness port 0 fails 3.0 startup"},
+		},
+		{
+			name:   "tokens authn with no client certs dir",
+			config: `{"mode":"zone","environment":"kubernetes","monitoringAssignmentServer":{"enabled":false},"apiServer":{"authn":{"type":"tokens"},"auth":{"clientCertsDir":""}},` + ready + `}`,
+			absent: []string{"API server adminClientCerts authn removed", "API server clientCertsDir ignored in 3.0"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := auditResponses(t, map[string]string{
+				"/config":         tc.config,
+				"/zones+insights": `{"total":0,"items":[],"next":null}`,
+			})
+			for _, title := range tc.present {
+				if _, ok := findFinding(m, "blocker", cpConfigCategory, title); !ok {
+					t.Errorf("expected blocker %q, got %+v", title, m.Findings)
+				}
+			}
+			for _, title := range tc.absent {
+				if _, ok := findFinding(m, "blocker", cpConfigCategory, title); ok {
+					t.Errorf("blocker %q must not fire here", title)
+				}
 			}
 		})
 	}

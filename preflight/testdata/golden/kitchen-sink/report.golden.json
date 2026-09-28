@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 60,
+    "blockers": 65,
     "warnings": 0,
     "info": 2,
     "coverage_gaps": 3,
@@ -19,6 +19,30 @@
     "system_findings": 3
   },
   "findings": [
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Control plane configuration",
+      "title": "API server adminClientCerts authn removed",
+      "detail": "the field apiServer.authn.type value has to be changed from adminClientCerts to tokens",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "count": 1,
+      "example_resources": [
+        "apiServer.authn.type=adminClientCerts"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Control plane configuration",
+      "title": "API server clientCertsDir ignored in 3.0",
+      "detail": "the field apiServer.auth.clientCertsDir value has to be changed from /etc/kuma/client-certs to unset",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "count": 1,
+      "example_resources": [
+        "apiServer.auth.clientCertsDir=/etc/kuma/client-certs"
+      ]
+    },
     {
       "severity": "blocker",
       "group": "control_plane",
@@ -71,6 +95,18 @@
       "severity": "blocker",
       "group": "control_plane",
       "category": "Control plane configuration",
+      "title": "MADS not served on Kubernetes in 3.0",
+      "detail": "the field monitoringAssignmentServer.enabled value has to be changed from true to false",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshmetric/",
+      "count": 1,
+      "example_resources": [
+        "zone zone-1: monitoringAssignmentServer.enabled=true"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Control plane configuration",
       "title": "Native sidecar containers not enabled",
       "detail": "the field experimental.sidecarContainers value has to be changed from false to true",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
@@ -83,12 +119,36 @@
       "severity": "blocker",
       "group": "control_plane",
       "category": "Control plane configuration",
+      "title": "Readiness port 0 fails 3.0 startup",
+      "detail": "the field bootstrapServer.params.readinessPort value has to be changed from 0 to 9902",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "count": 1,
+      "example_resources": [
+        "zone zone-1: bootstrapServer.params.readinessPort=0"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Control plane configuration",
       "title": "Unified resource naming not enabled",
       "detail": "the field runtime.kubernetes.injector.unifiedResourceNamingEnabled value has to be changed from false to true",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
         "zone zone-1: runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Control plane configuration",
+      "title": "Zone proxy metrics exposure removed",
+      "detail": "the field experimental.exposeZoneProxyMetrics value has to be changed from true to false",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshmetric/",
+      "count": 1,
+      "example_resources": [
+        "zone zone-1: experimental.exposeZoneProxyMetrics=true"
       ]
     },
     {
