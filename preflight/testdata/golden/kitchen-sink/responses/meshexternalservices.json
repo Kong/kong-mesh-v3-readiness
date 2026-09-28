@@ -1,0 +1,15 @@
+{
+  "total": 1,
+  "items": [
+    {
+      "type": "MeshExternalService",
+      "mesh": "default",
+      "name": "httpbin",
+      "spec": {
+        "match": { "type": "HostnameGenerator", "port": 80, "protocol": "http" },
+        "endpoints": [ { "address": "httpbin.org", "port": 80 } ]
+      }
+    }
+  ],
+  "next": null
+}
