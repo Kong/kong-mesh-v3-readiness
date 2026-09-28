@@ -25,6 +25,7 @@ const readyConfigJSON = `{
     "kdsEventBasedWatchdog": {"enabled": true}
   },
   "defaults": {"restrictOutbound": true},
+  "monitoringAssignmentServer": {"enabled": false},
   "runtime": {"kubernetes": {
     "injector": {
       "unifiedResourceNamingEnabled": true,

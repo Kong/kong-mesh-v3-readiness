@@ -7,7 +7,7 @@
       "zoneInsight": {
         "subscriptions": [
           {
-            "config": "{\"mode\": \"zone\", \"environment\": \"kubernetes\", \"experimental\": {\"autoReachableServices\": true, \"deltaXds\": false, \"sidecarContainers\": false, \"inboundTagsDisabled\": false, \"kdsEventBasedWatchdog\": {\"enabled\": false}}, \"runtime\": {\"kubernetes\": {\"injector\": {\"unifiedResourceNamingEnabled\": false, \"ebpf\": {\"enabled\": true}}}}}"
+            "config": "{\"mode\": \"zone\", \"environment\": \"kubernetes\", \"bootstrapServer\": {\"params\": {\"readinessPort\": 0}}, \"monitoringAssignmentServer\": {\"enabled\": true}, \"experimental\": {\"exposeZoneProxyMetrics\": true, \"autoReachableServices\": true, \"deltaXds\": false, \"sidecarContainers\": false, \"inboundTagsDisabled\": false, \"kdsEventBasedWatchdog\": {\"enabled\": false}}, \"runtime\": {\"kubernetes\": {\"injector\": {\"unifiedResourceNamingEnabled\": false, \"ebpf\": {\"enabled\": true}}}}}"
           }
         ]
       }

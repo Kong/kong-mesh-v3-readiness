@@ -1,4 +1,8 @@
 {
   "mode": "global",
-  "environment": "kubernetes"
+  "environment": "kubernetes",
+  "apiServer": {
+    "authn": { "type": "adminClientCerts" },
+    "auth": { "clientCertsDir": "/etc/kuma/client-certs" }
+  }
 }

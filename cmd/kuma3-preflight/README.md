@@ -139,12 +139,16 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   coverage gap — never a silent pass.
 - **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
   eBPF transparent proxy, unified resource naming, inbound-tags-disabled, delta
-  xDS, KDS event-based watchdog, native sidecar containers not yet enabled (all blockers), plus an
-  info note when `defaults.restrictOutbound` is unset (3.0 flips its default to `true`) or pinned to `false` (kept on 3.0). The
+  xDS, KDS event-based watchdog, native sidecar containers not yet enabled, settings the 3.0
+  CP refuses to start with (`apiServer.authn.type: adminClientCerts`,
+  `bootstrapServer.params.readinessPort: 0`), settings 3.0 silently drops
+  (`apiServer.auth.clientCertsDir`, `experimental.exposeZoneProxyMetrics`), and MADS
+  (`monitoringAssignmentServer.enabled`) still on for a Kubernetes CP, which 3.0 no longer
+  serves there (all blockers), plus an info note when `defaults.restrictOutbound` is unset (3.0 flips its default to `true`) or pinned to `false` (kept on 3.0). The
   report's control-plane line shows the CP mode (read from `/config`). Against a **global**
   CP the data-plane-relevant checks run **per zone**, sourced from each zone's config in
   `GET /zones+insights` (examples read `zone <name>: …`); the global keeps only the
-  global-on-Kubernetes blocker. A zone that reported no config, or an unreadable/auth-gated
+  global-on-Kubernetes and API server authentication blockers. A zone that reported no config, or an unreadable/auth-gated
   `/config`/`/zones+insights`, is a coverage gap — never a silent pass.
 - **Resource names** — Mesh/MeshService/MeshExternalService/MeshMultiZoneService names that
   are not valid RFC-1035 DNS labels.

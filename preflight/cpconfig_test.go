@@ -7,7 +7,7 @@ import (
 )
 
 // badK8sConfig is a Kubernetes CP config that trips every data-plane-relevant
-// readiness check (7 blockers, plus the informational outbound-default note).
+// readiness check (12 blockers, plus the informational outbound-default note).
 func badK8sConfig() cpConfig {
 	var c cpConfig
 	c.Mode = "zone"
@@ -19,7 +19,13 @@ func badK8sConfig() cpConfig {
 	c.Experimental.DeltaXds = false                                    // blocker
 	c.Experimental.KdsEventBasedWatchdog.Enabled = false               // blocker
 	c.Experimental.SidecarContainers = false                           // blocker
-	c.Defaults.RestrictOutbound = nil                                  // info (unset reads as false)
+	c.ApiServer.Authn.Type = "adminClientCerts"                        // blocker
+	c.ApiServer.Auth.ClientCertsDir = "/etc/kuma/client-certs"         // blocker
+	zero := uint32(0)
+	c.BootstrapServer.Params.ReadinessPort = &zero // blocker
+	c.Experimental.ExposeZoneProxyMetrics = true   // blocker
+	c.MonitoringAssignmentServer.Enabled = nil     // blocker (k8s, unset reads as true)
+	c.Defaults.RestrictOutbound = nil              // info (unset reads as false)
 	return c
 }
 
@@ -36,6 +42,11 @@ func goodK8sConfig() cpConfig {
 	c.Experimental.SidecarContainers = true
 	restricted := true
 	c.Defaults.RestrictOutbound = &restricted
+	c.ApiServer.Authn.Type = "tokens"
+	readiness := uint32(9902)
+	c.BootstrapServer.Params.ReadinessPort = &readiness
+	mads := false
+	c.MonitoringAssignmentServer.Enabled = &mads
 	return c
 }
 
@@ -43,7 +54,7 @@ func TestAddCPConfigFindings(t *testing.T) {
 	t.Run("k8s bad config, unqualified examples", func(t *testing.T) {
 		a := &auditor{rep: &collector{}}
 		a.addCPConfigFindings(badK8sConfig(), "")
-		if got, want := a.rep.count(blocker), 7; got != want {
+		if got, want := a.rep.count(blocker), 12; got != want {
 			t.Errorf("blockers = %d, want %d", got, want)
 		}
 		for _, f := range a.rep.findings {
@@ -80,15 +91,16 @@ func TestAddCPConfigFindings(t *testing.T) {
 		c.Environment = "universal"
 		a := &auditor{rep: &collector{}}
 		a.addCPConfigFindings(c, "")
-		// eBPF + unified-naming are injector (k8s) checks; the rest still fire.
+		// eBPF + unified-naming are injector (k8s) checks and MADS stays served
+		// on Universal; the rest still fire.
 		for _, f := range a.rep.findings {
-			if f.title == "eBPF transparent proxy enabled" || f.title == "Unified resource naming not enabled" {
+			switch f.title {
+			case "eBPF transparent proxy enabled", "Unified resource naming not enabled", "MADS not served on Kubernetes in 3.0":
 				t.Errorf("k8s-gated check %q fired on a Universal CP", f.title)
 			}
 		}
-		// autoReachable + inboundTags + deltaXds + kdsWatchdog + sidecarContainers
-		// (eBPF + unified-naming are injector-gated, so 5 of 7 still fire).
-		if got, want := a.rep.count(blocker), 5; got != want {
+		// 12 minus eBPF, unified naming and MADS.
+		if got, want := a.rep.count(blocker), 9; got != want {
 			t.Errorf("universal blockers = %d, want %d", got, want)
 		}
 	})

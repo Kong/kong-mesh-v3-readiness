@@ -1603,12 +1603,40 @@ type cpConfig struct {
 			Name string `json:"name"`
 		} `json:"zone"`
 	} `json:"multizone"`
+	// ApiServer carries the admin API authentication settings: 3.0 drops the
+	// adminClientCerts authn plugin (the CP refuses to start with it) and the
+	// auth.clientCertsDir field (silently ignored, so its client certs stop
+	// being trusted). Both are served on every mode, global included.
+	ApiServer struct {
+		Authn struct {
+			Type string `json:"type"`
+		} `json:"authn"`
+		Auth struct {
+			ClientCertsDir string `json:"clientCertsDir"`
+		} `json:"auth"`
+	} `json:"apiServer"`
+	// BootstrapServer.Params.ReadinessPort is a pointer so a control plane that
+	// does not serve the field is not mistaken for one pinning it to 0, which
+	// 3.0 rejects at startup.
+	BootstrapServer struct {
+		Params struct {
+			ReadinessPort *uint32 `json:"readinessPort"`
+		} `json:"params"`
+	} `json:"bootstrapServer"`
+	// MonitoringAssignmentServer.Enabled is nil when not served; 2.14 always
+	// serves it and defaults it to true, so nil reads as true.
+	MonitoringAssignmentServer struct {
+		Enabled *bool `json:"enabled"`
+	} `json:"monitoringAssignmentServer"`
 	Experimental struct {
 		AutoReachableServices bool `json:"autoReachableServices"`
-		DeltaXds              bool `json:"deltaXds"`
-		SidecarContainers     bool `json:"sidecarContainers"`
-		InboundTagsDisabled   bool `json:"inboundTagsDisabled"`
-		KdsEventBasedWatchdog struct {
+		// ExposeZoneProxyMetrics (2.14 only) serves unauthenticated
+		// /stats/prometheus on zone proxies; 3.0 drops it.
+		ExposeZoneProxyMetrics bool `json:"exposeZoneProxyMetrics"`
+		DeltaXds               bool `json:"deltaXds"`
+		SidecarContainers      bool `json:"sidecarContainers"`
+		InboundTagsDisabled    bool `json:"inboundTagsDisabled"`
+		KdsEventBasedWatchdog  struct {
 			Enabled bool `json:"enabled"`
 		} `json:"kdsEventBasedWatchdog"`
 	} `json:"experimental"`
@@ -1688,6 +1716,9 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 	if strings.EqualFold(cfg.Mode, "global") {
 		// The global's own injector/experimental flags govern no proxies; audit
 		// each zone's config instead, which the global aggregates in ZoneInsight.
+		// The API server does run on a global, so its startup-breaking settings
+		// are audited here too.
+		a.addAPIServerFindings(cfg, zoneRef(""))
 		return a.checkZoneControlPlaneConfigs(ctx)
 	}
 	// Standalone or a directly-connected zone CP: audit the config we reached.
@@ -1706,6 +1737,36 @@ func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
 	}
 }
 
+// zoneRef qualifies a config example reference with the zone it came from; zone
+// is "" for the control plane the tool connected to.
+func zoneRef(zone string) func(string) string {
+	return func(s string) string {
+		if zone != "" {
+			return "zone " + zone + ": " + s
+		}
+		return s
+	}
+}
+
+// addAPIServerFindings flags admin API authentication settings 3.0 does not
+// carry over. The adminClientCerts authn plugin is removed (kumahq/kuma#17906),
+// so a CP configured with it fails to start. apiServer.auth.clientCertsDir is
+// removed with it and, since the CP loads its config non-strictly, silently
+// ignored: certificates trusted only through that directory stop authenticating
+// to the HTTPS API server. Both apply to every mode, a global included.
+func (a *auditor) addAPIServerFindings(cfg cpConfig, ref func(string) string) {
+	if cfg.ApiServer.Authn.Type == "adminClientCerts" {
+		a.rep.addDoc(blocker, cpConfigCategory, "API server adminClientCerts authn removed",
+			cpConfigDetail("apiServer.authn.type", "adminClientCerts", "tokens"),
+			docKumaCPReference, ref("apiServer.authn.type=adminClientCerts"))
+	}
+	if dir := cfg.ApiServer.Auth.ClientCertsDir; dir != "" {
+		a.rep.addDoc(blocker, cpConfigCategory, "API server clientCertsDir ignored in 3.0",
+			cpConfigDetail("apiServer.auth.clientCertsDir", dir, "unset"),
+			docKumaCPReference, ref("apiServer.auth.clientCertsDir="+dir))
+	}
+}
+
 // addCPConfigFindings audits the data-plane-relevant CP settings (injector +
 // experimental flags) of one control plane's config: flags for features removed
 // in 3.0 and settings that become the default and should be enabled and
@@ -1721,12 +1782,7 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 		// ZoneInsight fan-out — either way Kubernetes is in the estate.
 		a.rep.k8sObserved = true
 	}
-	ref := func(s string) string {
-		if zone != "" {
-			return "zone " + zone + ": " + s
-		}
-		return s
-	}
+	ref := zoneRef(zone)
 
 	// Only for the CP we connected to: on a global, /zones is authoritative for
 	// every zone name (checkZoneNames), so checking the fanned-out zone configs
@@ -1745,6 +1801,24 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 		a.rep.addDoc(blocker, cpConfigCategory, "eBPF transparent proxy enabled",
 			cpConfigDetail("runtime.kubernetes.injector.ebpf.enabled", "true", "false"),
 			docTransparentProxy, ref("runtime.kubernetes.injector.ebpf.enabled=true"))
+	}
+
+	// Settings the 3.0 control plane refuses to start with, or silently drops.
+	a.addAPIServerFindings(cfg, ref)
+	if p := cfg.BootstrapServer.Params.ReadinessPort; p != nil && *p == 0 {
+		a.rep.addDoc(blocker, cpConfigCategory, "Readiness port 0 fails 3.0 startup",
+			cpConfigDetail("bootstrapServer.params.readinessPort", "0", "9902"),
+			docKumaCPReference, ref("bootstrapServer.params.readinessPort=0"))
+	}
+	if cfg.Experimental.ExposeZoneProxyMetrics {
+		a.rep.addDoc(blocker, cpConfigCategory, "Zone proxy metrics exposure removed",
+			cpConfigDetail("experimental.exposeZoneProxyMetrics", "true", "false"),
+			docMeshMetric, ref("experimental.exposeZoneProxyMetrics=true"))
+	}
+	if onK8s && (cfg.MonitoringAssignmentServer.Enabled == nil || *cfg.MonitoringAssignmentServer.Enabled) {
+		a.rep.addDoc(blocker, cpConfigCategory, "MADS not served on Kubernetes in 3.0",
+			cpConfigDetail("monitoringAssignmentServer.enabled", "true", "false"),
+			docMeshMetric, ref("monitoringAssignmentServer.enabled=true"))
 	}
 
 	// Required 3.0 baseline — the upgrade assumes these are already on (they pair

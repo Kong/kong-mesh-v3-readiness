@@ -15,6 +15,7 @@ const cleanConfigJSON = `{
   "mode": "zone",
   "environment": "kubernetes",
   "defaults": {"restrictOutbound": true},
+  "monitoringAssignmentServer": {"enabled": false},
   "experimental": {
     "autoReachableServices": false,
     "deltaXds": true,
