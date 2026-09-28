@@ -133,7 +133,7 @@ func deprecatedMarkers() []deprecatedMarker {
 			[]string{`(?m)^\s*reachableServices:`}, nil),
 		marker("Dataplane.probes", "Dataplane field", "app-probe-proxy", false,
 			[]string{`(?m)^\s*probes:`}, dpDefines),
-		marker("Dataplane.gateway", "Dataplane field", "delegated gateway", false,
+		marker("Dataplane.gateway", "Dataplane field", "plain Dataplane with excluded inbound ports", false,
 			[]string{`(?m)^\s*gateway:`}, dpDefines),
 	)
 	return markers
