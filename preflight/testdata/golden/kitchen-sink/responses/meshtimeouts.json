@@ -1,6 +1,16 @@
 {
-  "total": 4,
+  "total": 5,
   "items": [
+    {
+      "type": "MeshTimeout",
+      "mesh": "default",
+      "name": "mt-reserved-labels",
+      "labels": { "kuma.io/service": "backend", "kuma.io/zone": "east" },
+      "spec": {
+        "targetRef": { "kind": "Dataplane", "labels": { "kuma.io/service": "backend" } },
+        "to": [ { "targetRef": { "kind": "Mesh" }, "default": { "idleTimeout": "1h" } } ]
+      }
+    },
     {
       "type": "MeshTimeout",
       "mesh": "default",
