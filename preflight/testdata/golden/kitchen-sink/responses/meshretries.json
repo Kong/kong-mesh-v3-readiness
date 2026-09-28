@@ -1,0 +1,15 @@
+{
+  "total": 1,
+  "items": [
+    {
+      "type": "MeshRetry",
+      "mesh": "default",
+      "name": "mr-gateways",
+      "spec": {
+        "targetRef": { "kind": "Mesh", "proxyTypes": [ "Gateway" ] },
+        "to": [ { "targetRef": { "kind": "Mesh" }, "default": { "http": { "numRetries": 3 } } } ]
+      }
+    }
+  ],
+  "next": null
+}
