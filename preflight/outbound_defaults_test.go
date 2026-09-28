@@ -89,6 +89,16 @@ func TestOutboundDenyFlagsProxiesWithNoReachableBackends(t *testing.T) {
 			title: titleUniversalDeny,
 		},
 		{
+			name:  "kubernetes sidecar with no metadata and no transparentProxying in spec",
+			item:  overview("dp-1", kubernetesLabels, map[string]any{"inbound": []any{map[string]any{"port": 8080}}}, nil),
+			title: titleKubernetesDeny,
+		},
+		{
+			name:  "kubernetes sidecar with no networking at all",
+			item:  overview("dp-1", kubernetesLabels, nil, nil),
+			title: titleKubernetesDeny,
+		},
+		{
 			name:  "unlabeled proxy counts as Universal",
 			item:  overview("dp-1", nil, tproxySpec(nil), nil),
 			title: titleUniversalDeny,
@@ -157,6 +167,24 @@ func TestOutboundDenySkipsProxiesThatKeepOutbounds(t *testing.T) {
 					"outbound": map[string]any{"enabled": false},
 				}},
 			}),
+		},
+		{
+			name: "kuma-dp reports transparent proxying off on kubernetes, overriding the sidecar assumption",
+			item: overview("dp-1", kubernetesLabels, map[string]any{}, map[string]any{
+				"transparentProxy": map[string]any{"redirect": map[string]any{
+					"inbound":  map[string]any{"enabled": false},
+					"outbound": map[string]any{"enabled": false},
+				}},
+			}),
+		},
+		{
+			name: "kubernetes builtin gateway is not an injected sidecar",
+			item: overview("dp-1", kubernetesLabels, map[string]any{"gateway": map[string]any{"type": "BUILTIN"}}, nil),
+		},
+		{
+			name: "kubernetes zone proxy is not an injected sidecar",
+			item: overview("dp-1", map[string]any{"kuma.io/env": "kubernetes", "kuma.io/listener-zoneingress": "enabled"},
+				map[string]any{}, nil),
 		},
 		{
 			name: "builtin gateway cannot exist on 3.0 at all",

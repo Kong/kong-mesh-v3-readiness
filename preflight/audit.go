@@ -1075,11 +1075,21 @@ type trafficFlow struct {
 // transparentProxy reports whether the 3.0 reachable-backends default applies to
 // this proxy. kuma-dp's reported config wins over the spec's legacy redirect
 // ports, mirroring the control plane's precedence (tproxy_dp.GetDataplaneConfig).
-func (o dpOverview) transparentProxy() bool {
+// With neither, a Kubernetes sidecar still counts: the injector refuses to
+// disable transparent proxying, and when its config comes from the injector
+// ConfigMap the pod converter leaves transparentProxying nil, so an offline or
+// older kuma-dp that reports no metadata would otherwise be missed. A zone proxy
+// is not an injected sidecar; neither is a builtin gateway, which
+// checkOutboundDefaults skips on its own.
+func (o dpOverview) transparentProxy(labels map[string]string) bool {
 	if tp := o.DataplaneInsight.Metadata.TransparentProxy; tp != nil {
 		return tp.Redirect.Inbound.Enabled || tp.Redirect.Outbound.Enabled
 	}
-	tp := o.Dataplane.Networking.transparentProxying()
+	net := o.Dataplane.Networking
+	if net == nil || net.TransparentProxying == nil {
+		return labels[envLabel] == "kubernetes" && labels[listenerZoneIngressLabel] == ""
+	}
+	tp := net.transparentProxying()
 	return tp.RedirectPortInbound != 0 || tp.RedirectPortOutbound != 0
 }
 
@@ -1105,7 +1115,7 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 		if json.Unmarshal(it.specBytes(), &ov) != nil {
 			continue
 		}
-		if !ov.transparentProxy() {
+		if !ov.transparentProxy(it.Labels) {
 			continue
 		}
 		// A builtin gateway cannot exist on 3.0 at all, so its outbounds are moot.
