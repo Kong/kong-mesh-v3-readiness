@@ -563,9 +563,28 @@ func (a *auditor) checkNewPolicies(ctx context.Context) error {
 					a.rep.addDoc(blocker, "Top-level targetRef kind", it.Type+" top-level targetRef.kind="+k,
 						"Top-level targetRef must be Mesh or Dataplane; use labels.", docPolicies, ref)
 				}
-				if len(spec.TargetRef.ProxyTypes) > 0 {
-					a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
-						"`proxyTypes` is removed (gateway support dropped).", docDelegatedGateway, ref)
+				if pt := spec.TargetRef.ProxyTypes; len(pt) > 0 {
+					gateway, sidecar := slices.Contains(pt, "Gateway"), slices.Contains(pt, "Sidecar")
+					switch {
+					case gateway && !sidecar:
+						detail := "3.0 drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. " +
+							"Do not just remove the field. Delete the policy (which also clears its other findings), or retarget it to the gateway with `kind: Dataplane` and `labels`."
+						if it.Type == "MeshTimeout" {
+							detail += " The 2.x default `mesh-gateways-timeout-all-<mesh>` sets `streamIdleTimeout: 5s`, which left in place fails every sidecar HTTP response slower than 5s with 504. " +
+								"Defaults are generated once per Mesh, so a deleted one stays deleted unless the Mesh is recreated; if yours is (e.g. GitOps replace), add `MeshTimeout` to its `skipCreatingInitialPolicies`."
+						}
+						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to gateways with targetRef.proxyTypes",
+							detail, docDelegatedGateway, ref)
+					case sidecar && !gateway:
+						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to sidecars with targetRef.proxyTypes",
+							"3.0 drops `proxyTypes`, so this policy will also apply to gateways. "+
+								"Remove the field if that is intended, otherwise retarget it with `kind: Dataplane` and `labels`.",
+							docDelegatedGateway, ref)
+					default:
+						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
+							"3.0 drops `proxyTypes`. It already covers every proxy here, so remove the field.",
+							docDelegatedGateway, ref)
+					}
 				}
 			}
 			// A resource is flagged once however many of its refs name a resource.
@@ -991,6 +1010,18 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		a.rep.addDoc(blocker, "reachableServices", "Dataplane uses reachableServices",
 			"Replace `reachableServices` with `reachableBackends` (MeshService-based).", docReachableBackends, qualified(it))
 	}
+	// 2.x accepts a ref by name/namespace or by labels, never both, so a ref
+	// without labels is a name ref; 3.0 requires labels and drops name/namespace.
+	if rb := tp.ReachableBackends; rb != nil {
+		for _, ref := range rb.Refs {
+			if len(ref.Labels) == 0 {
+				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane reachableBackends ref selects by name",
+					"3.0 removes `name`/`namespace` from `reachableBackends.refs[]` (and the `kuma.io/reachable-backends` annotation) and requires `labels`. Existing refs resolve to nothing, so the proxy gets no outbounds even with `defaults.restrictOutbound: false`, and on Kubernetes the pod converter rejects the annotation. Rewrite each ref with labels: `name` becomes `kuma.io/display-name`, `namespace` becomes `k8s.kuma.io/namespace`. `kuma.io/display-name` alone selects more than before: a `MeshService` name ref resolved only in the proxy's own zone and namespace (when `namespace` was omitted), so also add `k8s.kuma.io/namespace` (the proxy's namespace if it was omitted) and, in multi-zone, `kuma.io/zone` (the proxy's zone) to keep the same scope.",
+					docReachableBackends, qualified(it))
+				break
+			}
+		}
+	}
 	// Only the named entries matter: a list that also carries `*` already grants
 	// direct access to everything, so 3.0 dropping per-service matching changes
 	// nothing for it.
@@ -1082,10 +1113,10 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 	}
 	for _, mode := range []outboundMode{outboundUnset, outboundAllowed, outboundRestricted} {
 		a.addOutboundDenyFinding("Universal Dataplanes", "Universal",
-			"Add `networking.transparentProxying.reachableBackends.refs` to each Dataplane, naming the MeshServices the workload actually calls",
+			"Add `networking.transparentProxying.reachableBackends.refs` to each Dataplane, selecting by `labels` (not `name`/`namespace`, which 3.0 drops) the MeshServices the workload actually calls",
 			mode, denied[0][mode], total[0], refs[0][mode])
 		a.addOutboundDenyFinding("Kubernetes dataplanes", "Kubernetes",
-			"Add the `kuma.io/reachable-backends` annotation to each Pod (the control plane copies it onto the Dataplane), naming the MeshServices the workload actually calls",
+			"Add the `kuma.io/reachable-backends` annotation to each Pod (the control plane copies it onto the Dataplane), selecting by `labels` (not `name`/`namespace`, which 3.0 drops) the MeshServices the workload actually calls",
 			mode, denied[1][mode], total[1], refs[1][mode])
 	}
 	return nil
@@ -2294,15 +2325,23 @@ type dataplaneNetworking struct {
 }
 
 // transparentProxying is the Dataplane's transparentProxying block. The redirect
-// ports are the pre-3.0 way to declare transparent proxying. ReachableBackends
-// stays raw: only presence matters, and an empty `{"refs":[]}` is a deliberate
-// deny, not an absence.
+// ports are the pre-3.0 way to declare transparent proxying. A non-nil
+// ReachableBackends, even an empty `{"refs":[]}`, is a deliberate selection, not
+// an absence.
 type transparentProxying struct {
-	ReachableServices    []string        `json:"reachableServices"`
-	DirectAccessServices []string        `json:"directAccessServices"`
-	ReachableBackends    json.RawMessage `json:"reachableBackends"`
-	RedirectPortInbound  uint32          `json:"redirectPortInbound"`
-	RedirectPortOutbound uint32          `json:"redirectPortOutbound"`
+	ReachableServices    []string           `json:"reachableServices"`
+	DirectAccessServices []string           `json:"directAccessServices"`
+	ReachableBackends    *reachableBackends `json:"reachableBackends"`
+	RedirectPortInbound  uint32             `json:"redirectPortInbound"`
+	RedirectPortOutbound uint32             `json:"redirectPortOutbound"`
+}
+
+// reachableBackends keeps only each ref's labels: 2.x accepts a ref by
+// name/namespace or by labels, never both, so a ref without labels is a name ref.
+type reachableBackends struct {
+	Refs []struct {
+		Labels map[string]string `json:"labels"`
+	} `json:"refs"`
 }
 
 func (n *dataplaneNetworking) transparentProxying() transparentProxying {
@@ -2326,7 +2365,7 @@ func (n *dataplaneNetworking) keepsOutbounds() bool {
 	if n == nil {
 		return false
 	}
-	if raw := n.transparentProxying().ReachableBackends; len(raw) > 0 && string(raw) != "null" {
+	if n.transparentProxying().ReachableBackends != nil {
 		return true
 	}
 	for _, out := range n.Outbound {
