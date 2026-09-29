@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 65,
+    "blockers": 71,
     "warnings": 0,
     "info": 2,
     "coverage_gaps": 3,
@@ -60,7 +60,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Global control plane on Kubernetes",
-      "detail": "the field mode value has to be changed from global to universal",
+      "detail": "the field environment value has to be changed from kubernetes to universal",
       "doc_url": "https://developer.konghq.com/mesh/universal/",
       "count": 1,
       "example_resources": [
@@ -400,12 +400,51 @@
       "severity": "blocker",
       "group": "data_plane_and_workloads",
       "category": "Dataplane features",
+      "title": "Dataplane exports OpenTelemetry directly",
+      "detail": "This proxy runs with `KUMA_DATAPLANE_RUNTIME_OTEL_PIPE_ENABLED=false`. 3.0 always sends OpenTelemetry traces, logs and metrics through kuma-dp, so this proxy exports to a socket nothing listens on and its telemetry stops. Remove the override and restart the proxy.",
+      "doc_url": "https://developer.konghq.com/mesh/deploy-an-opentelemetry-collector/",
+      "count": 2,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east]",
+        "default/current-dp.kuma-demo [zone:west]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane features",
       "title": "Dataplane is not using unified resource naming",
       "detail": "This proxy does not advertise the `feature-unified-resource-naming` capability, so it is not emitting the unified (KRI-based) resource names Kuma 3.0 requires. Enable `unifiedResourceNamingEnabled` on the control plane (if not already) and restart/re-inject the proxy so it adopts unified naming before upgrading.",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
         "default/legacy-dp.kuma-demo [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane features",
+      "title": "Dataplane opts out of SO_REUSEPORT or strict inbound ports",
+      "detail": "This proxy runs with `KUMA_DATAPLANE_RUNTIME_REUSE_PORT_ENABLED=false` or `KUMA_DATAPLANE_RUNTIME_STRICT_INBOUND_PORTS_ENABLED=false`. 3.0 always generates listeners with SO_REUSEPORT and strict inbound ports: Envoy cannot change `enable_reuse_port` on a live listener, so it rejects the inbound listener updates until the proxy restarts, and inbound traffic to undeclared ports is refused. Remove the override and restart the proxy on 2.x, declaring any extra inbound port it serves.",
+      "doc_url": "https://developer.konghq.com/mesh/data-plane-proxy/",
+      "count": 2,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east]",
+        "default/current-dp.kuma-demo [zone:west]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane features",
+      "title": "Dataplane uses state-of-the-world xDS",
+      "detail": "This proxy does not advertise `feature-delta-grpc`, so it talks SotW xDS. 3.0 serves only delta xDS: once its control plane runs 3.0 the proxy keeps its last config, stays Ready and stops receiving updates until kuma-dp restarts. `experimental.deltaXds` on the control plane only reaches pods through the Kubernetes injector; on Universal (and for ZoneIngress/ZoneEgress started outside the injector) set `KUMA_DATAPLANE_RUNTIME_ENVOY_XDS_TRANSPORT_PROTOCOL_VARIANT=DELTA_GRPC` on kuma-dp. Restart the proxy before upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "count": 2,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east]",
+        "default/current-dp.kuma-demo [zone:west]"
       ]
     },
     {
@@ -711,6 +750,16 @@
       "title": "Migrate clients of removed inspect and overview endpoints",
       "detail": "Kuma 3.0 removes several legacy REST endpoints, which then answer 404: the dataplane `rules` inspect endpoint, the per-policy `{policy}/{name}/dataplanes` inspect paths, the MeshService `_resources/dataplanes` path, the `dataplanes+insights` and `zones+insights` overview aliases, the ZoneIngress/ZoneEgress overview and Envoy admin endpoints, and `service-insights`, which the control plane stops computing. The `_rules` endpoint stays but no longer returns `toRules`/`fromRules`, and the `?gateway=` overview filter is ignored. The control-plane API cannot tell you which clients still call these paths, whether that's kumactl, the GUI, dashboards, scripts, or monitoring, so find and migrate those consumers yourself using the mapping below, and upgrade kumactl and the GUI together with the control plane.",
       "command": "# Removed in 3.0 (404)                                   -\u003e replacement\nGET /meshes/{mesh}/dataplanes/{name}/rules                  -\u003e /meshes/{mesh}/dataplanes/{name}/_policies\nGET /meshes/{mesh}/{policyType}/{name}/dataplanes           -\u003e /meshes/{mesh}/{policyType}/{name}/_resources/dataplanes\nGET /meshes/{mesh}/meshservices/{name}/_resources/dataplanes -\u003e /meshes/{mesh}/meshservices/{name}/_dataplanes\nGET /meshes/{mesh}/dataplanes+insights[/{name}]             -\u003e /meshes/{mesh}/dataplanes/_overview (/{name}/_overview)\nGET /zones+insights[/{name}]                                -\u003e /zones/_overview (/zones/{name}/_overview)\nGET /meshes/{mesh}/service-insights[/{name}]                -\u003e MeshService / MeshExternalService status\nGET /zoneingresses+insights, /zoneegressoverviews           -\u003e none (ZoneIngress/ZoneEgress are removed)\nGET /zoneingresses/{name}/{xds,stats,clusters}              -\u003e none\nGET /zoneegresses/{name}/{xds,stats,clusters}               -\u003e none\n\n# Changed\nGET /meshes/{mesh}/dataplanes/{name}/_rules                 -\u003e no toRules/fromRules; read toResourceRules/inboundRules\nGET /meshes/{mesh}/dataplanes/_overview?gateway=            -\u003e filter ignored\n\n# Deprecated, still served\nGET /meshes/{mesh}/dataplanes/{name}/policies               -\u003e /meshes/{mesh}/dataplanes/{name}/_policies\n\n# KRI-based inspect API\nGET /meshes/{mesh}/dataplanes/{name}/_layout\nGET /meshes/{mesh}/dataplanes/{name}/_policies\nGET /meshes/{mesh}/dataplanes/{name}/_inbounds/{inbound_kri}/_policies\nGET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_policies\nGET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes\nGET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes/{route_kri}/_policies"
+    },
+    {
+      "title": "Clear every resource and Mesh blocker before upgrading the global control plane",
+      "detail": "The global control plane is upgraded first, and the moment it runs 3.0 it changes what every 2.x zone receives over KDS, before any zone is upgraded. It answers the zones with an empty list for every resource type 3.0 removed, so each zone deletes its copies of the legacy policies, MeshGateway, MeshGatewayRoute, ExternalService and the other zones' ZoneIngress. It reads stored resources with the removed fields dropped and syncs them that way: the Mesh arrives without `mtls`, `routing`, `networking`, `logging`, `tracing`, `metrics` and `constraints`, and policies arrive without `from`, `proxyTypes` and name refs, which a 2.x zone still accepts and applies with a wider scope. So the Mesh settings, removed kinds, zone proxies and policy field findings in this report are deadlines for the global upgrade, not for the zone upgrades. If that is not possible, keep the zones disconnected from the global (stop the global or block KDS) until each zone runs 3.0.",
+      "command": "# On the 2.x global, before upgrading it: every command must print nothing.\nkumactl get meshes -o json | jq -r '.items[] | select(.mtls or .routing or .networking or .logging or .tracing or .metrics or .constraints) | .name'\nfor t in traffic-permissions traffic-routes traffic-logs traffic-traces fault-injections health-checks circuit-breakers retries timeouts rate-limits proxytemplates virtual-outbounds external-services meshgateways meshgatewayroutes; do\n  kumactl get \"$t\" -o json 2\u003e/dev/null | jq -r --arg t \"$t\" '.items[]? | \"\\($t) \\(.mesh)/\\(.name)\"'\ndone\nkumactl get zoneingresses -o json | jq -r '.items[].name'\n\n# After upgrading the global, on each 2.x zone: the zone must not delete what it synced.\nkubectl -n kuma-system logs deploy/kuma-control-plane | grep \"no longer available in the upstream\""
+    },
+    {
+      "title": "Reissue Universal dataplane tokens bound to tags",
+      "detail": "A dataplane token issued with `--tag` is checked against the Dataplane's inbound tags on 2.x, but against its labels on 3.0. A token bound to `kuma.io/service` can never match on 3.0, because `kuma.io/service` is a reserved label 3.0 does not allow on a Dataplane, so the proxy is rejected the next time it connects to a 3.0 zone control plane (every zone upgrade forces a reconnect). The same token already fails on 2.x once `experimental.inboundTagsDisabled` removes the inbound tags. Tokens are not stored by the control plane, so the tool cannot find them. Reissue every tag-bound token as a name-bound (`--name`) or workload-bound (`--workload`) token and restart kuma-dp with it before upgrading. A proxy selected by a MeshIdentity whose SPIFFE ID uses the workload (the Universal default) needs a `--workload` token matching its `kuma.io/workload` label.",
+      "command": "# Decode the claims of each token kuma-dp runs with; \"Tags\" must be empty.\ncut -d. -f2 /path/to/dataplane-token | tr '_-' '/+' | base64 -d 2\u003e/dev/null | jq '{Name, Mesh, Tags, Workload}'\n\n# Reissue, bound to the workload (or --name \u003cdataplane\u003e)\nkumactl generate dataplane-token --mesh \u003cmesh\u003e --workload \u003ckuma.io/workload value\u003e --valid-for 8760h \u003e /path/to/dataplane-token"
     },
     {
       "title": "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",

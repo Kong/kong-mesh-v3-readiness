@@ -151,6 +151,7 @@ const (
 	protocolTag              = "kuma.io/protocol"
 	serviceAccountLabel      = "k8s.kuma.io/service-account"
 	listenerZoneIngressLabel = "kuma.io/listener-zoneingress"
+	listenerZoneEgressLabel  = "kuma.io/listener-zoneegress"
 )
 
 func isSystem(it resourceItem) bool {
@@ -207,6 +208,11 @@ type auditor struct {
 	// plane: key "" for the audited CP, a zone name for each zone behind a global.
 	// See outboundModeFor.
 	outboundModes map[string]outboundMode
+
+	// cniEnabled records, keyed like outboundModes, the Kubernetes control planes
+	// that run the CNI, so checkDataplaneFeatures flags only pods the 3.0 CNI
+	// plugin will refuse.
+	cniEnabled map[string]bool
 
 	// zoneProxyZones is the set of Universal zones observed terminating cross-zone
 	// traffic (a ZoneIngress, or a Dataplane already carrying a ZoneIngress
@@ -769,7 +775,7 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 		if json.Unmarshal(spec, &s) != nil {
 			return
 		}
-		var emptyMatches, noCatchAll bool
+		var emptyMatches, noCatchAll, emptyBackendRefs bool
 		for _, t := range s.To {
 			if len(t.Rules) == 0 {
 				continue
@@ -778,10 +784,18 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 				if len(r.Matches) == 0 {
 					emptyMatches = true
 				}
+				if r.Default.BackendRefs != nil && len(*r.Default.BackendRefs) == 0 {
+					emptyBackendRefs = true
+				}
 			}
 			if !hasCatchAllRule(t.Rules) {
 				noCatchAll = true
 			}
+		}
+		if emptyBackendRefs {
+			a.rep.addDoc(blocker, "MeshHTTPRoute routing", "MeshHTTPRoute rule has an empty backendRefs list",
+				"2.x routes a rule with `backendRefs: []` to the destination itself, as if the field were absent. 3.0 reads an explicit empty list as \"every backend is unresolved\" and answers the matching requests with `500`. Remove the `backendRefs` key from the rule (keep `default: {}`) to keep sending the traffic to the destination.",
+				docMeshHTTPRoute, ref)
 		}
 		switch {
 		case emptyMatches:
@@ -1013,6 +1027,15 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 			if !hasJSON(out.BackendRef) {
 				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane outbound has no backendRef",
 					"3.0 rejects `networking.outbound[]` entries without a `backendRef` on write and NACKs them over KDS; replace tag-based outbounds with a `backendRef` pointing at a MeshService, MeshExternalService or MeshMultiZoneService.",
+					docMeshService, qualified(it))
+				break
+			}
+		}
+		for _, out := range net.Outbound {
+			var br targetRef
+			if json.Unmarshal(out.BackendRef, &br) == nil && br.Name != "" && len(br.Labels) == 0 {
+				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane outbound backendRef selects by name",
+					"2.x resolves an outbound `backendRef.name` to the resource of that name in the proxy's own zone. 3.0 turns the name into a `kuma.io/display-name` label and binds the outbound to the oldest matching resource in any zone, so a same-named MeshService in another zone can silently take the traffic cross-zone. Select by `labels` instead, including `kuma.io/zone` with the proxy's zone.",
 					docMeshService, qualified(it))
 				break
 			}
@@ -1446,6 +1469,11 @@ func (a *auditor) checkServiceResources(ctx context.Context) error {
 					a.externalServiceMeshes = map[string]bool{}
 				}
 				a.externalServiceMeshes[it.Mesh] = true
+				if it.Labels["kuma.io/origin"] == "zone" {
+					a.rep.addDoc(blocker, "MeshExternalService routing", "Zone-origin MeshExternalService is reached through its own zone",
+						"2.x reaches a MeshExternalService created in a zone only through that zone's ingress and egress, so clients elsewhere depend on that zone's network path to the endpoint. 3.0 drops per-zone routing: every zone's local egress dials the endpoint directly. Make sure each zone's egress can reach it (or recreate the resource on the global) before upgrading.",
+						docMeshExternalService, qualified(it))
+				}
 			}
 		}
 	}
@@ -1649,7 +1677,9 @@ type cpConfig struct {
 	Runtime struct {
 		Kubernetes struct {
 			Injector struct {
-				UnifiedResourceNamingEnabled bool `json:"unifiedResourceNamingEnabled"`
+				UnifiedResourceNamingEnabled bool   `json:"unifiedResourceNamingEnabled"`
+				CNIEnabled                   bool   `json:"cniEnabled"`
+				TransparentProxyConfigMap    string `json:"transparentProxyConfigMap"`
 				Ebpf                         struct {
 					Enabled bool `json:"enabled"`
 				} `json:"ebpf"`
@@ -1732,7 +1762,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
 	if strings.EqualFold(cfg.Environment, "kubernetes") && strings.EqualFold(cfg.Mode, "global") {
 		a.rep.addDoc(blocker, cpConfigCategory, "Global control plane on Kubernetes",
-			cpConfigDetail("mode", "global", "universal"),
+			cpConfigDetail("environment", "kubernetes", "universal"),
 			docUniversal, "mode=global")
 	}
 }
@@ -1801,6 +1831,20 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 		a.rep.addDoc(blocker, cpConfigCategory, "eBPF transparent proxy enabled",
 			cpConfigDetail("runtime.kubernetes.injector.ebpf.enabled", "true", "false"),
 			docTransparentProxy, ref("runtime.kubernetes.injector.ebpf.enabled=true"))
+	}
+	if onK8s && cfg.Runtime.Kubernetes.Injector.CNIEnabled {
+		if a.cniEnabled == nil {
+			a.cniEnabled = map[string]bool{}
+		}
+		a.cniEnabled[zone] = true
+		// The 3.0 CNI plugin configures a pod only from the
+		// traffic.kuma.io/transparent-proxy-config annotation, which the 2.x
+		// injector writes only on the ConfigMap path.
+		if cfg.Runtime.Kubernetes.Injector.TransparentProxyConfigMap == "" {
+			a.rep.addDoc(blocker, cpConfigCategory, "CNI configures pods from legacy transparent proxy annotations",
+				cpConfigDetail("runtime.kubernetes.injector.transparentProxyConfigMap", "unset", "kuma-transparent-proxy-config"),
+				docTransparentProxy, ref("runtime.kubernetes.injector.transparentProxyConfigMap="))
+		}
 	}
 
 	// Settings the 3.0 control plane refuses to start with, or silently drops.
@@ -2238,8 +2282,60 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 				"This proxy advertises `feature-readiness-unix-socket`, which kuma-dp stopped sending in 2.14. A 3.0 control plane always points the readiness cluster at the TCP readiness port, so this proxy never reports ready. Upgrade its kuma-dp to 2.14 before upgrading the control plane.",
 				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
 		}
+		if feats := ins.DataplaneInsight.Metadata.Features; len(feats) > 0 {
+			a.checkDataplaneFeatures(it, ins, feats)
+		}
 	}
 	return nil
+}
+
+// kuma-dp 2.14 advertises these only when the matching runtime setting is on;
+// 3.0 assumes all of them and stops reading the features.
+const (
+	featureDeltaGRPC                = "feature-delta-grpc"
+	featureReusePort                = "feature-reuse-port"
+	featureStrictInboundPorts       = "feature-strict-inbound-ports"
+	featureOtelViaKumaDp            = "feature-otel-via-kuma-dp"
+	featureTransparentProxyInDPMeta = "feature-transparent-proxy-in-dataplane-metadata"
+)
+
+// checkDataplaneFeatures flags proxies whose advertised features show a runtime
+// setting 3.0 no longer supports. An empty feature list is inconclusive and is
+// not passed in.
+func (a *auditor) checkDataplaneFeatures(it resourceItem, ins dpInsight, feats []string) {
+	if !slices.Contains(feats, featureDeltaGRPC) {
+		a.rep.addDoc(blocker, "Dataplane features", "Dataplane uses state-of-the-world xDS",
+			"This proxy does not advertise `feature-delta-grpc`, so it talks SotW xDS. 3.0 serves only delta xDS: once its control plane runs 3.0 the proxy keeps its last config, stays Ready and stops receiving updates until kuma-dp restarts. `experimental.deltaXds` on the control plane only reaches pods through the Kubernetes injector; on Universal (and for ZoneIngress/ZoneEgress started outside the injector) set `KUMA_DATAPLANE_RUNTIME_ENVOY_XDS_TRANSPORT_PROTOCOL_VARIANT=DELTA_GRPC` on kuma-dp. Restart the proxy before upgrading.",
+			docKumaCPReference, qualified(it))
+	}
+	if !slices.Contains(feats, featureReusePort) || !slices.Contains(feats, featureStrictInboundPorts) {
+		a.rep.addDoc(blocker, "Dataplane features", "Dataplane opts out of SO_REUSEPORT or strict inbound ports",
+			"This proxy runs with `KUMA_DATAPLANE_RUNTIME_REUSE_PORT_ENABLED=false` or `KUMA_DATAPLANE_RUNTIME_STRICT_INBOUND_PORTS_ENABLED=false`. 3.0 always generates listeners with SO_REUSEPORT and strict inbound ports: Envoy cannot change `enable_reuse_port` on a live listener, so it rejects the inbound listener updates until the proxy restarts, and inbound traffic to undeclared ports is refused. Remove the override and restart the proxy on 2.x, declaring any extra inbound port it serves.",
+			docDataPlaneProxy, qualified(it))
+	}
+	if !slices.Contains(feats, featureOtelViaKumaDp) {
+		a.rep.addDoc(blocker, "Dataplane features", "Dataplane exports OpenTelemetry directly",
+			"This proxy runs with `KUMA_DATAPLANE_RUNTIME_OTEL_PIPE_ENABLED=false`. 3.0 always sends OpenTelemetry traces, logs and metrics through kuma-dp, so this proxy exports to a socket nothing listens on and its telemetry stops. Remove the override and restart the proxy.",
+			docOtelCollector, qualified(it))
+	}
+	// Only a transparent-proxied Kubernetes sidecar: zone proxies and gateways
+	// have no inbound redirection to configure.
+	if it.Labels[envLabel] == "kubernetes" && a.cniFor(it) &&
+		it.Labels[listenerZoneIngressLabel] == "" && it.Labels[listenerZoneEgressLabel] == "" &&
+		ins.Dataplane.Networking.gateway() == "" && !slices.Contains(feats, featureTransparentProxyInDPMeta) {
+		a.rep.addDoc(blocker, "Dataplane features", "Pod is configured through legacy transparent proxy annotations",
+			"This pod was injected without the transparent proxy ConfigMap, so it carries only the per-setting `traffic.kuma.io/*` annotations. The 3.0 CNI plugin configures a pod only from `traffic.kuma.io/transparent-proxy-config` and fails sandbox setup without it, so once the CNI DaemonSet runs 3.0 this pod cannot start again after a node reboot or sandbox restart. Enable `transparentProxy.configMap.enabled` on the control plane and restart the pod before upgrading.",
+			docTransparentProxy, qualified(it))
+	}
+}
+
+// cniFor reports whether the control plane governing it runs the CNI, keyed the
+// same way as outboundModeFor.
+func (a *auditor) cniFor(it resourceItem) bool {
+	if _, ok := a.outboundModes[""]; ok {
+		return a.cniEnabled[""]
+	}
+	return a.cniEnabled[zoneOf(it)]
 }
 
 func legacyCoreDNSRef(it resourceItem, ins dpInsight, corednsVersion string) (string, bool) {
@@ -2496,6 +2592,11 @@ type hashContainer struct {
 // httpRouteRule is one MeshHTTPRoute routing rule; only its matches matter here.
 type httpRouteRule struct {
 	Matches []httpRouteMatch `json:"matches"`
+	// A pointer tells an explicit empty list, which 3.0 answers with 500, from an
+	// absent one, which routes to the destination.
+	Default struct {
+		BackendRefs *[]json.RawMessage `json:"backendRefs"`
+	} `json:"default"`
 }
 
 // httpRouteMatch is the subset of a MeshHTTPRoute match the catch-all test needs:
@@ -2599,6 +2700,51 @@ GET /meshes/{mesh}/dataplanes/{name}/_inbounds/{inbound_kri}/_policies
 GET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_policies
 GET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes
 GET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes/{route_kri}/_policies`,
+	},
+	{
+		Title: "Clear every resource and Mesh blocker before upgrading the global control plane",
+		Detail: "The global control plane is upgraded first, and the moment it runs 3.0 it " +
+			"changes what every 2.x zone receives over KDS, before any zone is upgraded. " +
+			"It answers the zones with an empty list for every resource type 3.0 removed, so " +
+			"each zone deletes its copies of the legacy policies, MeshGateway, " +
+			"MeshGatewayRoute, ExternalService and the other zones' ZoneIngress. It reads " +
+			"stored resources with the removed fields dropped and syncs them that way: the " +
+			"Mesh arrives without `mtls`, `routing`, `networking`, `logging`, `tracing`, " +
+			"`metrics` and `constraints`, and policies arrive without `from`, `proxyTypes` " +
+			"and name refs, which a 2.x zone still accepts and applies with a wider scope. " +
+			"So the Mesh settings, removed kinds, zone proxies and policy field findings in " +
+			"this report are deadlines for the global upgrade, not for the zone upgrades. " +
+			"If that is not possible, keep the zones disconnected from the global " +
+			"(stop the global or block KDS) until each zone runs 3.0.",
+		Command: `# On the 2.x global, before upgrading it: every command must print nothing.
+kumactl get meshes -o json | jq -r '.items[] | select(.mtls or .routing or .networking or .logging or .tracing or .metrics or .constraints) | .name'
+for t in traffic-permissions traffic-routes traffic-logs traffic-traces fault-injections health-checks circuit-breakers retries timeouts rate-limits proxytemplates virtual-outbounds external-services meshgateways meshgatewayroutes; do
+  kumactl get "$t" -o json 2>/dev/null | jq -r --arg t "$t" '.items[]? | "\($t) \(.mesh)/\(.name)"'
+done
+kumactl get zoneingresses -o json | jq -r '.items[].name'
+
+# After upgrading the global, on each 2.x zone: the zone must not delete what it synced.
+kubectl -n kuma-system logs deploy/kuma-control-plane | grep "no longer available in the upstream"`,
+	},
+	{
+		Title: "Reissue Universal dataplane tokens bound to tags",
+		Detail: "A dataplane token issued with `--tag` is checked against the Dataplane's " +
+			"inbound tags on 2.x, but against its labels on 3.0. A token bound to " +
+			"`kuma.io/service` can never match on 3.0, because `kuma.io/service` is a " +
+			"reserved label 3.0 does not allow on a Dataplane, so the proxy is rejected the " +
+			"next time it connects to a 3.0 zone control plane (every zone upgrade forces a " +
+			"reconnect). The same token already fails on 2.x once " +
+			"`experimental.inboundTagsDisabled` removes the inbound tags. Tokens are not " +
+			"stored by the control plane, so the tool cannot find them. Reissue every " +
+			"tag-bound token as a name-bound (`--name`) or workload-bound (`--workload`) " +
+			"token and restart kuma-dp with it before upgrading. A proxy selected by a " +
+			"MeshIdentity whose SPIFFE ID uses the workload (the Universal default) needs a " +
+			"`--workload` token matching its `kuma.io/workload` label.",
+		Command: `# Decode the claims of each token kuma-dp runs with; "Tags" must be empty.
+cut -d. -f2 /path/to/dataplane-token | tr '_-' '/+' | base64 -d 2>/dev/null | jq '{Name, Mesh, Tags, Workload}'
+
+# Reissue, bound to the workload (or --name <dataplane>)
+kumactl generate dataplane-token --mesh <mesh> --workload <kuma.io/workload value> --valid-for 8760h > /path/to/dataplane-token`,
 	},
 	{
 		Title: "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",
