@@ -177,6 +177,9 @@ type auditor struct {
 	// externalServiceMeshes are the meshes with a MeshExternalService, recorded by
 	// checkServiceResources for checkExternalServiceIdentity.
 	externalServiceMeshes map[string]bool
+	// meshMTLS records, for every audited mesh, whether it still has Mesh mTLS,
+	// so checkMeshServiceSpec knows where a ServiceTag identity is stale.
+	meshMTLS map[string]bool
 
 	c                    *client
 	meshFilter           string
@@ -455,6 +458,11 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 		a.rep.addDoc(blocker, "Mesh object settings", "Inline mTLS on Mesh",
 			"Migrate `mesh.mtls` to MeshIdentity + MeshTrust.", docMeshIdentity, ref("mtls"))
 	}
+	if a.meshMTLS == nil {
+		a.meshMTLS = map[string]bool{}
+	}
+	// Kuma's MTLSEnabled: only an enabled backend issues certificates.
+	a.meshMTLS[m.Name] = spec.Mtls != nil && spec.Mtls.EnabledBackend != ""
 	if spec.Networking != nil && spec.Networking.Outbound != nil && spec.Networking.Outbound.Passthrough != nil {
 		a.rep.addDoc(blocker, "Mesh object settings", "Passthrough on Mesh",
 			"`mesh.networking.outbound.passthrough` is removed; use MeshPassthrough.", docMeshPassthrough, ref("networking.outbound.passthrough"))
@@ -1512,15 +1520,23 @@ func (a *auditor) checkMeshServiceSpec(it resourceItem) {
 				docMeshService, ref)
 		}
 	}
-	// 2.14 generators always emit a ServiceTag identity and 3.0 regenerates it
-	// SpiffeID-only, so only a hand-written MeshService needs the rewrite.
+	// A hand-written MeshService needs the rewrite. A generated one is rewritten by
+	// its zone CP, which on 2.14 keeps a ServiceTag entry while the mesh has mTLS
+	// and, before kumahq/kuma#18920, even without it.
 	for _, id := range s.Identities {
-		if managedBy == "" && id.Type == "ServiceTag" {
+		if id.Type != "ServiceTag" {
+			continue
+		}
+		if managedBy == "" {
 			a.rep.addDoc(blocker, "MeshService identities", "MeshService declares a ServiceTag identity",
 				"3.0 accepts only `SpiffeID` entries in `spec.identities` and rejects a `ServiceTag` one on write. Replace it with the SPIFFE ID of the workload before upgrading.",
 				docMeshService, ref)
-			break
+		} else if withMTLS, seen := a.meshMTLS[it.Mesh]; seen && !withMTLS {
+			a.rep.addDoc(blocker, "MeshService identities", "Generated MeshService keeps a ServiceTag identity without Mesh mTLS",
+				"The zone control plane that owns this MeshService still writes a `ServiceTag` identity although the mesh no longer has `mtls`, which no proxy presents any more. 3.0 accepts only `SpiffeID` identities: while zones are upgraded one by one, a 3.0 Kubernetes zone refuses this MeshService when it syncs it (a new one is skipped, so that zone cannot reach the service; an identity change fails the zone's MeshService sync). Upgrade the owning zone control plane to the 2.14 patch that drops the entry without Mesh mTLS (kumahq/kuma#18920) before upgrading the global control plane; it rewrites the identities within one status update interval.",
+				docMeshService, ref)
 		}
+		break
 	}
 	a.addUnsupportedAppProtocol("MeshService", s.Ports, ref)
 	if dl := s.Selector.DataplaneLabels; dl != nil {
