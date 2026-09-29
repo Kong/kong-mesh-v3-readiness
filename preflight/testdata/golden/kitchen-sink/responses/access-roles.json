@@ -20,12 +20,13 @@
         {
           "types": [ "MeshTimeout", "MeshTrafficPermission" ],
           "mesh": "default",
-          "access": [ "CREATE", "UPDATE", "DELETE" ],
+          "access": [ "CREATE", "UPDATE", "DELETE", "GENERATE_DATAPLANE_TOKEN" ],
           "when": [
             { "targetRef": { "kind": "MeshService", "name": "backend" } },
             { "targetRef": { "kind": "Dataplane", "name": "backend-1" } },
             { "from": { "targetRef": { "kind": "Mesh" } } },
-            { "to": { "targetRef": { "kind": "MeshServiceSubset", "name": "backend", "tags": { "version": "v1" } } } }
+            { "to": { "targetRef": { "kind": "MeshServiceSubset", "name": "backend", "tags": { "version": "v1" } } } },
+            { "to": { "targetRef": { "kind": "MeshMultiZoneService" } } }
           ]
         }
       ]

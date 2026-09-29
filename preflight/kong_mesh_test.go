@@ -116,6 +116,9 @@ func TestAccessRoleQualifiers(t *testing.T) {
 		{"to MeshServiceSubset", "blocker", "AccessRole when[].to.targetRef.kind=MeshServiceSubset", map[string]any{"to": map[string]any{"targetRef": tref("MeshServiceSubset", "backend")}}, true},
 		{"to MeshGateway", "blocker", "AccessRole when[].to.targetRef.kind=MeshGateway", map[string]any{"to": map[string]any{"targetRef": tref("MeshGateway", "gw")}}, true},
 		{"to MeshService", "blocker", "AccessRole when[].to.targetRef.kind=MeshService", map[string]any{"to": map[string]any{"targetRef": tref("MeshService", "")}}, false},
+		{"to MeshMultiZoneService without name", "blocker", "AccessRole when[].to.targetRef.kind=MeshMultiZoneService without name", map[string]any{"to": map[string]any{"targetRef": tref("MeshMultiZoneService", "")}}, true},
+		{"to MeshService with name", "blocker", "AccessRole when[].to.targetRef.kind=MeshService without name", map[string]any{"to": map[string]any{"targetRef": tref("MeshService", "backend")}}, false},
+		{"to Mesh without name", "blocker", "AccessRole when[].to.targetRef.kind=Mesh without name", map[string]any{"to": map[string]any{"targetRef": tref("Mesh", "")}}, false},
 		{"selectors", "blocker", "AccessRole qualifier uses sources, destinations or selectors", map[string]any{"selectors": map[string]any{"match": map[string]any{"kuma.io/service": "*"}}}, true},
 		{"empty sources", "blocker", "AccessRole qualifier uses sources, destinations or selectors", map[string]any{"sources": map[string]any{}}, true},
 		{"dpToken only", "blocker", "AccessRole qualifier uses sources, destinations or selectors", map[string]any{"dpToken": map[string]any{"tags": []any{}}}, false},
@@ -126,6 +129,32 @@ func TestAccessRoleQualifiers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditResponses(t, map[string]string{"/access-roles": accessRoleBody(t, rule(tc.when))})
 			if _, got := findFinding(m, tc.severity, categoryAccessRoles, tc.title); got != tc.want {
+				t.Errorf("flagged = %v, want %v\nfindings: %+v", got, tc.want, m.Findings)
+			}
+		})
+	}
+}
+
+// TestAccessRoleConfigAccess: 3.0 gates /config on VIEW_CONTROL_PLANE_METADATA
+// instead of GENERATE_DATAPLANE_TOKEN, across all rules and regardless of --mesh.
+func TestAccessRoleConfigAccess(t *testing.T) {
+	const title = "AccessRole loses /config access in 3.0"
+	rule := func(mesh string, access ...any) map[string]any {
+		return map[string]any{"mesh": mesh, "access": access}
+	}
+	for _, tc := range []struct {
+		name  string
+		rules []map[string]any
+		want  bool
+	}{
+		{"token only", []map[string]any{rule("", "CREATE", "GENERATE_DATAPLANE_TOKEN")}, true},
+		{"token in another mesh's rule", []map[string]any{rule("other", "GENERATE_DATAPLANE_TOKEN")}, true},
+		{"metadata in a separate rule", []map[string]any{rule("", "GENERATE_DATAPLANE_TOKEN"), rule("", "VIEW_CONTROL_PLANE_METADATA")}, false},
+		{"no token", []map[string]any{rule("", "CREATE")}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := auditResponses(t, map[string]string{"/access-roles": accessRoleBody(t, tc.rules...)})
+			if _, got := findFinding(m, "blocker", categoryAccessRoles, title); got != tc.want {
 				t.Errorf("flagged = %v, want %v\nfindings: %+v", got, tc.want, m.Findings)
 			}
 		})

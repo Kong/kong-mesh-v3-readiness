@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 75,
+    "blockers": 77,
     "warnings": 0,
     "info": 3,
     "coverage_gaps": 3,
@@ -29,6 +29,18 @@
       "count": 1,
       "example_resources": [
         "audit-gateways (MeshGateway, MeshGlobalRateLimit)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole loses /config access in 3.0",
+      "detail": "2.14 lets any role holding `GENERATE_DATAPLANE_TOKEN` read `GET /config`; 3.0 requires `VIEW_CONTROL_PLANE_METADATA` instead, so users bound to this role get 403 on `/config` after upgrading (the GUI and this tool's `--token` run read it). The `admin` role of a control plane first started before 2.7.0 lacks it too. Add `VIEW_CONTROL_PLANE_METADATA` to the role's `access` if its users read `/config`.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
       ]
     },
     {
@@ -72,7 +84,19 @@
       "group": "control_plane",
       "category": "Access roles",
       "title": "AccessRole when[].targetRef.kind=MeshService",
-      "detail": "3.0 matches a qualifier `targetRef` against a policy's top-level targetRef, which accepts only Mesh and Dataplane, and rejects any other kind on write (`value '\u003cKind\u003e' is not supported`), so re-applying the role fails and the stored one matches no policy. Rewrite the qualifier as `kind: Dataplane` before upgrading. The 2.14 qualifier cannot select by labels, so `kind: Dataplane` without `name` covers every Dataplane-targeted policy the rule's types and mesh allow; narrow it with `labels` after upgrading.",
+      "detail": "3.0 matches a qualifier `targetRef` against a policy's top-level targetRef, which accepts only Mesh and Dataplane, and rejects any other kind on write (`value '\u003cKind\u003e' is not supported`), so re-applying the role fails and the stored one matches no policy. Either rewrite it as `kind: Dataplane` before upgrading, or remove the qualifier and recreate it with `labels` after upgrading (3.0 does not re-validate stored roles, it only rejects a re-apply). A `kind: Dataplane` qualifier without `name` is not a catch-all: 3.0 requires the qualifier's name to equal the policy's `kuma.io/display-name` label, so it only covers policies without one (on 2.14: without `name`), and policies pinned by display-name are not covered. On 2.14 the same rewrite widens the grant, from policies on this MeshService to every Dataplane-targeted policy without a name that the rule's types and mesh allow.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole when[].to.targetRef.kind=MeshMultiZoneService without name",
+      "detail": "3.0 requires `labels` on a `when[].to.targetRef` of this kind and derives them only from `name`, so re-applying the role fails (`labels must be set when kind is MeshMultiZoneService`). 2.14 accepts it without `name` for MeshMultiZoneService, which has no 2.14 validator branch. Set `name` to the target's display name before upgrading, or remove the qualifier and recreate it with `labels` after upgrading.",
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [

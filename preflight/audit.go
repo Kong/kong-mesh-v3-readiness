@@ -341,7 +341,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 			return nil, err
 		}
 	}
-	a.rep.manual = buildManualChecks(a.rep.k8sObserved)
+	a.rep.manual = buildManualChecks(a.rep.k8sObserved, a.rep.cp.Product == productKongMesh)
 	return a.rep, nil
 }
 
@@ -584,13 +584,17 @@ func (a *auditor) checkRemovedEnterprisePolicies(ctx context.Context) error {
 	return nil
 }
 
+// productKongMesh is the `product` the Kong Mesh CP reports on `GET /`.
+const productKongMesh = "Kong Mesh"
+
 // categoryAccessRoles groups the Kong Mesh RBAC (AccessRole/AccessAudit) findings.
 const categoryAccessRoles = "Access roles"
 
 // rbacTargetRef is an AccessRole qualifier targetRef. The 2.14 qualifier has no
 // `labels`, so `name` is its only way to narrow a kind. `tags` and `mesh` are not
-// decoded: 2.14 accepts them only next to kinds 3.0 rejects anyway (MeshSubset,
-// MeshServiceSubset, MeshService) or never matches on them.
+// decoded: `mesh` was never matched on, and 2.14 accepts `tags` only next to kinds
+// 3.0 rejects anyway (MeshSubset, MeshServiceSubset, MeshService) or next to
+// MeshMultiZoneService, which has no 2.14 validator branch (unlikely in practice).
 type rbacTargetRef struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
@@ -611,9 +615,10 @@ type rbacQualifier struct {
 
 // rbacRule is an AccessRole or AccessAudit rule (AccessAudit has no `when`).
 type rbacRule struct {
-	Types []string        `json:"types"`
-	Mesh  string          `json:"mesh"`
-	When  []rbacQualifier `json:"when"`
+	Types  []string        `json:"types"`
+	Mesh   string          `json:"mesh"`
+	Access []string        `json:"access"`
+	When   []rbacQualifier `json:"when"`
 }
 
 // jsonSet reports a JSON value that is present at all, `{}` included: a proto
@@ -639,6 +644,9 @@ func (a *auditor) checkAccessControl(ctx context.Context) error {
 			}
 			if a.unmarshalSpec(it, &spec, ref) {
 				a.checkRBACRules(rc.kind, spec.Rules, removed, ref)
+				if rc.kind == "AccessRole" {
+					a.checkConfigAccess(spec.Rules, ref)
+				}
 			}
 		}
 	}
@@ -671,7 +679,10 @@ func (a *auditor) checkRBACRules(kind string, rules []rbacRule, removed map[stri
 				switch {
 				case tr.Kind != "" && !allowedTopLevelTargetRefKinds[tr.Kind]:
 					add(blocker, kind+" when[].targetRef.kind="+tr.Kind,
-						"3.0 matches a qualifier `targetRef` against a policy's top-level targetRef, which accepts only Mesh and Dataplane, and rejects any other kind on write (`value '<Kind>' is not supported`), so re-applying the role fails and the stored one matches no policy. Rewrite the qualifier as `kind: Dataplane` before upgrading. The 2.14 qualifier cannot select by labels, so `kind: Dataplane` without `name` covers every Dataplane-targeted policy the rule's types and mesh allow; narrow it with `labels` after upgrading.")
+						"3.0 matches a qualifier `targetRef` against a policy's top-level targetRef, which accepts only Mesh and Dataplane, and rejects any other kind on write (`value '<Kind>' is not supported`), so re-applying the role fails and the stored one matches no policy. "+
+							"Either rewrite it as `kind: Dataplane` before upgrading, or remove the qualifier and recreate it with `labels` after upgrading (3.0 does not re-validate stored roles, it only rejects a re-apply). "+
+							"A `kind: Dataplane` qualifier without `name` is not a catch-all: 3.0 requires the qualifier's name to equal the policy's `kuma.io/display-name` label, so it only covers policies without one (on 2.14: without `name`), and policies pinned by display-name are not covered. "+
+							"On 2.14 the same rewrite widens the grant, from policies on this "+tr.Kind+" to every Dataplane-targeted policy without a name that the rule's types and mesh allow.")
 				case tr.Name != "":
 					add(info, kind+" qualifier matches a targetRef by name", byName)
 				}
@@ -685,6 +696,10 @@ func (a *auditor) checkRBACRules(kind string, rules []rbacRule, removed map[stri
 				case tr.Kind != "" && !allowedToTargetRefKinds[tr.Kind]:
 					add(blocker, kind+" when[].to.targetRef.kind="+tr.Kind,
 						"3.0 accepts only Mesh, MeshService, MeshExternalService, MeshMultiZoneService and MeshHTTPRoute in a `when[].to.targetRef` qualifier and rejects subset/selector kinds and MeshGateway on write, so re-applying the role fails. Retarget the qualifier at one of those kinds before upgrading.")
+				case tr.Kind != "" && tr.Kind != "Mesh" && tr.Name == "":
+					add(blocker, kind+" when[].to.targetRef.kind="+tr.Kind+" without name",
+						"3.0 requires `labels` on a `when[].to.targetRef` of this kind and derives them only from `name`, so re-applying the role fails (`labels must be set when kind is "+tr.Kind+"`). 2.14 accepts it without `name` for MeshMultiZoneService, which has no 2.14 validator branch. "+
+							"Set `name` to the target's display name before upgrading, or remove the qualifier and recreate it with `labels` after upgrading.")
 				case tr.Name != "":
 					add(info, kind+" qualifier matches a targetRef by name", byName)
 				}
@@ -700,6 +715,21 @@ func (a *auditor) checkRBACRules(kind string, rules []rbacRule, removed map[stri
 		a.rep.addDoc(blocker, categoryAccessRoles, kind+" rule types name a kind removed in 3.0",
 			"3.0 no longer registers these resource types and rejects a rule whose `types` names one (`unknown types`), so re-applying the resource fails. Remove them from `rules[].types` before upgrading (and add the 3.0 replacements, such as MeshTrafficPermission or MeshOPA, if the rule should cover them).",
 			docRBAC, ref+" ("+strings.Join(removedTypes, ", ")+")")
+	}
+}
+
+// checkConfigAccess flags an AccessRole that reads `/config` on 2.14 but not on
+// 3.0: 2.14 gates it on GENERATE_DATAPLANE_TOKEN, 3.0 on VIEW_CONTROL_PLANE_METADATA.
+// Any rule grants access regardless of its types or mesh, so --mesh does not narrow it.
+func (a *auditor) checkConfigAccess(rules []rbacRule, ref string) {
+	has := func(access string) bool {
+		return slices.ContainsFunc(rules, func(r rbacRule) bool { return slices.Contains(r.Access, access) })
+	}
+	if has("GENERATE_DATAPLANE_TOKEN") && !has("VIEW_CONTROL_PLANE_METADATA") {
+		a.rep.addDoc(blocker, categoryAccessRoles, "AccessRole loses /config access in 3.0",
+			"2.14 lets any role holding `GENERATE_DATAPLANE_TOKEN` read `GET /config`; 3.0 requires `VIEW_CONTROL_PLANE_METADATA` instead, so users bound to this role get 403 on `/config` after upgrading (the GUI and this tool's `--token` run read it). "+
+				"The `admin` role of a control plane first started before 2.7.0 lacks it too. Add `VIEW_CONTROL_PLANE_METADATA` to the role's `access` if its users read `/config`.",
+			docRBAC, ref)
 	}
 }
 
@@ -2936,12 +2966,37 @@ var kubernetesManualChecks = []ManualCheck{
 	},
 }
 
+// kongMeshManualChecks are appended only when the CP reports the Kong Mesh
+// product: they concern enterprise-only data plane features.
+var kongMeshManualChecks = []ManualCheck{
+	{
+		Title: "Move static kuma-dp OPA config into MeshOPA `agentConfig`",
+		Detail: "Kong Mesh 3.0 removes the `kuma-dp` flag `--opa-config-path` and the env vars " +
+			"`KMESH_OPA_CONFIG_PATH` and `KMESH_OPA_EXPERIMENTAL_USE_DYNAMIC_CONFIG` (dynamic " +
+			"config is always used). `kuma-dp` fails to start while `--opa-config-path` is still " +
+			"set. Data plane flags and env vars are not visible through the control-plane API, so " +
+			"the tool cannot detect this for you. Before upgrading, move the file's contents into " +
+			"`spec.default.agentConfig` of a `MeshOPA` policy, then drop the flag and both env vars " +
+			"from every data plane deployment. `--opa-set` (`KMESH_OPA_CONFIG_OVERRIDES`) stays and " +
+			"now applies on top of the config generated from `MeshOPA`.",
+		Command: `# Kubernetes: find pods still passing the removed flag or env vars
+kubectl get pods -A -o yaml | grep -nE 'opa-config-path|KMESH_OPA_CONFIG_PATH|KMESH_OPA_EXPERIMENTAL_USE_DYNAMIC_CONFIG'
+
+# Universal: check each kuma-dp unit / launch script
+grep -rnE 'opa-config-path|KMESH_OPA_CONFIG_PATH|KMESH_OPA_EXPERIMENTAL_USE_DYNAMIC_CONFIG' /etc/systemd/system /etc/kuma* 2>/dev/null`,
+	},
+}
+
 // buildManualChecks returns the manual checklist for a run, appending the
-// Kubernetes-only items when the audit positively observed Kubernetes.
-func buildManualChecks(k8sObserved bool) []ManualCheck {
+// Kubernetes-only items when the audit positively observed Kubernetes and the
+// Kong Mesh-only items when the CP reports that product.
+func buildManualChecks(k8sObserved, kongMesh bool) []ManualCheck {
 	checks := append([]ManualCheck{}, manualChecks...)
 	if k8sObserved {
 		checks = append(checks, kubernetesManualChecks...)
+	}
+	if kongMesh {
+		checks = append(checks, kongMeshManualChecks...)
 	}
 	return checks
 }

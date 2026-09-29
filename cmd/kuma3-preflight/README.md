@@ -174,11 +174,14 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   shape, which has to be rewritten to the typed shape before the global CP is upgraded (a
   global on 3.0 syncing to 2.14 zones breaks either shape, so this needs a 2.14 patch that
   accepts both); AccessRole `when[]` qualifiers 3.0 rejects (top-level `targetRef` kinds other
-  than Mesh/Dataplane, `from`, `to` subset/MeshGateway kinds, `sources`/`destinations`/`selectors`)
-  and AccessRole/AccessAudit `rules[].types` naming a removed kind (all blockers), plus an info
+  than Mesh/Dataplane, `from`, `to` subset/MeshGateway kinds, a `to` Mesh*Service/MeshHTTPRoute
+  without `name`, `sources`/`destinations`/`selectors`), AccessRole/AccessAudit `rules[].types`
+  naming a removed kind, and AccessRole granting `GENERATE_DATAPLANE_TOKEN` without
+  `VIEW_CONTROL_PLANE_METADATA` (3.0 gates `/config` on the latter) (all blockers), plus an info
   note for qualifiers matching a `targetRef` by `name`, which 3.0 narrows to a
   `kuma.io/display-name` label match. These collections are enterprise-only: a 404 (OSS Kuma)
-  is not a coverage gap, a 403 is.
+  is not a coverage gap, a 403 is. On a Kong Mesh CP, a manual check covers the removed
+  static `kuma-dp` OPA config (`--opa-config-path`).
 - **Envoy config (opt-in, `--inspect-dataplanes N`)** — fetches up to N proxies' config
   dumps and flags use of the legacy Envoy DNS filter.
 
