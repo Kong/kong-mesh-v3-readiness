@@ -1685,8 +1685,14 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 		// Kong Mesh gates /config behind RBAC. Missing/insufficient auth must not
 		// abort the whole audit — every ungated resource check already ran — so
 		// record a coverage gap (inconclusive) instead of a misleading hard failure.
-		a.rep.addGap("/config", "requires authentication — pass --token to audit control-plane settings (NOT audited)")
-		return nil
+		a.rep.addGap("/config", "requires authentication — pass --token to audit this control plane's own settings (NOT audited)")
+		// Zone configs come from ZoneInsight, which RBAC does not gate the same
+		// way. Only a global serves it: a 404 means a zone or standalone CP (nothing
+		// more to audit), while an unreadable one is its own gap.
+		if _, served, zerr := a.zoneInsights(ctx); zerr == nil && !served {
+			return nil
+		}
+		return a.checkZoneControlPlaneConfigs(ctx)
 	case err != nil:
 		// Any other read failure (timeout, decode, non-2xx) is a /config-specific
 		// coverage gap, not a dead CP: earlier checks already reached the CP.
@@ -2193,7 +2199,7 @@ const featureEmbeddedDNS = "feature-embedded-dns"
 const featureReadinessUnixSocket = "feature-readiness-unix-socket"
 
 // checkDataplaneVersions flags data planes the control plane itself reports as
-// version-incompatible (`kumaCpCompatible: false`): they are already outside the
+// version-incompatible (`kumaCpCompatible` false or absent): they are already outside the
 // supported CP/DP skew window and must be upgraded before a major-version bump.
 // Sourced from /dataplanes+insights (the data behind the GUI dashboard), so no
 // version parsing is reimplemented here — the CP's verdict is authoritative.
@@ -2212,7 +2218,9 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 		}
 		last := subs[len(subs)-1].Version
 		kd := last.KumaDp
-		if kd.KumaCpCompatible != nil && !*kd.KumaCpCompatible {
+		// The insight is proto3 JSON, which omits a false bool: a CP that judged the
+		// proxy incompatible sends its version with no kumaCpCompatible key at all.
+		if kd.Version != "" && (kd.KumaCpCompatible == nil || !*kd.KumaCpCompatible) {
 			a.rep.addDoc(blocker, "Dataplane version", "Dataplane is version-incompatible with the control plane",
 				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
 				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
@@ -2256,8 +2264,30 @@ func legacyCoreDNSRef(it resourceItem, ins dpInsight, corednsVersion string) (st
 }
 
 // dnsFilterMarker is the Envoy UDP DNS filter name; its presence in a proxy's
-// config dump means that proxy still uses the built-in DNS path 3.0 removes.
+// listeners means that proxy still uses the built-in DNS path 3.0 removes.
 var dnsFilterMarker = []byte("envoy.filters.udp.dns_filter")
+
+// usesDNSFilter reports whether a config dump's listeners use the Envoy DNS
+// filter. Only the ListenersConfigDump counts: the bootstrap's
+// `node.extensions` lists every filter compiled into Envoy, this one included,
+// so the whole dump always contains the name.
+func usesDNSFilter(dump []byte) bool {
+	var d struct {
+		Configs []json.RawMessage `json:"configs"`
+	}
+	if json.Unmarshal(dump, &d) != nil {
+		return false
+	}
+	for _, c := range d.Configs {
+		var t struct {
+			Type string `json:"@type"`
+		}
+		if json.Unmarshal(c, &t) == nil && strings.HasSuffix(t.Type, ".ListenersConfigDump") && bytes.Contains(c, dnsFilterMarker) {
+			return true
+		}
+	}
+	return false
+}
 
 // checkDataplaneEnvoyConfig is the opt-in deep check (--inspect-dataplanes N):
 // it fetches up to N dataplanes' Envoy config dumps and flags use of the legacy
@@ -2281,7 +2311,7 @@ func (a *auditor) checkDataplaneEnvoyConfig(ctx context.Context) error {
 			continue // best-effort: skip offline / unreadable proxies
 		}
 		inspected++
-		if bytes.Contains(dump, dnsFilterMarker) {
+		if usesDNSFilter(dump) {
 			a.rep.addDoc(blocker, "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter",
 				"This proxy's Envoy config still uses the built-in `envoy.filters.udp.dns_filter`; 3.0 drops the Envoy DNS filter for the embedded DNS server — upgrade kuma-dp.",
 				docDNS, qualified(it))

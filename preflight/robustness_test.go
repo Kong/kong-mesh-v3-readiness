@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -118,6 +119,54 @@ func TestConfigForbiddenDegradesToGap(t *testing.T) {
 	}
 	if rep.status() != StatusInconclusive {
 		t.Errorf("status = %q, want %q", rep.status(), StatusInconclusive)
+	}
+}
+
+// TestConfigForbiddenStillAuditsZoneConfigs: on a global whose /config is gated
+// (Kong Mesh RBAC without --token), the zones' configs still come from
+// /zones+insights, which a global serves — they must be audited, not dropped
+// behind the /config gap. A 403 there too is its own gap.
+func TestConfigForbiddenStillAuditsZoneConfigs(t *testing.T) {
+	forbidden := func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"status":403}`))
+	}
+	zoneCfg, err := json.Marshal(`{"mode":"zone","environment":"universal","bootstrapServer":{"params":{"readinessPort":0}}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zones := `{"total":1,"items":[{"type":"ZoneOverview","name":"zone-a","zoneInsight":{"subscriptions":[{"config":` + string(zoneCfg) + `}]}}],"next":null}`
+	for _, tc := range []struct {
+		name          string
+		zonesInsights http.HandlerFunc
+		wantFinding   bool
+		wantZonesGap  bool
+	}{
+		{"zone insights readable", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, []byte(zones)) }, true, false},
+		{"zone insights forbidden", forbidden, false, true},
+		{"zone or standalone CP (404)", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := cpServer(t, map[string]http.HandlerFunc{"/config": forbidden, "/zones+insights": tc.zonesInsights})
+			c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 10 * time.Second}, nil)
+			if err != nil {
+				t.Fatalf("newClient: %v", err)
+			}
+			rep, err := audit(context.Background(), c, auditOptions{})
+			if err != nil {
+				t.Fatalf("audit: %v", err)
+			}
+			if _, ok := gapForPath(rep, "/config"); !ok {
+				t.Errorf("no /config gap; gaps=%v", rep.coverage)
+			}
+			_, got := findFinding(rep.toModel(""), "blocker", cpConfigCategory, "Readiness port 0 fails 3.0 startup")
+			if got != tc.wantFinding {
+				t.Errorf("zone readinessPort finding = %v, want %v; findings=%+v", got, tc.wantFinding, rep.toModel("").Findings)
+			}
+			if _, got := gapForPath(rep, "/zones+insights"); got != tc.wantZonesGap {
+				t.Errorf("/zones+insights gap = %v, want %v; gaps=%v", got, tc.wantZonesGap, rep.coverage)
+			}
+		})
 	}
 }
 

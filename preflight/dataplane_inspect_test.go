@@ -11,25 +11,38 @@ import (
 )
 
 // TestDataplaneVersionIncompatibleReported checks that a proxy the CP reports as
-// version-incompatible (kumaCpCompatible=false) surfaces as a blocker, while a
-// compatible one does not.
+// version-incompatible surfaces as a blocker, while a compatible one does not. A
+// real CP serves the insight as proto3 JSON, which drops a false bool, so an
+// incompatible proxy arrives with its version and no kumaCpCompatible key.
 func TestDataplaneVersionIncompatibleReported(t *testing.T) {
-	insights := `{"total":2,"items":[
+	insights := `{"total":4,"items":[
 		{"type":"DataplaneOverview","mesh":"default","name":"old-dp",
 		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.5.0","kumaCpCompatible":false}}}]}},
+		{"type":"DataplaneOverview","mesh":"default","name":"omitted-dp",
+		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.11.19"}}}]}},
 		{"type":"DataplaneOverview","mesh":"default","name":"new-dp",
-		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.9.0","kumaCpCompatible":true}}}]}}
+		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.9.0","kumaCpCompatible":true}}}]}},
+		{"type":"DataplaneOverview","mesh":"default","name":"no-version-dp",
+		 "dataplaneInsight":{"subscriptions":[{"version":{}}]}}
 	],"next":null}`
 	m := auditResponses(t, map[string]string{"/dataplanes+insights": insights})
 	f, ok := findFinding(m, "blocker", "Dataplane version", "Dataplane is version-incompatible with the control plane")
 	if !ok {
 		t.Fatalf("expected a version-incompatibility blocker, got %+v", m.Findings)
 	}
-	if f.Count != 1 {
-		t.Errorf("count = %d, want 1 (only the incompatible proxy)", f.Count)
+	if f.Count != 2 {
+		t.Errorf("count = %d, want 2 (old-dp and omitted-dp)", f.Count)
 	}
-	if len(f.Examples) == 0 || !strings.Contains(f.Examples[0], "old-dp") {
-		t.Errorf("example should name old-dp, got %+v", f.Examples)
+	got := strings.Join(f.Examples, " ")
+	for _, want := range []string{"old-dp", "omitted-dp (kuma-dp 2.11.19)"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("examples %v missing %q", f.Examples, want)
+		}
+	}
+	for _, clean := range []string{"new-dp", "no-version-dp"} {
+		if strings.Contains(got, clean) {
+			t.Errorf("examples %v must not name %q", f.Examples, clean)
+		}
 	}
 }
 
@@ -126,7 +139,7 @@ func TestInspectDataplanesDetectsEnvoyDNSFilter(t *testing.T) {
 		case r.URL.Path == "/dataplanes":
 			_, _ = io.WriteString(w, `{"total":1,"items":[{"type":"Dataplane","mesh":"default","name":"dp-1"}],"next":null}`)
 		case strings.HasSuffix(r.URL.Path, "/dataplanes/dp-1/xds"):
-			_, _ = io.WriteString(w, `{"configs":[{"dynamic_listeners":[{"name":"kuma:dns","filter_chains":[{"filters":[{"name":"envoy.filters.udp.dns_filter"}]}]}]}]}`)
+			_, _ = io.WriteString(w, `{"configs":[`+bootstrapWithDNSExtension+`,{"@type":"type.googleapis.com/envoy.admin.v3.ListenersConfigDump","dynamic_listeners":[{"name":"kuma:dns","filter_chains":[{"filters":[{"name":"envoy.filters.udp.dns_filter"}]}]}]}]}`)
 		default:
 			_, _ = io.WriteString(w, `{"total":0,"items":[],"next":null}`)
 		}
@@ -153,5 +166,31 @@ func TestInspectDataplanesDetectsEnvoyDNSFilter(t *testing.T) {
 	}
 	if _, ok := findFinding(on.toModel(""), "blocker", "Dataplane DNS", "Dataplane uses the legacy Envoy DNS filter"); !ok {
 		t.Errorf("expected an Envoy DNS filter blocker, got %+v", on.toModel("").Findings)
+	}
+}
+
+// bootstrapWithDNSExtension is the part of every real config dump that lists the
+// extensions compiled into Envoy, the DNS filter among them.
+const bootstrapWithDNSExtension = `{"@type":"type.googleapis.com/envoy.admin.v3.BootstrapConfigDump","bootstrap":{"node":{"extensions":[{"name":"envoy.filters.udp.dns_filter","category":"envoy.filters.udp_listener","type_urls":["envoy.extensions.filters.udp.dns_filter.v3.DnsFilterConfig"]}]}}}`
+
+// TestUsesDNSFilter confirms only a listener using the DNS filter counts: every
+// dump names the filter in its bootstrap extension list, which is no use of it.
+func TestUsesDNSFilter(t *testing.T) {
+	listeners := func(filter string) string {
+		return `{"@type":"type.googleapis.com/envoy.admin.v3.ListenersConfigDump","dynamic_listeners":[{"name":"l","filter_chains":[{"filters":[{"name":"` + filter + `"}]}]}]}`
+	}
+	for _, tc := range []struct {
+		name, dump string
+		want       bool
+	}{
+		{"embedded DNS proxy: filter only in the bootstrap extensions", `{"configs":[` + bootstrapWithDNSExtension + `,` + listeners("envoy.filters.network.tcp_proxy") + `]}`, false},
+		{"legacy DNS listener", `{"configs":[` + bootstrapWithDNSExtension + `,` + listeners("envoy.filters.udp.dns_filter") + `]}`, true},
+		{"not a config dump", `{"error":"x"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := usesDNSFilter([]byte(tc.dump)); got != tc.want {
+				t.Errorf("usesDNSFilter = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
