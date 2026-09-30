@@ -125,6 +125,7 @@ generates the Dataplane and a 3.0 CP regenerates it, so preflight flags these on
 | `networking.advertisedAddress` | proto field reserved | advertise through the zone proxy config |
 | `networking.inbound[].tags` | proto field reserved | Dataplane labels + MeshService selection (pairs with `experimental.inboundTagsDisabled: true`) |
 | `networking.outbound[]` without `backendRef` | rejected on write, NACKed over KDS (`dataplane_validator.go`) | `backendRef` to a MeshService / MeshExternalService / MeshMultiZoneService |
+| `networking.outbound[].backendRef.name` | 2.x resolves the name in the proxy's own zone; 3.0 turns it into a `kuma.io/display-name` label and binds the oldest match in any zone (`pkg/xds/context/backendref_normalization.go`) | `backendRef.labels` including `kuma.io/zone` |
 | `networking.transparentProxying.directAccessServices` | only `*` is honored; named services silently ignored (`direct_access_proxy_generator.go`) | `*`, or drop direct access |
 | `networking.transparentProxying.reachableServices` | removed | `reachableBackends` (see core table) |
 
@@ -157,14 +158,20 @@ Two 2.x defaults flip together in 3.0 (kumahq/kuma#18798) so a workload that con
 
 ## Infrastructure / deployment
 
-- **Global CP on Kubernetes** → dropped as supported deployment mode
-- **Delta xDS** → the only option (SOTW path removed, not just defaulted on)
+- **Global CP on Kubernetes** → dropped as supported deployment mode. The fix is `environment: universal` (a Postgres-backed global), `mode` stays `global`. Moving is not rename-free: a Kubernetes global stamps `k8s.kuma.io/namespace` on global-origin resources, which feeds the KDS name hash and the KRI, so their names change in every zone
+- **Upgrade order** → the global is upgraded first, and a 3.0 global sends 2.x zones an empty list for every removed resource type (the zones delete their copies) and syncs Mesh and policies with removed fields dropped. Every resource, Mesh and policy-field blocker is therefore a deadline for the global upgrade. Manual check
+- **Delta xDS** → the only option (SOTW path removed, not just defaulted on). `experimental.deltaXds` reaches pods only through the Kubernetes injector; Universal kuma-dp and zone proxies started outside it need `KUMA_DATAPLANE_RUNTIME_ENVOY_XDS_TRANSPORT_PROTOCOL_VARIANT=DELTA_GRPC`. Preflight flags each proxy that does not advertise `feature-delta-grpc`
+- **`KUMA_DATAPLANE_RUNTIME_REUSE_PORT_ENABLED=false` / `STRICT_INBOUND_PORTS_ENABLED=false`** → 3.0 always sets both, and Envoy rejects `enable_reuse_port` changes on live listeners. Preflight flags proxies missing `feature-reuse-port` or `feature-strict-inbound-ports`
+- **`KUMA_DATAPLANE_RUNTIME_OTEL_PIPE_ENABLED=false`** → 3.0 always exports OpenTelemetry through kuma-dp. Preflight flags proxies missing `feature-otel-via-kuma-dp`
+- **Legacy transparent proxy annotations with CNI** → the 3.0 CNI plugin reads only `traffic.kuma.io/transparent-proxy-config`, which the 2.x injector writes only with `transparentProxy.configMap.enabled` (`app/cni/pkg/cni/main_linux.go`). Preflight flags a CNI control plane without the ConfigMap and each Kubernetes sidecar missing `feature-transparent-proxy-in-dataplane-metadata`
 - **CoreDNS + Envoy DNS filter** → dropped (DNS handling reworked)
 - **eBPF** transparent proxy → dropped
 - **Legacy inspect and overview endpoints** → removed (`dataplanes/{name}/rules`, `{policy}/{name}/dataplanes`, `meshservices/{name}/_resources/dataplanes`, `dataplanes+insights`, `zones+insights`, zone proxy overviews and Envoy admin, `service-insights`); `_rules` stays without `toRules`/`fromRules`, `dataplanes/{name}/policies` is deprecated but still served. Manual check with the replacement mapping
 - **Pod resources** instead of container resources
 - **`KUMA_RUNTIME_KUBERNETES_INJECTOR_BUILTIN_DNS_LOGGING`** (embedded DNS logging) → dropped
-- Routing MeshExternalService through a specific zone → dropped
+- Routing MeshExternalService through a specific zone → dropped. Preflight flags zone-origin MeshExternalServices: every zone's egress must reach the endpoint
+- **MeshHTTPRoute `backendRefs: []`** → 2.x routes the rule to the destination, 3.0 answers `500` (explicit empty list = all backends unresolved). Preflight blocker
+- **Tag-bound dataplane tokens** (`kumactl generate dataplane-token --tag`) → 3.0 checks the tags against Dataplane labels instead of inbound tags, and `kuma.io/service` is not an allowed label, so the proxy is rejected on reconnect. Manual check
 - **Universal Helm loopback admin** → the chart sets `KUMA_API_SERVER_AUTHN_LOCALHOST_IS_ADMIN=false` in 3.0 (2.x left the built-in default `true`). `kubectl exec`/`port-forward` + kumactl without a token stops working, and the bootstrap admin token can only be read over loopback *before* the upgrade. Not observable from the API — manual check
 - **`apiServer.authn.type: adminClientCerts`** (`KUMA_API_SERVER_AUTHN_TYPE`) → removed (kumahq/kuma#17906). 3.0 registers only the `tokens` authn plugin, so the CP exits at startup with `there is not implementation of authn named adminClientCerts` (master `pkg/core/bootstrap/bootstrap.go:386`). Switch to `tokens` and issue admin user tokens before upgrading. Checked on every CP, a global included. Preflight blocker
 - **`apiServer.auth.clientCertsDir`** (`KUMA_API_SERVER_AUTH_CLIENT_CERTS_DIR`) → removed with it (kumahq/kuma#17906). The 3.0 CP loads its config non-strictly, so the value is silently ignored and client certificates trusted only through that directory stop authenticating to the HTTPS API server. Move the client CA to `apiServer.https.tlsCaFile` and unset the directory. Preflight blocker

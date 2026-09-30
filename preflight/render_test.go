@@ -141,6 +141,7 @@ func TestHTMLScriptMapsGroupIdentifiersToLabels(t *testing.T) {
 		t.Fatal("page script missing GROUP_LABELS map for group identifiers")
 	}
 	for id, label := range map[string]string{
+		groupUpgradePath:      "Upgrade path",
 		groupControlPlane:     "Control plane",
 		groupMeshObject:       "Mesh object",
 		groupPolicies:         "Policies",

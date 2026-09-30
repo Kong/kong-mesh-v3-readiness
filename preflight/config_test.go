@@ -25,7 +25,7 @@ func TestControlPlaneConfigDeprecatedSettingReported(t *testing.T) {
 			name:     "global on kubernetes",
 			config:   `{"defaults":{"restrictOutbound":true},"environment":"kubernetes","mode":"global","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Global control plane on Kubernetes",
-			detail: cpConfigDetail("mode", "global", "universal"),
+			detail: cpConfigDetail("environment", "kubernetes", "universal"),
 		},
 		{
 			name:     "autoReachableServices",
