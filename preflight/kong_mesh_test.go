@@ -21,7 +21,7 @@ func TestOPAPolicyRemoved(t *testing.T) {
 		t.Errorf("doc = %q, want %q", f.Doc, docMeshOPA)
 	}
 
-	m = auditWithNotFound(t, nil, "/opa-policies", "/meshopas", "/access-roles", "/accessaudits")
+	m = auditWithNotFound(t, nil, "/opa-policies", "/meshopas", "/access-roles", "/accessaudits", "/access-role-bindings")
 	if len(m.Coverage) != 0 {
 		t.Errorf("OSS 404s produced coverage gaps: %+v", m.Coverage)
 	}

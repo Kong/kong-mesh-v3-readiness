@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // docBase is the Kong Mesh developer-docs root. The doc* values below point at
@@ -634,9 +635,10 @@ func jsonSet(raw json.RawMessage) bool {
 }
 
 // checkAccessControl flags Kong Mesh RBAC resources (global-scoped AccessRole and
-// AccessAudit) that 3.0 rejects on write or matches differently. Both are
-// enterprise-only, so an OSS Kuma CP 404s them (listIfServed: not a gap), while a
-// 403 from a token without RBAC read access is a coverage gap.
+// AccessAudit) that 3.0 rejects on write or matches differently, and
+// AccessRoleBindings open to unauthenticated callers. All are enterprise-only,
+// so an OSS Kuma CP 404s them (listIfServed: not a gap), while a 403 from a
+// token without RBAC read access is a coverage gap.
 func (a *auditor) checkAccessControl(ctx context.Context) error {
 	removed := removedKindNames()
 	for _, rc := range []struct{ wsPath, kind string }{
@@ -656,7 +658,45 @@ func (a *auditor) checkAccessControl(ctx context.Context) error {
 			}
 		}
 	}
+	for _, it := range a.listIfServed(ctx, "/access-role-bindings") {
+		a.checkUnauthenticatedBinding(it)
+	}
 	return nil
+}
+
+// unauthenticatedGroups are the groups every caller without a credential
+// carries: Kong Mesh's own, and Kubernetes' for requests through the webhook.
+var unauthenticatedGroups = []string{"mesh-system:unauthenticated", "system:unauthenticated"}
+
+type rbacSubject struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+// checkUnauthenticatedBinding flags an AccessRoleBinding that grants roles to
+// callers without a credential. 2.x binds `admin` to them by default; 3.0 stops
+// doing so for new control planes but keeps an existing binding as it is.
+func (a *auditor) checkUnauthenticatedBinding(it resourceItem) {
+	ref := a.ref(it)
+	var spec struct {
+		Subjects []rbacSubject `json:"subjects"`
+		Roles    []string      `json:"roles"`
+	}
+	if !a.unmarshalSpec(it, &spec, ref) || len(spec.Roles) == 0 {
+		return
+	}
+	if !slices.ContainsFunc(spec.Subjects, func(s rbacSubject) bool {
+		return strings.EqualFold(s.Type, "Group") && slices.Contains(unauthenticatedGroups, s.Name)
+	}) {
+		return
+	}
+	roles := slices.Clone(spec.Roles)
+	slices.Sort(roles)
+	a.rep.addDoc(info, categoryAccessRoles, "AccessRoleBinding grants roles to unauthenticated callers",
+		"The binding names `mesh-system:unauthenticated` or `system:unauthenticated`, so anyone who reaches the API without a credential holds its roles. With the 2.x default `admin` binding that covers every write, token generation and reading stored Secrets and GlobalSecrets, the bootstrapped admin token included. "+
+			"A 3.0 control plane no longer creates these subjects, but it keeps an existing binding unchanged, so the upgrade neither fixes nor breaks this. "+
+			"Narrow the binding to authenticated groups (issue user tokens with `kumactl generate user-token` first, and on Kubernetes name every identity that applies mesh resources, such as a GitOps controller), then rotate the admin token if the API was reachable without one.",
+		docRBAC, ref+" (roles: "+strings.Join(roles, ", ")+")")
 }
 
 // checkRBACRules records each finding at most once per resource. With --mesh, a
@@ -1250,6 +1290,13 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 					docMeshService, qualified(it))
 				break
 			}
+		}
+		// 3.0 still redirects a proxy that reports no transparent-proxy config
+		// through the deprecated ports; 3.1 removes them.
+		if tp := net.transparentProxying(); tp.RedirectPortInbound != 0 || tp.RedirectPortOutbound != 0 || (tp.IPFamilyMode != "" && tp.IPFamilyMode != "UnSpecified") {
+			a.rep.addDoc(info, "Dataplane networking", "Dataplane configures transparent proxying through deprecated fields",
+				"3.0 removes `networking.transparentProxying.ipFamilyMode` (the IP family now comes from what kuma-dp reports) and deprecates `redirectPortInbound`/`redirectPortOutbound`, which keep working on 3.0 and are removed in 3.1. Nothing breaks on the upgrade. To be ready for 3.1, drop the three fields and start kuma-dp with `--transparent-proxy`, or with `--transparent-proxy-config` pointing at a file carrying the non-default IP family mode and redirect ports; kuma-dp 2.14 already supports both flags.",
+				docTransparentProxy, qualified(it))
 		}
 		for _, out := range net.Outbound {
 			var br targetRef
@@ -1883,6 +1930,44 @@ type cpConfig struct {
 	MonitoringAssignmentServer struct {
 		Enabled *bool `json:"enabled"`
 	} `json:"monitoringAssignmentServer"`
+	// Store.Cache.Enabled is nil when not served, so only an explicit false
+	// (3.0 always caches) is flagged.
+	Store struct {
+		Cache struct {
+			Enabled *bool `json:"enabled"`
+		} `json:"cache"`
+	} `json:"store"`
+	// DNSServer holds the legacy kuma.io/service VIP allocator settings 3.0
+	// removes together with the allocator.
+	DNSServer struct {
+		CIDR              string `json:"CIDR"`
+		ServiceVipEnabled *bool  `json:"serviceVipEnabled"`
+	} `json:"dnsServer"`
+	// Metrics.Mesh carries the deprecated resync timeouts, which 2.14 prefers
+	// over the resync intervals when set and 3.0 ignores. Durations are served
+	// as Go duration strings ("0s" when unset).
+	Metrics struct {
+		Mesh struct {
+			MinResyncTimeout string `json:"minResyncTimeout"`
+			MaxResyncTimeout string `json:"maxResyncTimeout"`
+		} `json:"mesh"`
+	} `json:"metrics"`
+	// DpServer.Authn.ZoneProxy authenticates the standalone ZoneIngress and
+	// ZoneEgress proxies 3.0 removes; 3.0 authenticates every proxy with
+	// dpProxy and moves the zone token issuer switch under multizone.global.
+	DpServer struct {
+		Authn struct {
+			DpProxy struct {
+				Type string `json:"type"`
+			} `json:"dpProxy"`
+			ZoneProxy struct {
+				Type      string `json:"type"`
+				ZoneToken struct {
+					EnableIssuer *bool `json:"enableIssuer"`
+				} `json:"zoneToken"`
+			} `json:"zoneProxy"`
+		} `json:"authn"`
+	} `json:"dpServer"`
 	Experimental struct {
 		AutoReachableServices bool `json:"autoReachableServices"`
 		// ExposeZoneProxyMetrics (2.14 only) serves unauthenticated
@@ -1891,8 +1976,14 @@ type cpConfig struct {
 		DeltaXds               bool `json:"deltaXds"`
 		SidecarContainers      bool `json:"sidecarContainers"`
 		InboundTagsDisabled    bool `json:"inboundTagsDisabled"`
-		KdsEventBasedWatchdog  struct {
-			Enabled bool `json:"enabled"`
+		// KubeOutboundsAsVIPs is nil when not served; 3.0 always stores
+		// Kubernetes outbounds next to the VIPs.
+		KubeOutboundsAsVIPs             *bool `json:"kubeOutboundsAsVIPs"`
+		UseTagFirstVirtualOutboundModel bool  `json:"useTagFirstVirtualOutboundModel"`
+		KdsEventBasedWatchdog           struct {
+			Enabled            bool   `json:"enabled"`
+			FlushInterval      string `json:"flushInterval"`
+			FullResyncInterval string `json:"fullResyncInterval"`
 		} `json:"kdsEventBasedWatchdog"`
 	} `json:"experimental"`
 	// Defaults.RestrictOutbound is absent on a control plane older than the 2.14
@@ -1982,6 +2073,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 		// The API server does run on a global, so its startup-breaking settings
 		// are audited here too.
 		a.addAPIServerFindings(cfg, zoneRef(""))
+		a.addDroppedSettingFindings(cfg, zoneRef(""))
 		return a.checkZoneControlPlaneConfigs(ctx)
 	}
 	// Standalone or a directly-connected zone CP: audit the config we reached.
@@ -2028,6 +2120,71 @@ func (a *auditor) addAPIServerFindings(cfg cpConfig, ref func(string) string) {
 			cpConfigDetail("apiServer.auth.clientCertsDir", dir, "unset"),
 			docKumaCPReference, ref("apiServer.auth.clientCertsDir="+dir))
 	}
+}
+
+// addDroppedSettingFindings flags settings 3.0 removes on every mode, a global
+// included. The 3.0 CP loads its config non-strictly, so each is silently
+// ignored and the behavior it selected reverts to the 3.0 default.
+func (a *auditor) addDroppedSettingFindings(cfg cpConfig, ref func(string) string) {
+	if e := cfg.Store.Cache.Enabled; e != nil && !*e {
+		a.rep.addDoc(blocker, cpConfigCategory, "Store cache can no longer be disabled",
+			cpConfigDetail("store.cache.enabled", "false", "true"),
+			docKumaCPReference, ref("store.cache.enabled=false"))
+	}
+	if wd := cfg.Experimental.KdsEventBasedWatchdog; wd.Enabled {
+		for _, s := range []struct {
+			field, value string
+			def          time.Duration
+		}{
+			{"flushInterval", wd.FlushInterval, 5 * time.Second},
+			{"fullResyncInterval", wd.FullResyncInterval, time.Minute},
+		} {
+			if d, ok := setDuration(s.value); ok && d != s.def {
+				field := "experimental.kdsEventBasedWatchdog." + s.field
+				a.rep.addDoc(blocker, cpConfigCategory, "KDS watchdog timing moved to multizone.{global,zone}.kds.eventBasedWatchdog",
+					cpConfigDetail(field, s.value, "unset"),
+					docKumaCPReference, ref(field+"="+s.value))
+			}
+		}
+	}
+	for _, s := range []struct{ field, value string }{
+		{"metrics.mesh.minResyncTimeout", cfg.Metrics.Mesh.MinResyncTimeout},
+		{"metrics.mesh.maxResyncTimeout", cfg.Metrics.Mesh.MaxResyncTimeout},
+	} {
+		if _, ok := setDuration(s.value); ok {
+			a.rep.addDoc(blocker, cpConfigCategory, s.field+" ignored in 3.0",
+				cpConfigDetail(s.field, s.value, "unset"),
+				docKumaCPReference, ref(s.field+"="+s.value))
+		}
+	}
+	if e := cfg.DpServer.Authn.ZoneProxy.ZoneToken.EnableIssuer; e != nil && !*e {
+		a.rep.addDoc(blocker, cpConfigCategory, "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer",
+			cpConfigDetail("dpServer.authn.zoneProxy.zoneToken.enableIssuer", "false", "unset"),
+			docKumaCPReference, ref("dpServer.authn.zoneProxy.zoneToken.enableIssuer=false"))
+	}
+
+	var legacyVIP []string
+	if c := cfg.DNSServer.CIDR; c != "" && c != "240.0.0.0/4" {
+		legacyVIP = append(legacyVIP, "dnsServer.CIDR="+c)
+	}
+	if e := cfg.DNSServer.ServiceVipEnabled; e != nil && !*e {
+		legacyVIP = append(legacyVIP, "dnsServer.serviceVipEnabled=false")
+	}
+	if cfg.Experimental.UseTagFirstVirtualOutboundModel {
+		legacyVIP = append(legacyVIP, "experimental.useTagFirstVirtualOutboundModel=true")
+	}
+	for _, s := range legacyVIP {
+		a.rep.addDoc(info, cpConfigCategory, "Legacy DNS VIP settings have no effect in 3.0",
+			"3.0 removes the `kuma.io/service` VIP allocator these settings configured, together with the `<service>.mesh` names it served. DNS names come only from MeshService, MeshExternalService and MeshMultiZoneService VIPs, allocated from the `ipam.*` CIDRs. The settings are ignored, so drop them from the control plane configuration.",
+			docDNS, ref(s))
+	}
+}
+
+// setDuration parses a Go duration string served by /config, reporting false
+// for an unset ("", "0s") or unparseable value.
+func setDuration(s string) (time.Duration, bool) {
+	d, err := time.ParseDuration(s)
+	return d, err == nil && d != 0
 }
 
 // addCPConfigFindings audits the data-plane-relevant CP settings (injector +
@@ -2082,6 +2239,14 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 
 	// Settings the 3.0 control plane refuses to start with, or silently drops.
 	a.addAPIServerFindings(cfg, ref)
+	a.addDroppedSettingFindings(cfg, ref)
+	// zoneProxy.type authenticated only the standalone zone proxies; 3.0 zone
+	// proxies are Dataplanes and authenticate like any other proxy.
+	if authn := cfg.DpServer.Authn; authn.ZoneProxy.Type == "none" && authn.DpProxy.Type != "none" {
+		a.rep.addDoc(blocker, cpConfigCategory, "Zone proxies need a dataplane token in 3.0",
+			cpConfigDetail("dpServer.authn.zoneProxy.type", "none", "unset"),
+			docZoneProxies, ref("dpServer.authn.zoneProxy.type=none"))
+	}
 	if p := cfg.BootstrapServer.Params.ReadinessPort; p != nil && *p == 0 {
 		a.rep.addDoc(blocker, cpConfigCategory, "Readiness port 0 fails 3.0 startup",
 			cpConfigDetail("bootstrapServer.params.readinessPort", "0", "9902"),
@@ -2126,6 +2291,11 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 		a.rep.addDoc(blocker, cpConfigCategory, "Native sidecar containers not enabled",
 			cpConfigDetail("experimental.sidecarContainers", "false", "true"),
 			docKumaCPReference, ref("experimental.sidecarContainers=false"))
+	}
+	if v := cfg.Experimental.KubeOutboundsAsVIPs; onK8s && v != nil && !*v {
+		a.rep.addDoc(blocker, cpConfigCategory, "Kubernetes outbounds as VIPs not enabled",
+			cpConfigDetail("experimental.kubeOutboundsAsVIPs", "false", "true"),
+			docKumaCPReference, ref("experimental.kubeOutboundsAsVIPs=false"))
 	}
 	a.noteOutboundDefault(cfg, zone, ref)
 }
@@ -2796,6 +2966,7 @@ type transparentProxying struct {
 	ReachableBackends    *reachableBackends `json:"reachableBackends"`
 	RedirectPortInbound  uint32             `json:"redirectPortInbound"`
 	RedirectPortOutbound uint32             `json:"redirectPortOutbound"`
+	IPFamilyMode         string             `json:"ipFamilyMode"`
 }
 
 // reachableBackends keeps only each ref's labels: 2.x accepts a ref by
@@ -3106,6 +3277,101 @@ kumactl generate user-token --name upgrade-admin --group mesh-system:admin --val
 kumactl config control-planes add --name upgraded --address https://<cp-host>:5682 --auth-type=tokens --auth-conf token=<token>
 kumactl get meshes`,
 	},
+	{
+		Title: "Rename the `standalone` control plane mode to `zone`",
+		Detail: "Kuma 3.0 removes the deprecated `standalone` mode: `kuma-cp` fails config " +
+			"validation at startup and the Helm chart fails at template time. 2.x already runs " +
+			"`standalone` as `zone` and serves `mode: zone` from `/config`, so the tool cannot " +
+			"tell which one you configured. Set `zone` in `KUMA_MODE`, the `mode` key of the " +
+			"kuma-cp config file or the Helm value `controlPlane.mode` before upgrading; the two " +
+			"modes behave the same, so nothing else changes. Empty output means there is " +
+			"nothing left to fix.",
+		Command: `# Kubernetes: Helm values and the running control plane
+helm get values -n <namespace> <release> -o json | jq -r '.. | .mode? // empty | select(. == "standalone")'
+kubectl get deploy -A -o json | jq -r '.items[] | select(any(.spec.template.spec.containers[].env[]?; .name == "KUMA_MODE" and .value == "standalone")) | [.metadata.namespace, .metadata.name] | @tsv'
+
+# Universal: kuma-cp units, environment files and config files
+grep -rnE 'KUMA_MODE=.?standalone|^\s*mode:\s*standalone' /etc/systemd/system /etc/kuma* 2>/dev/null`,
+	},
+	{
+		Title: "Review defaults that change in 3.0",
+		Detail: "Some 3.0 defaults differ from 2.x, so a control plane or proxy relying on the " +
+			"old default changes behavior although no setting changed. The API cannot tell a " +
+			"default from an explicit value, so review each. " +
+			"(1) `xdsServer.dataplaneConfigurationRefreshInterval` goes from `1s` to `10s`: " +
+			"mesh, policy and service changes take up to 10s to reach proxies, and a CA rotation " +
+			"must keep the old CA for at least one interval. Set it explicitly if you need faster " +
+			"propagation. (2) Workload certificates last 5 days instead of 1 day and renew about " +
+			"every 4 days. Set `certificateParameters.expiry` on the MeshIdentity (or " +
+			"`dpCert.rotation.expiration` on the Mesh) if you need a shorter lifetime. (3) On " +
+			"Kubernetes a sidecar without a CPU limit runs 2 Envoy worker threads instead of one " +
+			"per node core. Set a sidecar CPU limit or the `kuma.io/sidecar-proxy-concurrency` " +
+			"annotation on workloads that need more. (4) A new Mesh gets no default policies: 2.x " +
+			"created `mesh-timeout-*`, `mesh-circuit-breaker-all-*` and `mesh-retry-all-*`. " +
+			"Existing meshes keep theirs, and timeouts and circuit breakers keep the same values " +
+			"without them, but a mesh with no MeshRetry does not retry. Apply your own MeshRetry " +
+			"to meshes created after the upgrade, and drop `skipCreatingInitialPolicies` from Mesh " +
+			"manifests.",
+		Command: `# Add -H "Authorization: Bearer $TOKEN" when the API needs a token.
+# (1) "1s" means the CP follows the 2.x default
+curl -s http://<cp-address>:5681/config | jq -r '.xdsServer.dataplaneConfigurationRefreshInterval'
+
+# (3) Kubernetes: empty means every sidecar without the annotation drops to 2 workers
+curl -s http://<cp-address>:5681/config | jq -r '.runtime.kubernetes.injector.sidecarContainer.resources.limits.cpu'
+
+# (4) Meshes still carrying skipCreatingInitialPolicies
+kumactl get meshes -o json | jq -r '.items[] | select(.skipCreatingInitialPolicies) | .name'`,
+	},
+	{
+		Title: "Drop removed kuma-dp flags and settings",
+		Detail: "Kuma 3.0 `kuma-dp` removes the `--config-dir` flag, so a proxy still started " +
+			"with it fails with `unknown flag`. It also ignores the `dataplaneRuntime.configDir` " +
+			"and `socketDir` config fields and their `KUMA_DATAPLANE_RUNTIME_CONFIG_DIR` / " +
+			"`KUMA_DATAPLANE_RUNTIME_SOCKET_DIR` env vars without an error, falling back to a " +
+			"generated temporary directory. Data plane flags and env vars are not visible " +
+			"through the control-plane API, so the tool cannot detect this. Switch to " +
+			"`--work-dir` (`KUMA_DATAPLANE_RUNTIME_WORK_DIR`), which kuma-dp 2.14 already " +
+			"supports, before upgrading kuma-dp. Empty output means there is nothing left to fix.",
+		Command: `# Kubernetes: sidecar env vars set through kuma.io/sidecar-env-vars or container patches
+kubectl get pods -A -o yaml | grep -nE 'config-dir|KUMA_DATAPLANE_RUNTIME_(CONFIG|SOCKET)_DIR'
+
+# Universal: kuma-dp units, launch scripts and config files
+grep -rnE -- '--config-dir|KUMA_DATAPLANE_RUNTIME_(CONFIG|SOCKET)_DIR|^\s*(configDir|socketDir):' /etc/systemd/system /etc/kuma* 2>/dev/null`,
+	},
+	{
+		Title: "Update scripts using removed kumactl commands and flags",
+		Detail: "Kuma 3.0 `kumactl` removes commands and flags that scripts, CI jobs and " +
+			"runbooks may still call, and fails on them: `install observability` (run your own " +
+			"observability stack; the Grafana dashboards ship in the release tarball under " +
+			"`dashboards/grafana/`), the `install control-plane` flags `--ingress-*` and " +
+			"`--egress-*`, `generate zone-token --scope ingress|egress`, `generate " +
+			"dataplane-token --proxy-type ingress|egress` (a zone proxy takes an ordinary " +
+			"dataplane token), the `transparent-proxy --ebpf-*` flags and `uninstall ebpf`, " +
+			"`inspect dataplanes --gateway`, `inspect services` (use `get meshservices`) and the " +
+			"`inspect zoneingress`/`zoneegress` commands. The tool cannot see how kumactl is " +
+			"called, so search your repositories, and upgrade kumactl together with the control " +
+			"plane. Empty output means there is nothing left to fix.",
+		Command: `grep -rnE 'kumactl +(install +observability|install +control-plane.*--(ingress|egress)-|generate +zone-token.*--scope[= ](ingress|egress)|generate +dataplane-token.*--proxy-type[= ](ingress|egress)|(un)?install +transparent-proxy.*--ebpf|uninstall +ebpf|inspect +dataplanes.*--gateway|inspect +(services|zone-?ingress(es)?|zone-?egress(es)?)\b)' <path-to-scripts-and-ci>`,
+	},
+	{
+		Title: "Validate user-supplied MeshIdentity CAs",
+		Detail: "Kuma 3.0 validates a CA supplied through a Bundled MeshIdentity's " +
+			"`provider.bundled.ca` like the legacy `provided` mTLS backend did: the " +
+			"certificate must be a CA (`CA:TRUE`) with the `keyCertSign` key usage and without " +
+			"`keyAgreement`. 2.x accepts any certificate there, so a MeshIdentity whose CA fails " +
+			"these checks works today, and after the upgrade it never becomes Ready and the " +
+			"proxies it selects get no workload certificates, which breaks mTLS. The certificate " +
+			"usually lives in a Secret, which the tool does not read, so check each one. The " +
+			"first command lists every MeshIdentity with a user-supplied CA and where its " +
+			"certificate comes from; check each certificate with the second.",
+		Command: `# MeshIdentities with a user-supplied CA, and the source of each certificate
+for m in $(kumactl get meshes -o json | jq -r '.items[].name'); do
+  kumactl get meshidentities --mesh "$m" -o json | jq -r '.items[] | select(.spec.provider.bundled.ca.certificate) | [.mesh, .name, (.spec.provider.bundled.ca.certificate | tostring)] | @tsv'
+done
+
+# For each certificate: needs "CA:TRUE" and "Certificate Sign", must not show "Key Agreement"
+openssl x509 -in ca.crt -noout -ext basicConstraints,keyUsage`,
+	},
 }
 
 // kubernetesManualChecks are appended only when the audit observed Kubernetes in
@@ -3154,6 +3420,34 @@ var kubernetesManualChecks = []ManualCheck{
 			"matching annotation) from the manifests in your repository. Empty output means " +
 			"there is nothing left to fix.",
 		Command: `kubectl get dataplanes.kuma.io -A -o json | jq -r '.items[] | select((.metadata.ownerReferences // []) | length == 0) | select(.metadata.labels["k8s.kuma.io/service-account"] // .metadata.annotations["k8s.kuma.io/service-account"]) | [.metadata.namespace, .metadata.name] | @tsv'`,
+	},
+	{
+		Title: "Drop the top-level Helm `ingress` and `egress` values",
+		Detail: "Kuma 3.0 removes the chart's standalone ZoneIngress/ZoneEgress Deployments " +
+			"along with the top-level `ingress` and `egress` value blocks (`kuma.ingress` / " +
+			"`kuma.egress` in the Kong Mesh chart). Helm does not reject unknown values, so " +
+			"`helm upgrade` with `ingress.enabled=true` still succeeds, and then deletes the " +
+			"legacy zone proxy Deployment, Service, HorizontalPodAutoscaler, " +
+			"PodDisruptionBudget and RBAC objects the previous release owned, which drops all " +
+			"cross-zone traffic still flowing through them. The control plane does not see " +
+			"Helm values, so the tool cannot detect this. Migrate to mesh-scoped zone proxies " +
+			"(`meshes[].ingress.enabled` / `meshes[].egress.enabled`) first, then remove both " +
+			"blocks from your values files. `controlPlane.ingress.*` is unrelated and stays. " +
+			"Empty output means there is nothing left to fix.",
+		Command: `helm get values -n <namespace> <release> -o json | jq -r '(., .kuma // {}) | to_entries[] | select(.key == "ingress" or .key == "egress") | select(.value.enabled == true) | "\(.key).enabled=true"'`,
+	},
+	{
+		Title: "Replace the `kuma.io/builtin-dns` Pod annotations",
+		Detail: "Kuma 3.0 no longer reads the `kuma.io/builtin-dns`, `kuma.io/builtin-dns-port` " +
+			"and `kuma.io/builtin-dns-logging` Pod annotations, so a Pod that turned the DNS " +
+			"proxy off or moved its port with them gets the control plane's DNS settings once " +
+			"it is re-injected. The control-plane API does not expose Pod annotations, so the " +
+			"tool cannot detect this. Put the per-Pod value in a ConfigMap in the Pod's " +
+			"namespace (key `config.yaml`, `redirect.dns.enabled` / `redirect.dns.port`), point " +
+			"the Pod at it with `traffic.kuma.io/transparent-proxy-configmap-name`, which 2.14 " +
+			"already supports, and drop the old annotations. DNS query logging has no " +
+			"replacement. Empty output means there is nothing left to fix.",
+		Command: `kubectl get pods -A -o json | jq -r '.items[] | select(.metadata.annotations // {} | keys | any(startswith("kuma.io/builtin-dns"))) | [.metadata.namespace, .metadata.name] | @tsv'`,
 	},
 }
 
