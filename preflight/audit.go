@@ -1033,7 +1033,9 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		}
 		for _, out := range net.Outbound {
 			var br targetRef
-			if json.Unmarshal(out.BackendRef, &br) == nil && br.Name != "" && len(br.Labels) == 0 {
+			// MeshExternalService and MeshMultiZoneService names already resolve
+			// across zones on 2.x, so only a MeshService changes.
+			if json.Unmarshal(out.BackendRef, &br) == nil && br.Kind == "MeshService" && br.Name != "" && len(br.Labels) == 0 {
 				a.rep.addDoc(blocker, "Dataplane networking", "Dataplane outbound backendRef selects by name",
 					"2.x resolves an outbound `backendRef.name` to the resource of that name in the proxy's own zone. 3.0 turns the name into a `kuma.io/display-name` label and binds the outbound to the oldest matching resource in any zone, so a same-named MeshService in another zone can silently take the traffic cross-zone. Select by `labels` instead, including `kuma.io/zone` with the proxy's zone.",
 					docMeshService, qualified(it))
@@ -2261,6 +2263,14 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
 				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
 		}
+		// 3.0 upgrades only from 2.14, and older kuma-dp does not advertise the
+		// features checkDataplaneFeatures reads, so this comes before every other
+		// data plane finding.
+		if maj, minor, _, ok := ParseSemver(kd.Version); ok && maj == 2 && minor < UpgradeTargetMinor {
+			a.rep.addDoc(blocker, "Dataplane version", fmt.Sprintf("Dataplane runs kuma-dp older than 2.%d", UpgradeTargetMinor),
+				fmt.Sprintf("Upgrade kuma-dp to the latest 2.%d patch first, before acting on any other data plane finding for this proxy. 3.0 supports upgrading only from 2.%d, and older kuma-dp does not advertise the features the other data plane checks read (`feature-otel-via-kuma-dp`, and before 2.13 `feature-reuse-port` and `feature-strict-inbound-ports`), so re-run the audit once it runs 2.%d.", UpgradeTargetMinor, UpgradeTargetMinor, UpgradeTargetMinor),
+				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
+		}
 		if ref, ok := legacyCoreDNSRef(it, ins, last.Dependencies["coredns"]); ok {
 			a.rep.addDoc(blocker, "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS",
 				"This proxy resolves mesh names through the bundled CoreDNS (a transparent proxy not advertising `feature-embedded-dns`, or one reporting a `coredns` dependency). 3.0 removes the CoreDNS + Envoy DNS-filter path, so this proxy loses mesh DNS as soon as its control plane runs 3.0. Before upgrading, switch it to the embedded DNS proxy: on Universal set `KUMA_DNS_PROXY_PORT=15053` (or `--dns-proxy-port` / `dns.proxyPort`) on kuma-dp and restart it; on Kubernetes set `runtime.kubernetes.injector.builtinDNS.experimentalProxy: true` on the control plane and restart the pods. A proxy running with DNS disabled (`KUMA_DNS_ENABLED=false`) does not advertise the feature either and can be ignored.",
@@ -2718,8 +2728,10 @@ GET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes/{route_kr
 			"(stop the global or block KDS) until each zone runs 3.0.",
 		Command: `# On the 2.x global, before upgrading it: every command must print nothing.
 kumactl get meshes -o json | jq -r '.items[] | select(.mtls or .routing or .networking or .logging or .tracing or .metrics or .constraints) | .name'
-for t in traffic-permissions traffic-routes traffic-logs traffic-traces fault-injections health-checks circuit-breakers retries timeouts rate-limits proxytemplates virtual-outbounds external-services meshgateways meshgatewayroutes; do
-  kumactl get "$t" -o json 2>/dev/null | jq -r --arg t "$t" '.items[]? | "\($t) \(.mesh)/\(.name)"'
+for m in $(kumactl get meshes -o json | jq -r '.items[].name'); do
+  for t in traffic-permissions traffic-routes traffic-logs traffic-traces fault-injections healthchecks circuit-breakers retries timeouts rate-limits proxytemplates virtual-outbounds external-services meshgateways meshgatewayroutes; do
+    kumactl get "$t" --mesh "$m" -o json | jq -r --arg t "$t" '.items[]? | "\($t) \(.mesh)/\(.name)"'
+  done
 done
 kumactl get zoneingresses -o json | jq -r '.items[].name'
 
@@ -2741,7 +2753,10 @@ kubectl -n kuma-system logs deploy/kuma-control-plane | grep "no longer availabl
 			"MeshIdentity whose SPIFFE ID uses the workload (the Universal default) needs a " +
 			"`--workload` token matching its `kuma.io/workload` label.",
 		Command: `# Decode the claims of each token kuma-dp runs with; "Tags" must be empty.
-cut -d. -f2 /path/to/dataplane-token | tr '_-' '/+' | base64 -d 2>/dev/null | jq '{Name, Mesh, Tags, Workload}'
+# The payload is unpadded base64url, so restore the padding before decoding.
+p=$(cut -d. -f2 /path/to/dataplane-token | tr '_-' '/+')
+while [ $(( ${#p} % 4 )) -ne 0 ]; do p="$p="; done
+printf '%s' "$p" | base64 -d | jq '{Name, Mesh, Tags, Workload}'
 
 # Reissue, bound to the workload (or --name <dataplane>)
 kumactl generate dataplane-token --mesh <mesh> --workload <kuma.io/workload value> --valid-for 8760h > /path/to/dataplane-token`,

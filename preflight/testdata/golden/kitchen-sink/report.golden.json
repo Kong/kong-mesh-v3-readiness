@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 71,
+    "blockers": 73,
     "warnings": 0,
     "info": 2,
     "coverage_gaps": 3,
@@ -19,6 +19,43 @@
     "system_findings": 3
   },
   "findings": [
+    {
+      "severity": "blocker",
+      "group": "upgrade_path",
+      "category": "Control plane version",
+      "title": "Control plane behind the latest 2.14 patch",
+      "detail": "Upgrade to the latest 2.14 patch (2.14.0) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
+      "count": 1,
+      "example_resources": [
+        "control plane (2.9.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "upgrade_path",
+      "category": "Dataplane version",
+      "title": "Dataplane is version-incompatible with the control plane",
+      "detail": "The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
+      "count": 1,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "upgrade_path",
+      "category": "Dataplane version",
+      "title": "Dataplane runs kuma-dp older than 2.14",
+      "detail": "Upgrade kuma-dp to the latest 2.14 patch first, before acting on any other data plane finding for this proxy. 3.0 supports upgrading only from 2.14, and older kuma-dp does not advertise the features the other data plane checks read (`feature-otel-via-kuma-dp`, and before 2.13 `feature-reuse-port` and `feature-strict-inbound-ports`), so re-run the audit once it runs 2.14.",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
+      "count": 2,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)",
+        "default/current-dp.kuma-demo [zone:west] (kuma-dp 2.9.0)"
+      ]
+    },
     {
       "severity": "blocker",
       "group": "control_plane",
@@ -173,18 +210,6 @@
       "count": 1,
       "example_resources": [
         "zone zone-1: runtime.kubernetes.injector.ebpf.enabled=true"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "control_plane",
-      "category": "Control plane version",
-      "title": "Control plane behind the latest 2.14 patch",
-      "detail": "Upgrade to the latest 2.14 patch (2.14.0) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.",
-      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
-      "count": 1,
-      "example_resources": [
-        "control plane (2.9.0)"
       ]
     },
     {
@@ -534,18 +559,6 @@
     {
       "severity": "blocker",
       "group": "data_plane_and_workloads",
-      "category": "Dataplane version",
-      "title": "Dataplane is version-incompatible with the control plane",
-      "detail": "The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
-      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
-      "count": 1,
-      "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "data_plane_and_workloads",
       "category": "Gateway in Dataplane",
       "title": "Universal Dataplane uses the removed kuma.io/gateway marking",
       "detail": "3.0 removes `networking.gateway` and the `kuma.io/gateway` label, and with them the gateway concept: a gateway marked either way becomes an ordinary proxy. The control plane deletes the label the next time it writes the Dataplane (kuma-dp registration included), but re-applying a manifest that still carries it through the REST API or `kumactl apply` fails, because `kuma.io/gateway` is now an unknown reserved label. Drop both from the Dataplane and, if it runs with a transparent proxy, start `kuma-dp` with `--exclude-inbound-ports` (or `redirect.inbound.excludePorts`) covering every port the gateway listens on. Move any `targetRef` or MeshLoadBalancingStrategy affinity key that selects on the label or on `networking.gateway.tags` to a label you own. 3.0 also stops reporting `gateway` as the MeshMetric `kuma.proxy_role` (a former gateway reports `sidecar`) and ignores the `?gateway=` filter on `/dataplanes/_overview`; update dashboards and scripts that rely on either.",
@@ -754,12 +767,12 @@
     {
       "title": "Clear every resource and Mesh blocker before upgrading the global control plane",
       "detail": "The global control plane is upgraded first, and the moment it runs 3.0 it changes what every 2.x zone receives over KDS, before any zone is upgraded. It answers the zones with an empty list for every resource type 3.0 removed, so each zone deletes its copies of the legacy policies, MeshGateway, MeshGatewayRoute, ExternalService and the other zones' ZoneIngress. It reads stored resources with the removed fields dropped and syncs them that way: the Mesh arrives without `mtls`, `routing`, `networking`, `logging`, `tracing`, `metrics` and `constraints`, and policies arrive without `from`, `proxyTypes` and name refs, which a 2.x zone still accepts and applies with a wider scope. So the Mesh settings, removed kinds, zone proxies and policy field findings in this report are deadlines for the global upgrade, not for the zone upgrades. If that is not possible, keep the zones disconnected from the global (stop the global or block KDS) until each zone runs 3.0.",
-      "command": "# On the 2.x global, before upgrading it: every command must print nothing.\nkumactl get meshes -o json | jq -r '.items[] | select(.mtls or .routing or .networking or .logging or .tracing or .metrics or .constraints) | .name'\nfor t in traffic-permissions traffic-routes traffic-logs traffic-traces fault-injections health-checks circuit-breakers retries timeouts rate-limits proxytemplates virtual-outbounds external-services meshgateways meshgatewayroutes; do\n  kumactl get \"$t\" -o json 2\u003e/dev/null | jq -r --arg t \"$t\" '.items[]? | \"\\($t) \\(.mesh)/\\(.name)\"'\ndone\nkumactl get zoneingresses -o json | jq -r '.items[].name'\n\n# After upgrading the global, on each 2.x zone: the zone must not delete what it synced.\nkubectl -n kuma-system logs deploy/kuma-control-plane | grep \"no longer available in the upstream\""
+      "command": "# On the 2.x global, before upgrading it: every command must print nothing.\nkumactl get meshes -o json | jq -r '.items[] | select(.mtls or .routing or .networking or .logging or .tracing or .metrics or .constraints) | .name'\nfor m in $(kumactl get meshes -o json | jq -r '.items[].name'); do\n  for t in traffic-permissions traffic-routes traffic-logs traffic-traces fault-injections healthchecks circuit-breakers retries timeouts rate-limits proxytemplates virtual-outbounds external-services meshgateways meshgatewayroutes; do\n    kumactl get \"$t\" --mesh \"$m\" -o json | jq -r --arg t \"$t\" '.items[]? | \"\\($t) \\(.mesh)/\\(.name)\"'\n  done\ndone\nkumactl get zoneingresses -o json | jq -r '.items[].name'\n\n# After upgrading the global, on each 2.x zone: the zone must not delete what it synced.\nkubectl -n kuma-system logs deploy/kuma-control-plane | grep \"no longer available in the upstream\""
     },
     {
       "title": "Reissue Universal dataplane tokens bound to tags",
       "detail": "A dataplane token issued with `--tag` is checked against the Dataplane's inbound tags on 2.x, but against its labels on 3.0. A token bound to `kuma.io/service` can never match on 3.0, because `kuma.io/service` is a reserved label 3.0 does not allow on a Dataplane, so the proxy is rejected the next time it connects to a 3.0 zone control plane (every zone upgrade forces a reconnect). The same token already fails on 2.x once `experimental.inboundTagsDisabled` removes the inbound tags. Tokens are not stored by the control plane, so the tool cannot find them. Reissue every tag-bound token as a name-bound (`--name`) or workload-bound (`--workload`) token and restart kuma-dp with it before upgrading. A proxy selected by a MeshIdentity whose SPIFFE ID uses the workload (the Universal default) needs a `--workload` token matching its `kuma.io/workload` label.",
-      "command": "# Decode the claims of each token kuma-dp runs with; \"Tags\" must be empty.\ncut -d. -f2 /path/to/dataplane-token | tr '_-' '/+' | base64 -d 2\u003e/dev/null | jq '{Name, Mesh, Tags, Workload}'\n\n# Reissue, bound to the workload (or --name \u003cdataplane\u003e)\nkumactl generate dataplane-token --mesh \u003cmesh\u003e --workload \u003ckuma.io/workload value\u003e --valid-for 8760h \u003e /path/to/dataplane-token"
+      "command": "# Decode the claims of each token kuma-dp runs with; \"Tags\" must be empty.\n# The payload is unpadded base64url, so restore the padding before decoding.\np=$(cut -d. -f2 /path/to/dataplane-token | tr '_-' '/+')\nwhile [ $(( ${#p} % 4 )) -ne 0 ]; do p=\"$p=\"; done\nprintf '%s' \"$p\" | base64 -d | jq '{Name, Mesh, Tags, Workload}'\n\n# Reissue, bound to the workload (or --name \u003cdataplane\u003e)\nkumactl generate dataplane-token --mesh \u003cmesh\u003e --workload \u003ckuma.io/workload value\u003e --valid-for 8760h \u003e /path/to/dataplane-token"
     },
     {
       "title": "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",

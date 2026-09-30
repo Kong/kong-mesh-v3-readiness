@@ -117,6 +117,8 @@ func TestOutboundBackendRefByName(t *testing.T) {
 	}{
 		{"by name", map[string]any{"kind": "MeshService", "name": "backend", "port": 80}, true},
 		{"by labels", map[string]any{"kind": "MeshService", "labels": map[string]any{"kuma.io/display-name": "backend", "kuma.io/zone": "zone-1"}, "port": 80}, false},
+		{"MeshExternalService by name", map[string]any{"kind": "MeshExternalService", "name": "httpbin", "port": 80}, false},
+		{"MeshMultiZoneService by name", map[string]any{"kind": "MeshMultiZoneService", "name": "backend", "port": 80}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditDataplane(t, map[string]any{
@@ -185,6 +187,39 @@ func TestZoneOriginMeshExternalService(t *testing.T) {
 			m := auditResponses(t, map[string]string{"/meshexternalservices": listBody(t, mes(tc.labels))})
 			if _, got := findFinding(m, "blocker", "MeshExternalService routing", title); got != tc.want {
 				t.Errorf("flagged = %v, want %v\nfindings: %+v", got, tc.want, m.Findings)
+			}
+		})
+	}
+}
+
+func TestDataplaneOlderThanTargetMinor(t *testing.T) {
+	const title = "Dataplane runs kuma-dp older than 2.14"
+	for _, tc := range []struct {
+		version string
+		want    bool
+	}{
+		{"2.13.4", true},
+		{"2.12.0", true},
+		{"2.14.0", false},
+		{"2.14.5", false},
+		{"not-a-version", false},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			ins := featureInsight(map[string]any{"kuma.io/env": "kubernetes"}, allFeatures)
+			ins["dataplaneInsight"].(map[string]any)["subscriptions"] = []any{map[string]any{"version": map[string]any{"kumaDp": map[string]any{"version": tc.version, "kumaCpCompatible": true}}}}
+			m := auditResponses(t, map[string]string{
+				"/config":              readyConfigJSON,
+				"/dataplanes+insights": listBody(t, ins),
+			})
+			f, got := findFinding(m, "blocker", "Dataplane version", title)
+			if got != tc.want {
+				t.Fatalf("flagged = %v, want %v\nfindings: %+v", got, tc.want, m.Findings)
+			}
+			if got && f.Group != groupUpgradePath {
+				t.Errorf("group = %q, want %q", f.Group, groupUpgradePath)
+			}
+			if got && m.Findings[0].Title != title {
+				t.Errorf("first finding = %q, want %q", m.Findings[0].Title, title)
 			}
 		})
 	}

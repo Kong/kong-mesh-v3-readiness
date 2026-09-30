@@ -78,7 +78,7 @@ type Summary struct {
 type Finding struct {
 	// Severity "warning" stays in the enum; no current check emits one.
 	Severity string `json:"severity" jsonschema:"enum=blocker,enum=warning,enum=info"`
-	Group    string `json:"group" jsonschema:"enum=control_plane,enum=mesh_object,enum=policies,enum=removed_resources,enum=data_plane_and_workloads,enum=other"`
+	Group    string `json:"group" jsonschema:"enum=upgrade_path,enum=control_plane,enum=mesh_object,enum=policies,enum=removed_resources,enum=data_plane_and_workloads,enum=other"`
 	Category string `json:"category"`
 	Title    string `json:"title"`
 	Detail   string `json:"detail"`
@@ -109,6 +109,7 @@ type ManualCheck struct {
 // category maps to exactly one group; an unmapped category falls into groupOther
 // so a newly added check is never silently dropped from the report.
 const (
+	groupUpgradePath      = "upgrade_path"
 	groupControlPlane     = "control_plane"
 	groupMeshObject       = "mesh_object"
 	groupPolicies         = "policies"
@@ -119,6 +120,7 @@ const (
 
 // groupOrder is the display order of the groups, top to bottom.
 var groupOrder = []string{
+	groupUpgradePath,
 	groupControlPlane,
 	groupMeshObject,
 	groupPolicies,
@@ -129,7 +131,7 @@ var groupOrder = []string{
 
 var categoryToGroup = map[string]string{
 	cpConfigCategory:            groupControlPlane,
-	cpVersionCategory:           groupControlPlane,
+	cpVersionCategory:           groupUpgradePath,
 	"Mesh object settings":      groupMeshObject,
 	"MeshService mode":          groupMeshObject,
 	"Policy `from` field":       groupPolicies,
@@ -153,7 +155,7 @@ var categoryToGroup = map[string]string{
 	"Dataplane metrics":         groupDataPlane,
 	"Dataplane networking":      groupDataPlane,
 	"Dataplane identity":        groupDataPlane,
-	"Dataplane version":         groupDataPlane,
+	"Dataplane version":         groupUpgradePath,
 	"Dataplane features":        groupDataPlane,
 	"Dataplane DNS":             groupDataPlane,
 	"Outbound defaults":         groupDataPlane,

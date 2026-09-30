@@ -173,6 +173,7 @@ components:
           type: array
         group:
           enum:
+          - upgrade_path
           - control_plane
           - mesh_object
           - policies
