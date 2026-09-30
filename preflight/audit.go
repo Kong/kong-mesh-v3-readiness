@@ -36,6 +36,7 @@ const (
 	docMeshMetric            = docBase + "/mesh/policies/meshmetric/"
 	docMeshLoadBalancing     = docBase + "/mesh/policies/meshloadbalancingstrategy/"
 	docMeshPassthrough       = docBase + "/mesh/policies/meshpassthrough/"
+	docMeshOPA               = docBase + "/mesh/policies/meshopa/"
 	docPolicies              = docBase + "/mesh/policies-introduction/"
 
 	docMeshService          = docBase + "/mesh/meshservice/"
@@ -55,6 +56,7 @@ const (
 	docUniversal        = docBase + "/mesh/universal/"
 	docKumaCPReference  = docBase + "/mesh/reference/kuma-cp/"
 	docUpgrade          = docBase + "/mesh/upgrade/"
+	docRBAC             = docBase + "/mesh/rbac/"
 )
 
 // legacyType is a resource kind removed in Kuma 3.0; any instance is a blocker.
@@ -116,6 +118,51 @@ var newPolicyPaths = []string{
 	"meshratelimits", "meshcircuitbreakers", "meshtimeouts", "meshhttproutes",
 	"meshtcproutes", "meshretries", "meshhealthchecks", "meshloadbalancingstrategies",
 	"meshproxypatches", "meshmetrics", "meshtraces", "meshpassthroughs",
+}
+
+// enterprisePolicyPaths are Kong Mesh (enterprise) targetRef policies scanned by
+// the same checks as newPolicyPaths. An OSS Kuma CP 404s them, so they are listed
+// with listIfServed: a 404 there is "not served", not a coverage gap.
+var enterprisePolicyPaths = []string{"meshopas"}
+
+// removedEnterprisePolicy is a Kong Mesh (enterprise) resource kind removed in 3.0.
+type removedEnterprisePolicy struct{ wsPath, kind, detail, doc string }
+
+// removedEnterprisePolicies lists the Kong Mesh policies removed in 3.0; any
+// instance is a blocker (checkRemovedEnterprisePolicies).
+var removedEnterprisePolicies = []removedEnterprisePolicy{
+	{
+		"meshglobalratelimits", "MeshGlobalRateLimit",
+		"MeshGlobalRateLimit is removed in 3.0 with no direct replacement (global rate limiting is dropped); remove these policies before upgrading.",
+		docPolicies,
+	},
+	{
+		"opa-policies", "OPAPolicy",
+		"The legacy OPAPolicy resource and its CRD are removed in 3.0, so a leftover OPAPolicy is no longer enforced and cannot be re-applied. Migrate each one to a MeshOPA policy (top-level `targetRef` kind Mesh or Dataplane) and delete it before upgrading. A MeshOPA with `agentConfig` or `appendPolicies` must use the typed data source shape before the global control plane is upgraded, which needs a 2.14 patch that accepts it (see the MeshOPA data source finding).",
+		docMeshOPA,
+	},
+}
+
+// removedCoreKinds are the remaining resource types a 2.14 control plane
+// registers and 3.0 does not (besides legacyMeshScoped and
+// removedEnterprisePolicies); removedKindNames folds all three together.
+var removedCoreKinds = []string{"ServiceInsight", "ZoneIngress", "ZoneIngressInsight", "ZoneEgress", "ZoneEgressInsight"}
+
+// removedKindNames is the set of resource type names 3.0 no longer registers, so
+// any reference to one by name (an AccessRole/AccessAudit `types[]` entry) is
+// rejected.
+func removedKindNames() map[string]bool {
+	names := map[string]bool{}
+	for _, lt := range legacyMeshScoped {
+		names[lt.kind] = true
+	}
+	for _, rp := range removedEnterprisePolicies {
+		names[rp.kind] = true
+	}
+	for _, k := range removedCoreKinds {
+		names[k] = true
+	}
+	return names
 }
 
 var allowedTopLevelTargetRefKinds = map[string]bool{"Mesh": true, "Dataplane": true}
@@ -280,7 +327,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	}
 
 	for _, check := range []func(context.Context) error{
-		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkNewPolicies, a.checkDataplanes,
+		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkAccessControl, a.checkNewPolicies, a.checkDataplanes,
 		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
 		a.checkServiceResources, a.checkExternalServiceIdentity, a.checkMeshTrust,
 		a.checkControlPlaneConfig,
@@ -300,7 +347,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 			return nil, err
 		}
 	}
-	a.rep.manual = buildManualChecks(a.rep.k8sObserved)
+	a.rep.manual = buildManualChecks(a.rep.k8sObserved, a.rep.cp.Product == productKongMesh)
 	return a.rep, nil
 }
 
@@ -532,13 +579,7 @@ func (a *auditor) checkLegacyResources(ctx context.Context) error {
 // 404s the collection; listIfServed treats that as "not served" (not a coverage
 // gap), unlike checkLegacyResources whose collections every CP serves.
 func (a *auditor) checkRemovedEnterprisePolicies(ctx context.Context) error {
-	for _, rp := range []struct{ wsPath, kind, detail, doc string }{
-		{
-			"meshglobalratelimits", "MeshGlobalRateLimit",
-			"MeshGlobalRateLimit is removed in 3.0 with no direct replacement (global rate limiting is dropped); remove these policies before upgrading.",
-			docPolicies,
-		},
-	} {
+	for _, rp := range removedEnterprisePolicies {
 		items := a.listIfServed(ctx, a.scopedPath(rp.wsPath))
 		for _, it := range items {
 			before := a.rep.total
@@ -549,80 +590,238 @@ func (a *auditor) checkRemovedEnterprisePolicies(ctx context.Context) error {
 	return nil
 }
 
-func (a *auditor) checkNewPolicies(ctx context.Context) error {
-	for _, wsPath := range newPolicyPaths {
-		items := a.listColl(ctx, a.scopedPath(wsPath))
-		for _, it := range items {
-			before := a.rep.total
+// productKongMesh is the `product` the Kong Mesh CP reports on `GET /`.
+const productKongMesh = "Kong Mesh"
+
+// categoryAccessRoles groups the Kong Mesh RBAC (AccessRole/AccessAudit) findings.
+const categoryAccessRoles = "Access roles"
+
+// rbacTargetRef is an AccessRole qualifier targetRef. The 2.14 qualifier has no
+// `labels`, so `name` is its only way to narrow a kind. `tags` and `mesh` are not
+// decoded: `mesh` was never matched on, and 2.14 accepts `tags` only next to kinds
+// 3.0 rejects anyway (MeshSubset, MeshServiceSubset, MeshService) or next to
+// MeshMultiZoneService, which has no 2.14 validator branch (unlikely in practice).
+type rbacTargetRef struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+type rbacQualifier struct {
+	TargetRef *rbacTargetRef `json:"targetRef"`
+	From      *struct {
+		TargetRef *rbacTargetRef `json:"targetRef"`
+	} `json:"from"`
+	To *struct {
+		TargetRef *rbacTargetRef `json:"targetRef"`
+	} `json:"to"`
+	Sources      json.RawMessage `json:"sources"`
+	Destinations json.RawMessage `json:"destinations"`
+	Selectors    json.RawMessage `json:"selectors"`
+}
+
+// rbacRule is an AccessRole or AccessAudit rule (AccessAudit has no `when`).
+type rbacRule struct {
+	Types  []string        `json:"types"`
+	Mesh   string          `json:"mesh"`
+	Access []string        `json:"access"`
+	When   []rbacQualifier `json:"when"`
+}
+
+// jsonSet reports a JSON value that is present at all, `{}` included: a proto
+// message field set to an empty object still counts as set.
+func jsonSet(raw json.RawMessage) bool {
+	return len(raw) > 0 && string(raw) != "null"
+}
+
+// checkAccessControl flags Kong Mesh RBAC resources (global-scoped AccessRole and
+// AccessAudit) that 3.0 rejects on write or matches differently. Both are
+// enterprise-only, so an OSS Kuma CP 404s them (listIfServed: not a gap), while a
+// 403 from a token without RBAC read access is a coverage gap.
+func (a *auditor) checkAccessControl(ctx context.Context) error {
+	removed := removedKindNames()
+	for _, rc := range []struct{ wsPath, kind string }{
+		{"access-roles", "AccessRole"},
+		{"accessaudits", "AccessAudit"},
+	} {
+		for _, it := range a.listIfServed(ctx, "/"+rc.wsPath) {
 			ref := a.ref(it)
-			var spec policySpec
-			if !a.unmarshalSpec(it, &spec, ref) {
-				a.countSystem(it, before)
-				continue
+			var spec struct {
+				Rules []rbacRule `json:"rules"`
 			}
-			if len(spec.From) > 0 {
-				a.rep.addDoc(blocker, "Policy `from` field", it.Type+" uses `from`",
-					"Rewrite `from` as `rules` (with spiffeID where applicable).", docMeshTrafficPermission, ref)
-			}
-			if spec.TargetRef != nil {
-				if k := spec.TargetRef.Kind; k != "" && !allowedTopLevelTargetRefKinds[k] {
-					a.rep.addDoc(blocker, "Top-level targetRef kind", it.Type+" top-level targetRef.kind="+k,
-						"Top-level targetRef must be Mesh or Dataplane; use labels.", docPolicies, ref)
-				}
-				if pt := spec.TargetRef.ProxyTypes; len(pt) > 0 {
-					gateway, sidecar := slices.Contains(pt, "Gateway"), slices.Contains(pt, "Sidecar")
-					switch {
-					case gateway && !sidecar:
-						detail := "3.0 has no gateway concept (a gateway is a plain Dataplane whose listen ports skip inbound redirection) and drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. " +
-							"Do not just remove the field. Delete the policy (which also clears its other findings), or retarget it to the gateway's Dataplane with `kind: Dataplane` and `labels`."
-						if it.Type == "MeshTimeout" {
-							detail += " The 2.x default `mesh-gateways-timeout-all-<mesh>` sets `streamIdleTimeout: 5s`, which left in place fails every sidecar HTTP response slower than 5s with 504. " +
-								"Defaults are generated once per Mesh, so a deleted one stays deleted unless the Mesh is recreated; if yours is (e.g. GitOps replace), add `MeshTimeout` to its `skipCreatingInitialPolicies`."
-						}
-						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to gateways with targetRef.proxyTypes",
-							detail, docUpgrade, ref)
-					case sidecar && !gateway:
-						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to sidecars with targetRef.proxyTypes",
-							"3.0 drops `proxyTypes`, so this policy will also apply to gateways, which in 3.0 are plain Dataplanes with excluded inbound ports. "+
-								"Remove the field if that is intended, otherwise retarget it with `kind: Dataplane` and `labels`.",
-							docUpgrade, ref)
-					default:
-						a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
-							"3.0 drops `proxyTypes`. It already covers every proxy here, so remove the field.",
-							docUpgrade, ref)
-					}
+			if a.unmarshalSpec(it, &spec, ref) {
+				a.checkRBACRules(rc.kind, spec.Rules, removed, ref)
+				if rc.kind == "AccessRole" {
+					a.checkConfigAccess(spec.Rules, ref)
 				}
 			}
-			// A resource is flagged once however many of its refs name a resource.
-			byName := spec.TargetRef != nil && spec.TargetRef.selectsByName()
-			for _, to := range spec.To {
-				if k := to.TargetRef.Kind; k != "" && !allowedToTargetRefKinds[k] {
-					a.rep.addDoc(blocker, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
-						"`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.", docPolicies, ref)
-				}
-				byName = byName || to.TargetRef.selectsByName()
-			}
-			if it.Type == "MeshHTTPRoute" || it.Type == "MeshTCPRoute" {
-				byName = a.checkRouteBackendRefs(it.Type, it.specBytes(), ref) || byName
-			}
-			if byName {
-				a.addSelectsByName(it.Type, ref)
-			}
-			a.checkPolicyFields(it, ref)
-			a.checkReservedLabels(it, ref)
-			if it.Labels[policyRoleLabel] == "producer" && !staysProducer(it, spec.To) {
-				a.rep.addDoc(blocker, "Policy role", it.Type+" stops being a producer policy",
-					"3.0 keeps a policy producer (applied to clients in every namespace and synced to the other zones) only when every `to[].targetRef` is a MeshService or MeshHTTPRoute selected by exactly three labels: `kuma.io/display-name`, `k8s.kuma.io/namespace` equal to the policy's own namespace and `kuma.io/zone` equal to its own zone. Anything else makes it a consumer policy that applies only inside its namespace, so clients elsewhere silently lose its rules; mixing both kinds of item is rejected on write. Rewrite each item as `labels: {kuma.io/display-name: <name>, k8s.kuma.io/namespace: <namespace>, kuma.io/zone: <zone>}`.",
-					docPolicies, ref)
-			}
-			var sel selectorSpec
-			if json.Unmarshal(it.specBytes(), &sel) == nil {
-				a.addSelectorOnRemovedLabel(it.Type, ref, sel.labelSets()...)
-			}
-			a.countSystem(it, before)
 		}
 	}
 	return nil
+}
+
+// checkRBACRules records each finding at most once per resource. With --mesh, a
+// rule pinned to another mesh is skipped.
+func (a *auditor) checkRBACRules(kind string, rules []rbacRule, removed map[string]bool, ref string) {
+	flagged := map[string]bool{}
+	add := func(sev severity, title, detail string) {
+		if !flagged[title] {
+			flagged[title] = true
+			a.rep.addDoc(sev, categoryAccessRoles, title, detail, docRBAC, ref)
+		}
+	}
+	const byName = "3.0 turns a qualifier `targetRef.name` into a `kuma.io/display-name` label match: the rule only covers policies whose targetRef carries `kuma.io/display-name: <name>`. Policies that select the same proxies or services by other labels (3.0 removes `name` from policy targetRefs) are no longer covered, so writes the role allowed are denied (the grant shrinks, it does not widen). The 2.14 qualifier has no `labels` field, so after upgrading rewrite it with `labels` matching how the policies select, and check who holds the role."
+	var removedTypes []string
+	for _, r := range rules {
+		if a.meshFilter != "" && r.Mesh != "" && r.Mesh != a.meshFilter {
+			continue
+		}
+		for _, t := range r.Types {
+			if removed[t] && !slices.Contains(removedTypes, t) {
+				removedTypes = append(removedTypes, t)
+			}
+		}
+		for _, q := range r.When {
+			if tr := q.TargetRef; tr != nil {
+				switch {
+				case tr.Kind != "" && !allowedTopLevelTargetRefKinds[tr.Kind]:
+					add(blocker, kind+" when[].targetRef.kind="+tr.Kind,
+						"3.0 matches a qualifier `targetRef` against a policy's top-level targetRef, which accepts only Mesh and Dataplane, and rejects any other kind on write (`value '<Kind>' is not supported`), so re-applying the role fails and the stored one matches no policy. "+
+							"Either rewrite it as `kind: Dataplane` before upgrading, or remove the qualifier and recreate it with `labels` after upgrading (3.0 does not re-validate stored roles, it only rejects a re-apply). "+
+							"A `kind: Dataplane` qualifier without `name` is not a catch-all: 3.0 requires the qualifier's name to equal the policy's `kuma.io/display-name` label, so it only covers policies without one (on 2.14: without `name`), and policies pinned by display-name are not covered. "+
+							"On 2.14 the same rewrite widens the grant, from policies on this "+tr.Kind+" to every Dataplane-targeted policy without a name that the rule's types and mesh allow.")
+				case tr.Name != "":
+					add(info, kind+" qualifier matches a targetRef by name", byName)
+				}
+			}
+			if q.From != nil {
+				add(blocker, kind+" qualifier uses `from`",
+					"3.0 rejects every `when[].from` qualifier on write, so re-applying the role fails. Remove the qualifier before upgrading, or scope the rule with a top-level `targetRef` qualifier instead.")
+			}
+			if q.To != nil && q.To.TargetRef != nil {
+				switch tr := q.To.TargetRef; {
+				case tr.Kind != "" && !allowedToTargetRefKinds[tr.Kind]:
+					add(blocker, kind+" when[].to.targetRef.kind="+tr.Kind,
+						"3.0 accepts only Mesh, MeshService, MeshExternalService, MeshMultiZoneService and MeshHTTPRoute in a `when[].to.targetRef` qualifier and rejects subset/selector kinds and MeshGateway on write, so re-applying the role fails. Retarget the qualifier at one of those kinds before upgrading.")
+				case tr.Kind != "" && tr.Kind != "Mesh" && tr.Name == "":
+					add(blocker, kind+" when[].to.targetRef.kind="+tr.Kind+" without name",
+						"3.0 requires `labels` on a `when[].to.targetRef` of this kind and derives them only from `name`, so re-applying the role fails (`labels must be set when kind is "+tr.Kind+"`). 2.14 accepts it without `name` for MeshMultiZoneService, which has no 2.14 validator branch. "+
+							"Set `name` to the target's display name before upgrading, or remove the qualifier and recreate it with `labels` after upgrading.")
+				case tr.Name != "":
+					add(info, kind+" qualifier matches a targetRef by name", byName)
+				}
+			}
+			if jsonSet(q.Sources) || jsonSet(q.Destinations) || jsonSet(q.Selectors) {
+				add(blocker, kind+" qualifier uses sources, destinations or selectors",
+					"`when[].sources`, `destinations` and `selectors` scoped the classic tag-based policies, which 3.0 removes; 3.0 rejects them on write (`qualifier is no longer supported`), so re-applying the role fails. Remove them before upgrading and scope rules on targetRef policies with `targetRef`/`to` qualifiers.")
+			}
+		}
+	}
+	if len(removedTypes) > 0 {
+		slices.Sort(removedTypes)
+		a.rep.addDoc(blocker, categoryAccessRoles, kind+" rule types name a kind removed in 3.0",
+			"3.0 no longer registers these resource types and rejects a rule whose `types` names one (`unknown types`), so re-applying the resource fails. Remove them from `rules[].types` before upgrading (and add the 3.0 replacements, such as MeshTrafficPermission or MeshOPA, if the rule should cover them).",
+			docRBAC, ref+" ("+strings.Join(removedTypes, ", ")+")")
+	}
+}
+
+// checkConfigAccess flags an AccessRole that reads `/config` on 2.14 but not on
+// 3.0: 2.14 gates it on GENERATE_DATAPLANE_TOKEN, 3.0 on VIEW_CONTROL_PLANE_METADATA.
+// Any rule grants access regardless of its types or mesh, so --mesh does not narrow it.
+func (a *auditor) checkConfigAccess(rules []rbacRule, ref string) {
+	has := func(access string) bool {
+		return slices.ContainsFunc(rules, func(r rbacRule) bool { return slices.Contains(r.Access, access) })
+	}
+	if has("GENERATE_DATAPLANE_TOKEN") && !has("VIEW_CONTROL_PLANE_METADATA") {
+		a.rep.addDoc(blocker, categoryAccessRoles, "AccessRole loses /config access in 3.0",
+			"2.14 lets any role holding `GENERATE_DATAPLANE_TOKEN` read `GET /config`; 3.0 requires `VIEW_CONTROL_PLANE_METADATA` instead, so users bound to this role get 403 on `/config` after upgrading (the GUI and this tool's `--token` run read it). "+
+				"The `admin` role of a control plane first started before 2.7.0 lacks it too. Add `VIEW_CONTROL_PLANE_METADATA` to the role's `access` if its users read `/config`.",
+			docRBAC, ref)
+	}
+}
+
+func (a *auditor) checkNewPolicies(ctx context.Context) error {
+	for _, wsPath := range newPolicyPaths {
+		for _, it := range a.listColl(ctx, a.scopedPath(wsPath)) {
+			a.checkNewPolicy(it)
+		}
+	}
+	for _, wsPath := range enterprisePolicyPaths {
+		for _, it := range a.listIfServed(ctx, a.scopedPath(wsPath)) {
+			a.checkNewPolicy(it)
+		}
+	}
+	return nil
+}
+
+// checkNewPolicy runs the targetRef-policy checks on one policy.
+func (a *auditor) checkNewPolicy(it resourceItem) {
+	before := a.rep.total
+	ref := a.ref(it)
+	var spec policySpec
+	if !a.unmarshalSpec(it, &spec, ref) {
+		a.countSystem(it, before)
+		return
+	}
+	if len(spec.From) > 0 {
+		a.rep.addDoc(blocker, "Policy `from` field", it.Type+" uses `from`",
+			"Rewrite `from` as `rules` (with spiffeID where applicable).", docMeshTrafficPermission, ref)
+	}
+	if spec.TargetRef != nil {
+		if k := spec.TargetRef.Kind; k != "" && !allowedTopLevelTargetRefKinds[k] {
+			a.rep.addDoc(blocker, "Top-level targetRef kind", it.Type+" top-level targetRef.kind="+k,
+				"Top-level targetRef must be Mesh or Dataplane; use labels.", docPolicies, ref)
+		}
+		if pt := spec.TargetRef.ProxyTypes; len(pt) > 0 {
+			gateway, sidecar := slices.Contains(pt, "Gateway"), slices.Contains(pt, "Sidecar")
+			switch {
+			case gateway && !sidecar:
+				detail := "3.0 has no gateway concept (a gateway is a plain Dataplane whose listen ports skip inbound redirection) and drops `proxyTypes`, so this policy will apply to every proxy in the mesh, sidecars included. " +
+					"Do not just remove the field. Delete the policy (which also clears its other findings), or retarget it to the gateway's Dataplane with `kind: Dataplane` and `labels`."
+				if it.Type == "MeshTimeout" {
+					detail += " The 2.x default `mesh-gateways-timeout-all-<mesh>` sets `streamIdleTimeout: 5s`, which left in place fails every sidecar HTTP response slower than 5s with 504. " +
+						"Defaults are generated once per Mesh, so a deleted one stays deleted unless the Mesh is recreated; if yours is (e.g. GitOps replace), add `MeshTimeout` to its `skipCreatingInitialPolicies`."
+				}
+				a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to gateways with targetRef.proxyTypes",
+					detail, docUpgrade, ref)
+			case sidecar && !gateway:
+				a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" scoped to sidecars with targetRef.proxyTypes",
+					"3.0 drops `proxyTypes`, so this policy will also apply to gateways, which in 3.0 are plain Dataplanes with excluded inbound ports. "+
+						"Remove the field if that is intended, otherwise retarget it with `kind: Dataplane` and `labels`.",
+					docUpgrade, ref)
+			default:
+				a.rep.addDoc(blocker, "targetRef proxyTypes", it.Type+" uses targetRef.proxyTypes",
+					"3.0 drops `proxyTypes`. It already covers every proxy here, so remove the field.",
+					docUpgrade, ref)
+			}
+		}
+	}
+	// A resource is flagged once however many of its refs name a resource.
+	byName := spec.TargetRef != nil && spec.TargetRef.selectsByName()
+	for _, to := range spec.To {
+		if k := to.TargetRef.Kind; k != "" && !allowedToTargetRefKinds[k] {
+			a.rep.addDoc(blocker, "`to` targetRef kind", it.Type+" to[].targetRef.kind="+k,
+				"`to` no longer accepts subset/selector or MeshGateway kinds; target Mesh, a Mesh*Service, or MeshHTTPRoute.", docPolicies, ref)
+		}
+		byName = byName || to.TargetRef.selectsByName()
+	}
+	if it.Type == "MeshHTTPRoute" || it.Type == "MeshTCPRoute" {
+		byName = a.checkRouteBackendRefs(it.Type, it.specBytes(), ref) || byName
+	}
+	if byName {
+		a.addSelectsByName(it.Type, ref)
+	}
+	a.checkPolicyFields(it, ref)
+	a.checkReservedLabels(it, ref)
+	if it.Labels[policyRoleLabel] == "producer" && !staysProducer(it, spec.To) {
+		a.rep.addDoc(blocker, "Policy role", it.Type+" stops being a producer policy",
+			"3.0 keeps a policy producer (applied to clients in every namespace and synced to the other zones) only when every `to[].targetRef` is a MeshService or MeshHTTPRoute selected by exactly three labels: `kuma.io/display-name`, `k8s.kuma.io/namespace` equal to the policy's own namespace and `kuma.io/zone` equal to its own zone. Anything else makes it a consumer policy that applies only inside its namespace, so clients elsewhere silently lose its rules; mixing both kinds of item is rejected on write. Rewrite each item as `labels: {kuma.io/display-name: <name>, k8s.kuma.io/namespace: <namespace>, kuma.io/zone: <zone>}`.",
+			docPolicies, ref)
+	}
+	var sel selectorSpec
+	if json.Unmarshal(it.specBytes(), &sel) == nil {
+		a.addSelectorOnRemovedLabel(it.Type, ref, sel.labelSets()...)
+	}
+	a.countSystem(it, before)
 }
 
 func (a *auditor) addSelectsByName(typ, ref string) {
@@ -719,6 +918,27 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 		}
 		if hasOtelEndpoint(confs...) {
 			a.addOtelEndpoint(it.Type, ref)
+		}
+	case "MeshOPA":
+		var s struct {
+			Default struct {
+				AgentConfig    map[string]json.RawMessage `json:"agentConfig"`
+				AppendPolicies []struct {
+					Rego map[string]json.RawMessage `json:"rego"`
+				} `json:"appendPolicies"`
+			} `json:"default"`
+		}
+		if json.Unmarshal(spec, &s) != nil {
+			return
+		}
+		sources := []map[string]json.RawMessage{s.Default.AgentConfig}
+		for _, p := range s.Default.AppendPolicies {
+			sources = append(sources, p.Rego)
+		}
+		if slices.ContainsFunc(sources, untypedDataSource) {
+			a.rep.addDoc(blocker, "MeshOPA data source", "MeshOPA uses the removed flat DataSource shape",
+				"3.0 reads MeshOPA `agentConfig` and `appendPolicies[].rego` only as a typed `SecureDataSource` and has no converter for the flat `secret`/`inline`/`inlineString` shape, while 2.14 reads only the flat one. No stored shape works while a 3.0 global control plane syncs to 2.14 zones: the global drops the flat keys, the zone cannot load the data source, MeshOPA fails to apply and the proxies it selects stop getting configuration updates (new or restarted ones get none). Rewriting as part of the upgrade is too late, so do it before upgrading the global control plane: move every control plane (global and zones) to a 2.14 patch that accepts both shapes, rewrite each data source there, then upgrade the global. `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: <name>` becomes `type: Secret` with `secretRef: {kind: Secret, name: <name>}`. Check the Kong Mesh 2.14 release notes for the patch that accepts the typed MeshOPA shape; until every control plane runs it, do not start the global upgrade while this MeshOPA is in use.",
+				docMeshOPA, ref)
 		}
 	case "MeshTrace", "MeshMetric":
 		var s struct {
@@ -1592,14 +1812,19 @@ func (a *auditor) checkExternalServiceTLS(it resourceItem) {
 		return
 	}
 	v := s.TLS.Verification
-	for _, ds := range []map[string]json.RawMessage{v.CaCert, v.ClientCert, v.ClientKey} {
-		if _, typed := ds["type"]; len(ds) > 0 && !typed {
-			a.rep.addDoc(blocker, "MeshExternalService TLS", "MeshExternalService TLS uses the removed DataSource shape",
-				"3.0 reads `tls.verification.caCert`, `clientCert` and `clientKey` only as a typed `SecureDataSource`. A stored MeshExternalService in the old shape is not rejected, but the control plane cannot read its TLS material and drops the destination from every proxy's config. Rewrite it before upgrading: `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: <name>` becomes `type: Secret` with `secretRef: {kind: Secret, name: <name>}`.",
-				docMeshExternalService, ref)
-			return
-		}
+	if slices.ContainsFunc([]map[string]json.RawMessage{v.CaCert, v.ClientCert, v.ClientKey}, untypedDataSource) {
+		a.rep.addDoc(blocker, "MeshExternalService TLS", "MeshExternalService TLS uses the removed DataSource shape",
+			"3.0 reads `tls.verification.caCert`, `clientCert` and `clientKey` only as a typed `SecureDataSource`. A stored MeshExternalService in the old shape is not rejected, but the control plane cannot read its TLS material and drops the destination from every proxy's config. Rewrite it before upgrading: `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: <name>` becomes `type: Secret` with `secretRef: {kind: Secret, name: <name>}`.",
+			docMeshExternalService, ref)
 	}
+}
+
+// untypedDataSource reports a data source in the 2.x flat DataSource shape
+// (`secret`/`inline`/`inlineString`, no `type` discriminator), which 3.0's typed
+// SecureDataSource cannot read.
+func untypedDataSource(ds map[string]json.RawMessage) bool {
+	_, typed := ds["type"]
+	return len(ds) > 0 && !typed
 }
 
 // checkMeshTrust flags MeshTrust resources still carrying the deprecated
@@ -2932,12 +3157,37 @@ var kubernetesManualChecks = []ManualCheck{
 	},
 }
 
+// kongMeshManualChecks are appended only when the CP reports the Kong Mesh
+// product: they concern enterprise-only data plane features.
+var kongMeshManualChecks = []ManualCheck{
+	{
+		Title: "Move static kuma-dp OPA config into MeshOPA `agentConfig`",
+		Detail: "Kong Mesh 3.0 removes the `kuma-dp` flag `--opa-config-path` and the env vars " +
+			"`KMESH_OPA_CONFIG_PATH` and `KMESH_OPA_EXPERIMENTAL_USE_DYNAMIC_CONFIG` (dynamic " +
+			"config is always used). `kuma-dp` fails to start while `--opa-config-path` is still " +
+			"set. Data plane flags and env vars are not visible through the control-plane API, so " +
+			"the tool cannot detect this for you. Before upgrading, move the file's contents into " +
+			"`spec.default.agentConfig` of a `MeshOPA` policy, then drop the flag and both env vars " +
+			"from every data plane deployment. `--opa-set` (`KMESH_OPA_CONFIG_OVERRIDES`) stays and " +
+			"now applies on top of the config generated from `MeshOPA`.",
+		Command: `# Kubernetes: find pods still passing the removed flag or env vars
+kubectl get pods -A -o yaml | grep -nE 'opa-config-path|KMESH_OPA_CONFIG_PATH|KMESH_OPA_EXPERIMENTAL_USE_DYNAMIC_CONFIG'
+
+# Universal: check each kuma-dp unit / launch script
+grep -rnE 'opa-config-path|KMESH_OPA_CONFIG_PATH|KMESH_OPA_EXPERIMENTAL_USE_DYNAMIC_CONFIG' /etc/systemd/system /etc/kuma* 2>/dev/null`,
+	},
+}
+
 // buildManualChecks returns the manual checklist for a run, appending the
-// Kubernetes-only items when the audit positively observed Kubernetes.
-func buildManualChecks(k8sObserved bool) []ManualCheck {
+// Kubernetes-only items when the audit positively observed Kubernetes and the
+// Kong Mesh-only items when the CP reports that product.
+func buildManualChecks(k8sObserved, kongMesh bool) []ManualCheck {
 	checks := append([]ManualCheck{}, manualChecks...)
 	if k8sObserved {
 		checks = append(checks, kubernetesManualChecks...)
+	}
+	if kongMesh {
+		checks = append(checks, kongMeshManualChecks...)
 	}
 	return checks
 }

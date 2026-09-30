@@ -147,6 +147,8 @@ var categoryToGroup = map[string]string{
 	"Policy role":               groupPolicies,
 	"Route backendRef":          groupPolicies,
 	"MeshPassthrough":           groupPolicies,
+	"MeshOPA data source":       groupPolicies,
+	categoryAccessRoles:         groupControlPlane,
 	"Removed resources":         groupRemovedResources,
 	"reachableServices":         groupDataPlane,
 	"Workload grouping":         groupDataPlane,

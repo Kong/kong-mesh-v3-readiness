@@ -11,9 +11,9 @@
     "default"
   ],
   "summary": {
-    "blockers": 73,
+    "blockers": 85,
     "warnings": 0,
-    "info": 2,
+    "info": 3,
     "coverage_gaps": 3,
     "parse_errors": 0,
     "system_findings": 3
@@ -54,6 +54,102 @@
       "example_resources": [
         "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)",
         "default/current-dp.kuma-demo [zone:west] (kuma-dp 2.9.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessAudit rule types name a kind removed in 3.0",
+      "detail": "3.0 no longer registers these resource types and rejects a rule whose `types` names one (`unknown types`), so re-applying the resource fails. Remove them from `rules[].types` before upgrading (and add the 3.0 replacements, such as MeshTrafficPermission or MeshOPA, if the rule should cover them).",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "audit-gateways (MeshGateway, MeshGlobalRateLimit)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole loses /config access in 3.0",
+      "detail": "2.14 lets any role holding `GENERATE_DATAPLANE_TOKEN` read `GET /config`; 3.0 requires `VIEW_CONTROL_PLANE_METADATA` instead, so users bound to this role get 403 on `/config` after upgrading (the GUI and this tool's `--token` run read it). The `admin` role of a control plane first started before 2.7.0 lacks it too. Add `VIEW_CONTROL_PLANE_METADATA` to the role's `access` if its users read `/config`.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole qualifier uses `from`",
+      "detail": "3.0 rejects every `when[].from` qualifier on write, so re-applying the role fails. Remove the qualifier before upgrading, or scope the rule with a top-level `targetRef` qualifier instead.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole qualifier uses sources, destinations or selectors",
+      "detail": "`when[].sources`, `destinations` and `selectors` scoped the classic tag-based policies, which 3.0 removes; 3.0 rejects them on write (`qualifier is no longer supported`), so re-applying the role fails. Remove them before upgrading and scope rules on targetRef policies with `targetRef`/`to` qualifiers.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "legacy-policy-admin"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole rule types name a kind removed in 3.0",
+      "detail": "3.0 no longer registers these resource types and rejects a rule whose `types` names one (`unknown types`), so re-applying the resource fails. Remove them from `rules[].types` before upgrading (and add the 3.0 replacements, such as MeshTrafficPermission or MeshOPA, if the rule should cover them).",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "legacy-policy-admin (MeshGateway, TrafficPermission, TrafficRoute)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole when[].targetRef.kind=MeshService",
+      "detail": "3.0 matches a qualifier `targetRef` against a policy's top-level targetRef, which accepts only Mesh and Dataplane, and rejects any other kind on write (`value '\u003cKind\u003e' is not supported`), so re-applying the role fails and the stored one matches no policy. Either rewrite it as `kind: Dataplane` before upgrading, or remove the qualifier and recreate it with `labels` after upgrading (3.0 does not re-validate stored roles, it only rejects a re-apply). A `kind: Dataplane` qualifier without `name` is not a catch-all: 3.0 requires the qualifier's name to equal the policy's `kuma.io/display-name` label, so it only covers policies without one (on 2.14: without `name`), and policies pinned by display-name are not covered. On 2.14 the same rewrite widens the grant, from policies on this MeshService to every Dataplane-targeted policy without a name that the rule's types and mesh allow.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole when[].to.targetRef.kind=MeshMultiZoneService without name",
+      "detail": "3.0 requires `labels` on a `when[].to.targetRef` of this kind and derives them only from `name`, so re-applying the role fails (`labels must be set when kind is MeshMultiZoneService`). 2.14 accepts it without `name` for MeshMultiZoneService, which has no 2.14 validator branch. Set `name` to the target's display name before upgrading, or remove the qualifier and recreate it with `labels` after upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole when[].to.targetRef.kind=MeshServiceSubset",
+      "detail": "3.0 accepts only Mesh, MeshService, MeshExternalService, MeshMultiZoneService and MeshHTTPRoute in a `when[].to.targetRef` qualifier and rejects subset/selector kinds and MeshGateway on write, so re-applying the role fails. Retarget the qualifier at one of those kinds before upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
       ]
     },
     {
@@ -251,6 +347,18 @@
     {
       "severity": "blocker",
       "group": "policies",
+      "category": "MeshOPA data source",
+      "title": "MeshOPA uses the removed flat DataSource shape",
+      "detail": "3.0 reads MeshOPA `agentConfig` and `appendPolicies[].rego` only as a typed `SecureDataSource` and has no converter for the flat `secret`/`inline`/`inlineString` shape, while 2.14 reads only the flat one. No stored shape works while a 3.0 global control plane syncs to 2.14 zones: the global drops the flat keys, the zone cannot load the data source, MeshOPA fails to apply and the proxies it selects stop getting configuration updates (new or restarted ones get none). Rewriting as part of the upgrade is too late, so do it before upgrading the global control plane: move every control plane (global and zones) to a 2.14 patch that accepts both shapes, rewrite each data source there, then upgrade the global. `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: \u003cname\u003e` becomes `type: Secret` with `secretRef: {kind: Secret, name: \u003cname\u003e}`. Check the Kong Mesh 2.14 release notes for the patch that accepts the typed MeshOPA shape; until every control plane runs it, do not start the global upgrade while this MeshOPA is in use.",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshopa/",
+      "count": 1,
+      "example_resources": [
+        "default/opa-flat-datasource"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
       "category": "Policy `from` field",
       "title": "MeshTimeout uses `from`",
       "detail": "Rewrite `from` as `rules` (with spiffeID where applicable).",
@@ -315,6 +423,18 @@
       "severity": "blocker",
       "group": "policies",
       "category": "Reference by name",
+      "title": "MeshOPA references a resource by name",
+      "detail": "3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "example_resources": [
+        "default/opa-meshservice"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "Reference by name",
       "title": "MeshTimeout references a resource by name",
       "detail": "3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
@@ -340,12 +460,36 @@
       "severity": "blocker",
       "group": "policies",
       "category": "Removed policies",
+      "title": "OPAPolicy (removed in 3.0)",
+      "detail": "The legacy OPAPolicy resource and its CRD are removed in 3.0, so a leftover OPAPolicy is no longer enforced and cannot be re-applied. Migrate each one to a MeshOPA policy (top-level `targetRef` kind Mesh or Dataplane) and delete it before upgrading. A MeshOPA with `agentConfig` or `appendPolicies` must use the typed data source shape before the global control plane is upgraded, which needs a 2.14 patch that accepts it (see the MeshOPA data source finding).",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshopa/",
+      "count": 1,
+      "example_resources": [
+        "default/legacy-opa"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "Removed policies",
       "title": "TrafficPermission (removed in 3.0)",
       "detail": "Replace with MeshTrafficPermission (rules + spiffeID).",
       "doc_url": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
       "count": 1,
       "example_resources": [
         "default/allow-all"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "Top-level targetRef kind",
+      "title": "MeshOPA top-level targetRef.kind=MeshService",
+      "detail": "Top-level targetRef must be Mesh or Dataplane; use labels.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "example_resources": [
+        "default/opa-meshservice"
       ]
     },
     {
@@ -717,6 +861,18 @@
       "count": 1,
       "example_resources": [
         "zi-1"
+      ]
+    },
+    {
+      "severity": "info",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole qualifier matches a targetRef by name",
+      "detail": "3.0 turns a qualifier `targetRef.name` into a `kuma.io/display-name` label match: the rule only covers policies whose targetRef carries `kuma.io/display-name: \u003cname\u003e`. Policies that select the same proxies or services by other labels (3.0 removes `name` from policy targetRefs) are no longer covered, so writes the role allowed are denied (the grant shrinks, it does not widen). The 2.14 qualifier has no `labels` field, so after upgrading rewrite it with `labels` matching how the policies select, and check who holds the role.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
       ]
     },
     {

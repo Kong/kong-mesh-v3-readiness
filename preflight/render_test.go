@@ -366,8 +366,8 @@ func TestRenderHTMLInconclusiveBannerMentionsRetainedBlockers(t *testing.T) {
 // The k8s cards (kuma.io/mesh annotation→label) are Kubernetes-object concerns the
 // CP API cannot reveal, so they are shown only when the audit observed Kubernetes.
 func TestBuildManualChecksK8sGating(t *testing.T) {
-	base := buildManualChecks(false)
-	withK8s := buildManualChecks(true)
+	base := buildManualChecks(false, false)
+	withK8s := buildManualChecks(true, false)
 	if len(withK8s) != len(base)+len(kubernetesManualChecks) {
 		t.Fatalf("k8s run should add the k8s cards: base=%d k8s=%d added=%d",
 			len(base), len(withK8s), len(kubernetesManualChecks))
@@ -395,11 +395,30 @@ func TestBuildManualChecksK8sGating(t *testing.T) {
 	}
 }
 
+// The Kong Mesh cards (static kuma-dp OPA config) concern enterprise-only data
+// plane features, so they are shown only when the CP reports that product.
+func TestBuildManualChecksKongMeshGating(t *testing.T) {
+	base := buildManualChecks(false, false)
+	withKM := buildManualChecks(false, true)
+	if len(withKM) != len(base)+len(kongMeshManualChecks) {
+		t.Fatalf("Kong Mesh run should add its cards: base=%d km=%d added=%d",
+			len(base), len(withKM), len(kongMeshManualChecks))
+	}
+	for _, m := range base {
+		if strings.Contains(m.Title, "OPA") {
+			t.Errorf("Kuma run must not show the %q card", m.Title)
+		}
+	}
+	if !strings.Contains(withKM[len(base)].Title, "OPA") {
+		t.Errorf("Kong Mesh card title = %q, want the OPA card", withKM[len(base)].Title)
+	}
+}
+
 // A manual card with a command renders a copy-able code block, including the
 // file:// clipboard fallback, and embeds the command in the report payload.
 func TestManualCommandCardRendersCopyableBlock(t *testing.T) {
 	r := &collector{cp: cpIndex{Product: "Kuma", Version: "2.9.0"}, k8sObserved: true}
-	r.manual = buildManualChecks(r.k8sObserved)
+	r.manual = buildManualChecks(r.k8sObserved, false)
 	html, err := r.toModel("").RenderHTML()
 	if err != nil {
 		t.Fatal(err)
