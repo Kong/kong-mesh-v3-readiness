@@ -182,6 +182,7 @@ Two 2.x defaults flip together in 3.0 (kumahq/kuma#18798) so a workload that con
 ## Naming / identity / misc
 
 - **Legacy `kuma.io/service` tag routing** → MeshService resources + explicit BackendRef (`LegacyOutbound` in `pkg/core/xds/types/outbound.go`)
+- **`ServiceTag` MeshService identities** → 3.0 accepts only `SpiffeID` (CRD enum), so a 3.0 Kubernetes zone refuses a MeshService synced from a 2.14 zone that still lists one: a create is skipped, an identity update fails that zone's MeshService sync. 2.14 zone CPs write the entry from the `kuma.io/service` tag, or from the `kuma.io/workload` label with inbound tags disabled, and until kumahq/kuma#18920 even without Mesh `mtls`. Preflight flags generated MeshServices in meshes without `mtls` that still carry one, meaning the owning zone CP lacks the fix
 - **Non-RFC-1035 resource names** deprecated for Mesh, Zone, MeshService, MeshExternalService, MeshMultiZoneService (`deprecated.go` per resource). For **Zone** it is stricter than a deprecation: a 3.0 zone CP refuses to start on a non-label name (`pkg/config/multizone/multicluster.go`) and the global rejects it on connect (`pkg/core/resources/apis/system/zone_validator.go`), while the Helm chart still accepts dots — so `eu.west` passes `helm upgrade` and then crash-loops. Preflight reads `/zones` on a global, falling back to `multizone.zone.name` in `/config` on a directly audited zone CP
 - **MeshMultiZoneService**: names > 63 chars deprecated
 - **`kuma.io/mesh` annotation** → use label
