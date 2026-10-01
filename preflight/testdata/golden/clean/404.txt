@@ -1,0 +1,7 @@
+# Kong Mesh (enterprise) collections an OSS Kuma CP does not serve: a 404 on
+# them is "not applicable", never a coverage gap.
+/meshglobalratelimits
+/opa-policies
+/meshopas
+/access-roles
+/accessaudits

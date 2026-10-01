@@ -1,0 +1,11 @@
+{
+  "total": 1,
+  "items": [
+    {
+      "type": "AccessAudit",
+      "name": "audit-gateways",
+      "rules": [ { "types": [ "MeshGateway", "MeshGlobalRateLimit", "MeshHTTPRoute" ], "mesh": "default", "accessAll": true } ]
+    }
+  ],
+  "next": null
+}

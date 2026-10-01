@@ -11,14 +11,147 @@
     "default"
   ],
   "summary": {
-    "blockers": 65,
+    "blockers": 85,
     "warnings": 0,
-    "info": 2,
+    "info": 3,
     "coverage_gaps": 3,
     "parse_errors": 0,
     "system_findings": 3
   },
   "findings": [
+    {
+      "severity": "blocker",
+      "group": "upgrade_path",
+      "category": "Control plane version",
+      "title": "Control plane behind the latest 2.14 patch",
+      "detail": "Upgrade to the latest 2.14 patch (2.14.0) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
+      "count": 1,
+      "example_resources": [
+        "control plane (2.9.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "upgrade_path",
+      "category": "Dataplane version",
+      "title": "Dataplane is version-incompatible with the control plane",
+      "detail": "The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
+      "count": 1,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "upgrade_path",
+      "category": "Dataplane version",
+      "title": "Dataplane runs kuma-dp older than 2.14",
+      "detail": "Upgrade kuma-dp to the latest 2.14 patch first, before acting on any other data plane finding for this proxy. 3.0 supports upgrading only from 2.14, and older kuma-dp does not advertise the features the other data plane checks read (`feature-otel-via-kuma-dp`, and before 2.13 `feature-reuse-port` and `feature-strict-inbound-ports`), so re-run the audit once it runs 2.14.",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
+      "count": 2,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)",
+        "default/current-dp.kuma-demo [zone:west] (kuma-dp 2.9.0)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessAudit rule types name a kind removed in 3.0",
+      "detail": "3.0 no longer registers these resource types and rejects a rule whose `types` names one (`unknown types`), so re-applying the resource fails. Remove them from `rules[].types` before upgrading (and add the 3.0 replacements, such as MeshTrafficPermission or MeshOPA, if the rule should cover them).",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "audit-gateways (MeshGateway, MeshGlobalRateLimit)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole loses /config access in 3.0",
+      "detail": "2.14 lets any role holding `GENERATE_DATAPLANE_TOKEN` read `GET /config`; 3.0 requires `VIEW_CONTROL_PLANE_METADATA` instead, so users bound to this role get 403 on `/config` after upgrading (the GUI and this tool's `--token` run read it). The `admin` role of a control plane first started before 2.7.0 lacks it too. Add `VIEW_CONTROL_PLANE_METADATA` to the role's `access` if its users read `/config`.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole qualifier uses `from`",
+      "detail": "3.0 rejects every `when[].from` qualifier on write, so re-applying the role fails. Remove the qualifier before upgrading, or scope the rule with a top-level `targetRef` qualifier instead.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole qualifier uses sources, destinations or selectors",
+      "detail": "`when[].sources`, `destinations` and `selectors` scoped the classic tag-based policies, which 3.0 removes; 3.0 rejects them on write (`qualifier is no longer supported`), so re-applying the role fails. Remove them before upgrading and scope rules on targetRef policies with `targetRef`/`to` qualifiers.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "legacy-policy-admin"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole rule types name a kind removed in 3.0",
+      "detail": "3.0 no longer registers these resource types and rejects a rule whose `types` names one (`unknown types`), so re-applying the resource fails. Remove them from `rules[].types` before upgrading (and add the 3.0 replacements, such as MeshTrafficPermission or MeshOPA, if the rule should cover them).",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "legacy-policy-admin (MeshGateway, TrafficPermission, TrafficRoute)"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole when[].targetRef.kind=MeshService",
+      "detail": "3.0 matches a qualifier `targetRef` against a policy's top-level targetRef, which accepts only Mesh and Dataplane, and rejects any other kind on write (`value '\u003cKind\u003e' is not supported`), so re-applying the role fails and the stored one matches no policy. Either rewrite it as `kind: Dataplane` before upgrading, or remove the qualifier and recreate it with `labels` after upgrading (3.0 does not re-validate stored roles, it only rejects a re-apply). A `kind: Dataplane` qualifier without `name` is not a catch-all: 3.0 requires the qualifier's name to equal the policy's `kuma.io/display-name` label, so it only covers policies without one (on 2.14: without `name`), and policies pinned by display-name are not covered. On 2.14 the same rewrite widens the grant, from policies on this MeshService to every Dataplane-targeted policy without a name that the rule's types and mesh allow.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole when[].to.targetRef.kind=MeshMultiZoneService without name",
+      "detail": "3.0 requires `labels` on a `when[].to.targetRef` of this kind and derives them only from `name`, so re-applying the role fails (`labels must be set when kind is MeshMultiZoneService`). 2.14 accepts it without `name` for MeshMultiZoneService, which has no 2.14 validator branch. Set `name` to the target's display name before upgrading, or remove the qualifier and recreate it with `labels` after upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole when[].to.targetRef.kind=MeshServiceSubset",
+      "detail": "3.0 accepts only Mesh, MeshService, MeshExternalService, MeshMultiZoneService and MeshHTTPRoute in a `when[].to.targetRef` qualifier and rejects subset/selector kinds and MeshGateway on write, so re-applying the role fails. Retarget the qualifier at one of those kinds before upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
     {
       "severity": "blocker",
       "group": "control_plane",
@@ -60,7 +193,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Global control plane on Kubernetes",
-      "detail": "the field mode value has to be changed from global to universal",
+      "detail": "the field environment value has to be changed from kubernetes to universal",
       "doc_url": "https://developer.konghq.com/mesh/universal/",
       "count": 1,
       "example_resources": [
@@ -177,18 +310,6 @@
     },
     {
       "severity": "blocker",
-      "group": "control_plane",
-      "category": "Control plane version",
-      "title": "Control plane behind the latest 2.14 patch",
-      "detail": "Upgrade to the latest 2.14 patch (2.14.0) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.",
-      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
-      "count": 1,
-      "example_resources": [
-        "control plane (2.9.0)"
-      ]
-    },
-    {
-      "severity": "blocker",
       "group": "mesh_object",
       "category": "Mesh object settings",
       "title": "Inline mTLS on Mesh",
@@ -221,6 +342,18 @@
       "count": 1,
       "example_resources": [
         "default/mlbs-crosszone"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "MeshOPA data source",
+      "title": "MeshOPA uses the removed flat DataSource shape",
+      "detail": "3.0 reads MeshOPA `agentConfig` and `appendPolicies[].rego` only as a typed `SecureDataSource` and has no converter for the flat `secret`/`inline`/`inlineString` shape, while 2.14 reads only the flat one. No stored shape works while a 3.0 global control plane syncs to 2.14 zones: the global drops the flat keys, the zone cannot load the data source, MeshOPA fails to apply and the proxies it selects stop getting configuration updates (new or restarted ones get none). Rewriting as part of the upgrade is too late, so do it before upgrading the global control plane: move every control plane (global and zones) to a 2.14 patch that accepts both shapes, rewrite each data source there, then upgrade the global. `inline` becomes `type: InsecureInline` with the base64-decoded value in `insecureInline.value`, `inlineString` becomes `type: InsecureInline` with the same text, and `secret: \u003cname\u003e` becomes `type: Secret` with `secretRef: {kind: Secret, name: \u003cname\u003e}`. Check the Kong Mesh 2.14 release notes for the patch that accepts the typed MeshOPA shape; until every control plane runs it, do not start the global upgrade while this MeshOPA is in use.",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshopa/",
+      "count": 1,
+      "example_resources": [
+        "default/opa-flat-datasource"
       ]
     },
     {
@@ -290,6 +423,18 @@
       "severity": "blocker",
       "group": "policies",
       "category": "Reference by name",
+      "title": "MeshOPA references a resource by name",
+      "detail": "3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "example_resources": [
+        "default/opa-meshservice"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "Reference by name",
       "title": "MeshTimeout references a resource by name",
       "detail": "3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
@@ -315,12 +460,36 @@
       "severity": "blocker",
       "group": "policies",
       "category": "Removed policies",
+      "title": "OPAPolicy (removed in 3.0)",
+      "detail": "The legacy OPAPolicy resource and its CRD are removed in 3.0, so a leftover OPAPolicy is no longer enforced and cannot be re-applied. Migrate each one to a MeshOPA policy (top-level `targetRef` kind Mesh or Dataplane) and delete it before upgrading. A MeshOPA with `agentConfig` or `appendPolicies` must use the typed data source shape before the global control plane is upgraded, which needs a 2.14 patch that accepts it (see the MeshOPA data source finding).",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshopa/",
+      "count": 1,
+      "example_resources": [
+        "default/legacy-opa"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "Removed policies",
       "title": "TrafficPermission (removed in 3.0)",
       "detail": "Replace with MeshTrafficPermission (rules + spiffeID).",
       "doc_url": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
       "count": 1,
       "example_resources": [
         "default/allow-all"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "Top-level targetRef kind",
+      "title": "MeshOPA top-level targetRef.kind=MeshService",
+      "detail": "Top-level targetRef must be Mesh or Dataplane; use labels.",
+      "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
+      "count": 1,
+      "example_resources": [
+        "default/opa-meshservice"
       ]
     },
     {
@@ -400,12 +569,51 @@
       "severity": "blocker",
       "group": "data_plane_and_workloads",
       "category": "Dataplane features",
+      "title": "Dataplane exports OpenTelemetry directly",
+      "detail": "This proxy runs with `KUMA_DATAPLANE_RUNTIME_OTEL_PIPE_ENABLED=false`. 3.0 always sends OpenTelemetry traces, logs and metrics through kuma-dp, so this proxy exports to a socket nothing listens on and its telemetry stops. Remove the override and restart the proxy.",
+      "doc_url": "https://developer.konghq.com/mesh/deploy-an-opentelemetry-collector/",
+      "count": 2,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east]",
+        "default/current-dp.kuma-demo [zone:west]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane features",
       "title": "Dataplane is not using unified resource naming",
       "detail": "This proxy does not advertise the `feature-unified-resource-naming` capability, so it is not emitting the unified (KRI-based) resource names Kuma 3.0 requires. Enable `unifiedResourceNamingEnabled` on the control plane (if not already) and restart/re-inject the proxy so it adopts unified naming before upgrading.",
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
         "default/legacy-dp.kuma-demo [zone:east]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane features",
+      "title": "Dataplane opts out of SO_REUSEPORT or strict inbound ports",
+      "detail": "This proxy runs with `KUMA_DATAPLANE_RUNTIME_REUSE_PORT_ENABLED=false` or `KUMA_DATAPLANE_RUNTIME_STRICT_INBOUND_PORTS_ENABLED=false`. 3.0 always generates listeners with SO_REUSEPORT and strict inbound ports: Envoy cannot change `enable_reuse_port` on a live listener, so it rejects the inbound listener updates until the proxy restarts, and inbound traffic to undeclared ports is refused. Remove the override and restart the proxy on 2.x, declaring any extra inbound port it serves.",
+      "doc_url": "https://developer.konghq.com/mesh/data-plane-proxy/",
+      "count": 2,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east]",
+        "default/current-dp.kuma-demo [zone:west]"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "data_plane_and_workloads",
+      "category": "Dataplane features",
+      "title": "Dataplane uses state-of-the-world xDS",
+      "detail": "This proxy does not advertise `feature-delta-grpc`, so it talks SotW xDS. 3.0 serves only delta xDS: once its control plane runs 3.0 the proxy keeps its last config, stays Ready and stops receiving updates until kuma-dp restarts. `experimental.deltaXds` on the control plane only reaches pods through the Kubernetes injector; on Universal (and for ZoneIngress/ZoneEgress started outside the injector) set `KUMA_DATAPLANE_RUNTIME_ENVOY_XDS_TRANSPORT_PROTOCOL_VARIANT=DELTA_GRPC` on kuma-dp. Restart the proxy before upgrading.",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "count": 2,
+      "example_resources": [
+        "default/legacy-dp.kuma-demo [zone:east]",
+        "default/current-dp.kuma-demo [zone:west]"
       ]
     },
     {
@@ -490,18 +698,6 @@
       "count": 1,
       "example_resources": [
         "default/dp-1 [zone:east]"
-      ]
-    },
-    {
-      "severity": "blocker",
-      "group": "data_plane_and_workloads",
-      "category": "Dataplane version",
-      "title": "Dataplane is version-incompatible with the control plane",
-      "detail": "The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
-      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
-      "count": 1,
-      "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)"
       ]
     },
     {
@@ -670,6 +866,18 @@
     {
       "severity": "info",
       "group": "control_plane",
+      "category": "Access roles",
+      "title": "AccessRole qualifier matches a targetRef by name",
+      "detail": "3.0 turns a qualifier `targetRef.name` into a `kuma.io/display-name` label match: the rule only covers policies whose targetRef carries `kuma.io/display-name: \u003cname\u003e`. Policies that select the same proxies or services by other labels (3.0 removes `name` from policy targetRefs) are no longer covered, so writes the role allowed are denied (the grant shrinks, it does not widen). The 2.14 qualifier has no `labels` field, so after upgrading rewrite it with `labels` matching how the policies select, and check who holds the role.",
+      "doc_url": "https://developer.konghq.com/mesh/rbac/",
+      "count": 1,
+      "example_resources": [
+        "backend-team"
+      ]
+    },
+    {
+      "severity": "info",
+      "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Default outbound changes in 3.0",
       "detail": "`defaults.restrictOutbound` is not set, so it follows the default: `false` on 2.14 and `true` in 3.0. After the upgrade a proxy with no `reachableBackends` reaches nothing and a proxy matched by no MeshPassthrough loses outbound passthrough. To keep today's behavior, set it explicitly to `false` before upgrading and keep that setting on 3.0. To adopt the 3.0 behavior, set it to `true` now and validate — the control plane then denies exactly what 3.0 will, so the proxies and meshes this report flags break here instead of after the upgrade.",
@@ -711,6 +919,16 @@
       "title": "Migrate clients of removed inspect and overview endpoints",
       "detail": "Kuma 3.0 removes several legacy REST endpoints, which then answer 404: the dataplane `rules` inspect endpoint, the per-policy `{policy}/{name}/dataplanes` inspect paths, the MeshService `_resources/dataplanes` path, the `dataplanes+insights` and `zones+insights` overview aliases, the ZoneIngress/ZoneEgress overview and Envoy admin endpoints, and `service-insights`, which the control plane stops computing. The `_rules` endpoint stays but no longer returns `toRules`/`fromRules`, and the `?gateway=` overview filter is ignored. The control-plane API cannot tell you which clients still call these paths, whether that's kumactl, the GUI, dashboards, scripts, or monitoring, so find and migrate those consumers yourself using the mapping below, and upgrade kumactl and the GUI together with the control plane.",
       "command": "# Removed in 3.0 (404)                                   -\u003e replacement\nGET /meshes/{mesh}/dataplanes/{name}/rules                  -\u003e /meshes/{mesh}/dataplanes/{name}/_policies\nGET /meshes/{mesh}/{policyType}/{name}/dataplanes           -\u003e /meshes/{mesh}/{policyType}/{name}/_resources/dataplanes\nGET /meshes/{mesh}/meshservices/{name}/_resources/dataplanes -\u003e /meshes/{mesh}/meshservices/{name}/_dataplanes\nGET /meshes/{mesh}/dataplanes+insights[/{name}]             -\u003e /meshes/{mesh}/dataplanes/_overview (/{name}/_overview)\nGET /zones+insights[/{name}]                                -\u003e /zones/_overview (/zones/{name}/_overview)\nGET /meshes/{mesh}/service-insights[/{name}]                -\u003e MeshService / MeshExternalService status\nGET /zoneingresses+insights, /zoneegressoverviews           -\u003e none (ZoneIngress/ZoneEgress are removed)\nGET /zoneingresses/{name}/{xds,stats,clusters}              -\u003e none\nGET /zoneegresses/{name}/{xds,stats,clusters}               -\u003e none\n\n# Changed\nGET /meshes/{mesh}/dataplanes/{name}/_rules                 -\u003e no toRules/fromRules; read toResourceRules/inboundRules\nGET /meshes/{mesh}/dataplanes/_overview?gateway=            -\u003e filter ignored\n\n# Deprecated, still served\nGET /meshes/{mesh}/dataplanes/{name}/policies               -\u003e /meshes/{mesh}/dataplanes/{name}/_policies\n\n# KRI-based inspect API\nGET /meshes/{mesh}/dataplanes/{name}/_layout\nGET /meshes/{mesh}/dataplanes/{name}/_policies\nGET /meshes/{mesh}/dataplanes/{name}/_inbounds/{inbound_kri}/_policies\nGET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_policies\nGET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes\nGET /meshes/{mesh}/dataplanes/{name}/_outbounds/{outbound_kri}/_routes/{route_kri}/_policies"
+    },
+    {
+      "title": "Clear every resource and Mesh blocker before upgrading the global control plane",
+      "detail": "The global control plane is upgraded first, and the moment it runs 3.0 it changes what every 2.x zone receives over KDS, before any zone is upgraded. It answers the zones with an empty list for every resource type 3.0 removed, so each zone deletes its copies of the legacy policies, MeshGateway, MeshGatewayRoute, ExternalService and the other zones' ZoneIngress. It reads stored resources with the removed fields dropped and syncs them that way: the Mesh arrives without `mtls`, `routing`, `networking`, `logging`, `tracing`, `metrics` and `constraints`, and policies arrive without `from`, `proxyTypes` and name refs, which a 2.x zone still accepts and applies with a wider scope. So the Mesh settings, removed kinds, zone proxies and policy field findings in this report are deadlines for the global upgrade, not for the zone upgrades. If that is not possible, keep the zones disconnected from the global (stop the global or block KDS) until each zone runs 3.0.",
+      "command": "# On the 2.x global, before upgrading it: every command must print nothing.\nkumactl get meshes -o json | jq -r '.items[] | select(.mtls or .routing or .networking or .logging or .tracing or .metrics or .constraints) | .name'\nfor m in $(kumactl get meshes -o json | jq -r '.items[].name'); do\n  for t in traffic-permissions traffic-routes traffic-logs traffic-traces fault-injections healthchecks circuit-breakers retries timeouts rate-limits proxytemplates virtual-outbounds external-services meshgateways meshgatewayroutes; do\n    kumactl get \"$t\" --mesh \"$m\" -o json | jq -r --arg t \"$t\" '.items[]? | \"\\($t) \\(.mesh)/\\(.name)\"'\n  done\ndone\nkumactl get zoneingresses -o json | jq -r '.items[].name'\n\n# After upgrading the global, on each 2.x zone: the zone must not delete what it synced.\nkubectl -n kuma-system logs deploy/kuma-control-plane | grep \"no longer available in the upstream\""
+    },
+    {
+      "title": "Reissue Universal dataplane tokens bound to tags",
+      "detail": "A dataplane token issued with `--tag` is checked against the Dataplane's inbound tags on 2.x, but against its labels on 3.0. A token bound to `kuma.io/service` can never match on 3.0, because `kuma.io/service` is a reserved label 3.0 does not allow on a Dataplane, so the proxy is rejected the next time it connects to a 3.0 zone control plane (every zone upgrade forces a reconnect). The same token already fails on 2.x once `experimental.inboundTagsDisabled` removes the inbound tags. Tokens are not stored by the control plane, so the tool cannot find them. Reissue every tag-bound token as a name-bound (`--name`) or workload-bound (`--workload`) token and restart kuma-dp with it before upgrading. A proxy selected by a MeshIdentity whose SPIFFE ID uses the workload (the Universal default) needs a `--workload` token matching its `kuma.io/workload` label.",
+      "command": "# Decode the claims of each token kuma-dp runs with; \"Tags\" must be empty.\n# The payload is unpadded base64url, so restore the padding before decoding.\np=$(cut -d. -f2 /path/to/dataplane-token | tr '_-' '/+')\nwhile [ $(( ${#p} % 4 )) -ne 0 ]; do p=\"$p=\"; done\nprintf '%s' \"$p\" | base64 -d | jq '{Name, Mesh, Tags, Workload}'\n\n# Reissue, bound to the workload (or --name \u003cdataplane\u003e)\nkumactl generate dataplane-token --mesh \u003cmesh\u003e --workload \u003ckuma.io/workload value\u003e --valid-for 8760h \u003e /path/to/dataplane-token"
     },
     {
       "title": "Rotate legacy HMAC256 signing keys (pre-1.4.x) to asymmetric RSA/ECDSA",

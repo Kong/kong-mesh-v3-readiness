@@ -354,6 +354,7 @@ const htmlTail = `
   };
   var GLYPH = {blockers:'✕', failed:'✕', inconclusive:'!', clean:'✓'};
   var GROUP_LABELS = {
+    upgrade_path: 'Upgrade path',
     control_plane: 'Control plane',
     mesh_object: 'Mesh object',
     policies: 'Policies',
