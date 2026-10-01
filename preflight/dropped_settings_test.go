@@ -28,9 +28,9 @@ func TestDroppedCPSettings(t *testing.T) {
 		{"min resync timeout", `{"metrics":{"mesh":{"minResyncTimeout":"5s","maxResyncTimeout":"0s"}}}`, "kubernetes", blocker, "metrics.mesh.minResyncTimeout ignored in 3.0", true},
 		{"max resync timeout", `{"metrics":{"mesh":{"minResyncTimeout":"0s","maxResyncTimeout":"1m0s"}}}`, "kubernetes", blocker, "metrics.mesh.maxResyncTimeout ignored in 3.0", true},
 		{"unset resync timeout", `{"metrics":{"mesh":{"minResyncTimeout":"0s"}}}`, "kubernetes", blocker, "metrics.mesh.minResyncTimeout ignored in 3.0", false},
-		{"zone token issuer off", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":false}}}}}`, "universal", blocker, issuerTitle, true},
-		{"zone token issuer on", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":true}}}}}`, "universal", blocker, issuerTitle, false},
+		{"zone token issuer off on a zone", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":false}}}}}`, "universal", blocker, issuerTitle, false},
 		{"zone proxy authn none", `{"dpServer":{"authn":{"dpProxy":{"type":"dpToken"},"zoneProxy":{"type":"none"}}}}`, "universal", blocker, "Zone proxies need a dataplane token in 3.0", true},
+		{"zone proxy authn none on k8s", `{"dpServer":{"authn":{"dpProxy":{"type":"serviceAccountToken"},"zoneProxy":{"type":"none"}}}}`, "kubernetes", blocker, "Zone proxies need a dataplane token in 3.0", false},
 		{"all proxy authn none", `{"dpServer":{"authn":{"dpProxy":{"type":"none"},"zoneProxy":{"type":"none"}}}}`, "universal", blocker, "Zone proxies need a dataplane token in 3.0", false},
 		{"outbounds not as VIPs", `{"experimental":{"kubeOutboundsAsVIPs":false}}`, "kubernetes", blocker, "Kubernetes outbounds as VIPs not enabled", true},
 		{"outbounds not as VIPs off k8s", `{"experimental":{"kubeOutboundsAsVIPs":false}}`, "universal", blocker, "Kubernetes outbounds as VIPs not enabled", false},
@@ -59,11 +59,15 @@ func TestDroppedCPSettings(t *testing.T) {
 }
 
 // TestDroppedCPSettingsOnGlobal: a global audits its own mode-independent
-// settings, but not the proxy-serving zone proxy authn one.
+// settings and the zone token issuer, but not the proxy-serving zone proxy
+// authn one.
 func TestDroppedCPSettingsOnGlobal(t *testing.T) {
 	m := auditResponses(t, map[string]string{
-		"/config": `{"mode":"global","environment":"universal","store":{"cache":{"enabled":false}},"dpServer":{"authn":{"dpProxy":{"type":"dpToken"},"zoneProxy":{"type":"none"}}}}`,
+		"/config": `{"mode":"global","environment":"universal","store":{"cache":{"enabled":false}},"dpServer":{"authn":{"dpProxy":{"type":"dpToken"},"zoneProxy":{"type":"none","zoneToken":{"enableIssuer":false}}}}}`,
 	})
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer"); !ok {
+		t.Errorf("zone token issuer off not flagged on a global; findings: %+v", m.Findings)
+	}
 	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Store cache can no longer be disabled"); !ok {
 		t.Errorf("store cache not flagged on a global; findings: %+v", m.Findings)
 	}

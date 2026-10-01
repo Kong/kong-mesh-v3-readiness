@@ -2074,6 +2074,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 		// are audited here too.
 		a.addAPIServerFindings(cfg, zoneRef(""))
 		a.addDroppedSettingFindings(cfg, zoneRef(""))
+		a.addZoneTokenIssuerFinding(cfg)
 		return a.checkZoneControlPlaneConfigs(ctx)
 	}
 	// Standalone or a directly-connected zone CP: audit the config we reached.
@@ -2157,11 +2158,6 @@ func (a *auditor) addDroppedSettingFindings(cfg cpConfig, ref func(string) strin
 				docKumaCPReference, ref(s.field+"="+s.value))
 		}
 	}
-	if e := cfg.DpServer.Authn.ZoneProxy.ZoneToken.EnableIssuer; e != nil && !*e {
-		a.rep.addDoc(blocker, cpConfigCategory, "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer",
-			cpConfigDetail("dpServer.authn.zoneProxy.zoneToken.enableIssuer", "false", "unset"),
-			docKumaCPReference, ref("dpServer.authn.zoneProxy.zoneToken.enableIssuer=false"))
-	}
 
 	var legacyVIP []string
 	if c := cfg.DNSServer.CIDR; c != "" && c != "240.0.0.0/4" {
@@ -2177,6 +2173,16 @@ func (a *auditor) addDroppedSettingFindings(cfg cpConfig, ref func(string) strin
 		a.rep.addDoc(info, cpConfigCategory, "Legacy DNS VIP settings have no effect in 3.0",
 			"3.0 removes the `kuma.io/service` VIP allocator these settings configured, together with the `<service>.mesh` names it served. DNS names come only from MeshService, MeshExternalService and MeshMultiZoneService VIPs, allocated from the `ipam.*` CIDRs. The settings are ignored, so drop them from the control plane configuration.",
 			docDNS, ref(s))
+	}
+}
+
+// addZoneTokenIssuerFinding flags a global that turned the zone token issuer
+// off. 3.0 validates zone tokens on the global only, so a zone's value is inert.
+func (a *auditor) addZoneTokenIssuerFinding(cfg cpConfig) {
+	if e := cfg.DpServer.Authn.ZoneProxy.ZoneToken.EnableIssuer; e != nil && !*e {
+		a.rep.addDoc(blocker, cpConfigCategory, "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer",
+			"3.0 ignores dpServer.authn.zoneProxy.zoneToken.enableIssuer, so the issuer turns back on. Set multizone.global.kds.auth.zoneToken.enableIssuer to false on the global to keep it off.",
+			docKumaCPReference, "dpServer.authn.zoneProxy.zoneToken.enableIssuer=false")
 	}
 }
 
@@ -2241,8 +2247,9 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	a.addAPIServerFindings(cfg, ref)
 	a.addDroppedSettingFindings(cfg, ref)
 	// zoneProxy.type authenticated only the standalone zone proxies; 3.0 zone
-	// proxies are Dataplanes and authenticate like any other proxy.
-	if authn := cfg.DpServer.Authn; authn.ZoneProxy.Type == "none" && authn.DpProxy.Type != "none" {
+	// proxies are Dataplanes and authenticate like any other proxy. On Kubernetes
+	// that is the pod service-account token, issued without operator action.
+	if authn := cfg.DpServer.Authn; !onK8s && authn.ZoneProxy.Type == "none" && authn.DpProxy.Type != "none" {
 		a.rep.addDoc(blocker, cpConfigCategory, "Zone proxies need a dataplane token in 3.0",
 			cpConfigDetail("dpServer.authn.zoneProxy.type", "none", "unset"),
 			docZoneProxies, ref("dpServer.authn.zoneProxy.type=none"))
@@ -3316,7 +3323,7 @@ grep -rnE 'KUMA_MODE=.?standalone|^\s*mode:\s*standalone' /etc/systemd/system /e
 # (1) "1s" means the CP follows the 2.x default
 curl -s http://<cp-address>:5681/config | jq -r '.xdsServer.dataplaneConfigurationRefreshInterval'
 
-# (3) Kubernetes: empty means every sidecar without the annotation drops to 2 workers
+# (3) Kubernetes: 0 or empty means no limit, so every sidecar without the annotation drops to 2 workers
 curl -s http://<cp-address>:5681/config | jq -r '.runtime.kubernetes.injector.sidecarContainer.resources.limits.cpu'
 
 # (4) Meshes still carrying skipCreatingInitialPolicies
@@ -3434,7 +3441,7 @@ var kubernetesManualChecks = []ManualCheck{
 			"(`meshes[].ingress.enabled` / `meshes[].egress.enabled`) first, then remove both " +
 			"blocks from your values files. `controlPlane.ingress.*` is unrelated and stays. " +
 			"Empty output means there is nothing left to fix.",
-		Command: `helm get values -n <namespace> <release> -o json | jq -r '(., .kuma // {}) | to_entries[] | select(.key == "ingress" or .key == "egress") | select(.value.enabled == true) | "\(.key).enabled=true"'`,
+		Command: `helm get values -n <namespace> <release> -o json | jq -r '(. // {}) | (., .kuma // {}) | to_entries[] | select(.key == "ingress" or .key == "egress") | select(.value.enabled == true) | "\(.key).enabled=true"'`,
 	},
 	{
 		Title: "Replace the `kuma.io/builtin-dns` Pod annotations",
