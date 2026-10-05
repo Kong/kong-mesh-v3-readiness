@@ -482,6 +482,8 @@ func (a *auditor) readColl(ctx context.Context, path string) ([]resourceItem, bo
 				a.resourceLimitGapRecorded = true
 			}
 		}
+		// EXC:FILE011:a resource-limit hit still returns the admitted partial items — they must carry the zone too
+		a.stampZone(items)
 		return items, false
 	}
 	if !found {
@@ -512,6 +514,8 @@ func (a *auditor) listServed(ctx context.Context, path string) ([]resourceItem, 
 				a.resourceLimitGapRecorded = true
 			}
 		}
+		// EXC:FILE011:a resource-limit hit still returns the admitted partial items — they must carry the zone too
+		a.stampZone(items)
 		return items, false
 	}
 	if !found {
