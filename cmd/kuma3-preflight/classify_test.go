@@ -402,7 +402,15 @@ func TestDynamicFieldMergesIntoStaticFeatureBucket(t *testing.T) {
 	reports := t.TempDir()
 	writeSnapshot(t, reports, "0001-mtls.json", []preflight.Finding{{
 		Severity: "blocker", Category: "Mesh object settings", Title: "Inline mTLS on Mesh",
-		Count: 1, Examples: []string{"mtls (mtls)"},
+		Count: 3, Examples: []string{"kri_m____mtls_ (mtls)", "kri_m____payments_ (mtls)"},
+	}})
+	writeSnapshot(t, reports, "0002-rbac.json", []preflight.Finding{{
+		Severity: "info", Category: "Access roles", Title: "AccessRoleBinding grants roles to unauthenticated callers",
+		Count: 1, Examples: []string{"kri_arb____default_ (roles: admin)"},
+	}})
+	writeSnapshot(t, reports, "0003-zone.json", []preflight.Finding{{
+		Severity: "blocker", Category: "Non-RFC-1035 names", Title: "Zone name is not a valid RFC-1035 DNS label",
+		Count: 1, Examples: []string{"kri_z____eu.west_"},
 	}})
 	if err := ci.ingestReports(reports); err != nil {
 		t.Fatal(err)

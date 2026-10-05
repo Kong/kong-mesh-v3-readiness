@@ -384,8 +384,12 @@ func featureForExample(ex string, known []string) string {
 	s := ex
 	if strings.HasPrefix(s, "kri_") {
 		parts := strings.Split(s, "_")
-		if len(parts) > 2 {
+		if len(parts) > 5 {
 			s = parts[2]
+			// EXC:FILE011:Mesh/Zone/global-scoped resources carry their identity in the name segment
+			if s == "" {
+				s = parts[5]
+			}
 		}
 	} else {
 		if i := strings.Index(s, " ("); i >= 0 {
