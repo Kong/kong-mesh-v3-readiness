@@ -241,7 +241,9 @@ type auditor struct {
 	cpZone string
 	// EXC:FILE011:/config was readable early; when it was not, the CP's mode is unknown and a label-less resource might be zone-local
 	configKnown bool
-	rep         *collector
+	// EXC:FILE011:the connected CP is a zone (not a global/standalone); a Mesh KRI resolves only at the global
+	cpModeZone bool
+	rep        *collector
 
 	// /zones+insights is read by both the config and version fan-outs on a global;
 	// memoize the (single) fetch so one global audit makes one round-trip for it.
@@ -319,11 +321,14 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	}
 	if status, err := a.c.getJSON(ctx, "/config", &zoneCfg); err == nil && status == http.StatusOK {
 		a.configKnown = true
-		if strings.EqualFold(zoneCfg.Mode, "zone") {
+		// 3.0 removes the standalone mode, and such a CP upgrades to a zone
+		// with the same configured (or "default") name, so both stamp.
+		if strings.EqualFold(zoneCfg.Mode, "zone") || strings.EqualFold(zoneCfg.Mode, "standalone") {
 			a.cpZone = zoneCfg.Multizone.Zone.Name
 			if a.cpZone == "" {
 				a.cpZone = "default"
 			}
+			a.cpModeZone = strings.EqualFold(zoneCfg.Mode, "zone")
 		}
 	}
 
@@ -441,7 +446,15 @@ func (a *auditor) stampZone(items []resourceItem) {
 	}
 	for i := range items {
 		it := &items[i]
-		if it.Type == "Zone" || it.Labels[zoneLabel] != "" || it.Labels["kuma.io/origin"] == "global" {
+		if it.Type == "Zone" {
+			continue
+		}
+		// EXC:FILE011:a Mesh is global-scoped and SkipKDSHash — its KRI resolves only at the global, never at a zone CP
+		if it.Type == "Mesh" && a.cpModeZone {
+			it.zoneUnknown = true
+			continue
+		}
+		if it.Labels[zoneLabel] != "" || it.Labels["kuma.io/origin"] == "global" {
 			continue
 		}
 		if a.cpZone != "" {
