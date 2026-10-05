@@ -1201,7 +1201,6 @@
       "count": 1,
       "example_resources": [
         {
-          "kri": "kri_msvc_default___My_Service_",
           "type": "MeshService",
           "mesh": "default",
           "name": "My_Service"

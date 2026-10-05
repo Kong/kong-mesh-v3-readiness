@@ -51,6 +51,11 @@ func TestKriOf(t *testing.T) {
 			want: "kri_m____default_",
 		},
 		{
+			name: "name with an underscore is not KRI-addressable",
+			item: resourceItem{Type: "MeshService", Mesh: "default", Name: "My_Service"},
+			want: "",
+		},
+		{
 			name: "type removed in 3.0 has no KRI",
 			item: resourceItem{Type: "TrafficRoute", Mesh: "default", Name: "route-1"},
 			want: "",
@@ -75,32 +80,82 @@ func TestKriOf(t *testing.T) {
 	}
 }
 
-// TestKriOfShortNames pins the ported short names against the Kuma 3.0
-// descriptors so a regeneration cannot silently drift.
+// TestKriOfShortNames pins every ported short name (a typo or a regeneration
+// against wrong descriptors would ship an unresolvable KRI for a whole type)
+// and keeps the table consistent with the audit's own type catalogs: every
+// kind the audit can emit as a kept resource must have a short name, and no
+// kind removed in 3.0 may (3.0 registers neither its type nor its short
+// name).
 func TestKriOfShortNames(t *testing.T) {
 	pinned := map[string]string{
 		"Mesh":                      "m",
 		"Dataplane":                 "dp",
 		"Zone":                      "z",
 		"MeshService":               "msvc",
-		"MeshTimeout":               "mt",
-		"MeshHTTPRoute":             "mhttpr",
-		"MeshTrafficPermission":     "mtp",
 		"MeshExternalService":       "extsvc",
 		"MeshMultiZoneService":      "mzsvc",
 		"MeshTrust":                 "mtrust",
 		"MeshIdentity":              "mid",
 		"MeshZoneAddress":           "mza",
+		"MeshAccessLog":             "mal",
+		"MeshCircuitBreaker":        "mcb",
+		"MeshFaultInjection":        "mfi",
+		"MeshHealthCheck":           "mhc",
+		"MeshHTTPRoute":             "mhttpr",
+		"MeshLoadBalancingStrategy": "mlbs",
+		"MeshMetric":                "mm",
+		"MeshPassthrough":           "mp",
+		"MeshProxyPatch":            "mpp",
+		"MeshRateLimit":             "mrl",
+		"MeshRetry":                 "mr",
+		"MeshTCPRoute":              "mtcpr",
+		"MeshTimeout":               "mt",
+		"MeshTLS":                   "mtls",
+		"MeshTrace":                 "mtr",
+		"MeshTrafficPermission":     "mtp",
 		"MeshOPA":                   "mopa",
 		"AccessRole":                "ar",
 		"AccessAudit":               "aa",
 		"AccessRoleBinding":         "arb",
-		"MeshLoadBalancingStrategy": "mlbs",
-		"MeshCircuitBreaker":        "mcb",
+	}
+	if len(shortNames) != len(pinned) {
+		t.Errorf("shortNames has %d entries, test pins %d — sync the table and the pin", len(shortNames), len(pinned))
 	}
 	for typ, want := range pinned {
 		if got := shortNames[typ]; got != want {
 			t.Errorf("shortNames[%s] = %q, want %q", typ, got, want)
+		}
+	}
+
+	for _, lt := range legacyMeshScoped {
+		if _, ok := shortNames[lt.kind]; ok {
+			t.Errorf("removed kind %s must not have a KRI short name", lt.kind)
+		}
+	}
+	for _, rp := range removedEnterprisePolicies {
+		if _, ok := shortNames[rp.kind]; ok {
+			t.Errorf("removed enterprise kind %s must not have a KRI short name", rp.kind)
+		}
+	}
+	for _, k := range removedCoreKinds {
+		if _, ok := shortNames[k]; ok {
+			t.Errorf("removed core kind %s must not have a KRI short name", k)
+		}
+	}
+
+	// EXC:FILE011:every kept kind the audit lists must resolve — policies, RBAC, core collections
+	auditedKinds := []string{
+		"MeshTrafficPermission", "MeshFaultInjection", "MeshTLS", "MeshAccessLog",
+		"MeshRateLimit", "MeshCircuitBreaker", "MeshTimeout", "MeshHTTPRoute",
+		"MeshTCPRoute", "MeshRetry", "MeshHealthCheck", "MeshLoadBalancingStrategy",
+		"MeshProxyPatch", "MeshMetric", "MeshTrace", "MeshPassthrough",
+		"MeshOPA", "AccessRole", "AccessAudit", "AccessRoleBinding",
+		"Mesh", "Dataplane", "Zone", "MeshService", "MeshExternalService",
+		"MeshMultiZoneService", "MeshZoneAddress", "MeshTrust", "MeshIdentity",
+	}
+	for _, kind := range auditedKinds {
+		if _, ok := shortNames[kind]; !ok {
+			t.Errorf("audited kind %s has no KRI short name", kind)
 		}
 	}
 }

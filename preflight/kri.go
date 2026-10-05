@@ -60,8 +60,9 @@ func meshOfItem(it resourceItem) string {
 // resources); the name is the display name, the one that survives a KDS
 // hash-suffix. Section is always empty (the audit flags whole resources).
 // A Mesh is stored under NoMesh, so its mesh segment is empty — anything
-// else makes the KRI unresolvable on a 3.0 CP.
-// Returns "" when the type has no 3.0 short name.
+// else makes the KRI unresolvable on a 3.0 CP. Returns "" when the type
+// has no 3.0 short name, or any segment contains "_" (Kuma decodes a KRI
+// by splitting on it, so such an identifier would resolve elsewhere).
 func kriOf(it resourceItem) string {
 	typ := it.Type
 	// EXC:FILE011:Kuma's KRI treats an overview as its base resource (DataplaneOverview -> Dataplane)
@@ -73,6 +74,12 @@ func kriOf(it resourceItem) string {
 	name := displayName(it)
 	if name == "" {
 		return ""
+	}
+	// EXC:FILE011:Kuma splits a KRI on "_", so a segment containing one would resolve to a different resource
+	for _, seg := range []string{it.Mesh, it.Labels[zoneLabel], it.Labels[kubeNamespaceLabel], name} {
+		if strings.Contains(seg, "_") {
+			return ""
+		}
 	}
 	return fmt.Sprintf("kri_%s_%s_%s_%s_%s_", short, it.Mesh,
 		it.Labels[zoneLabel], it.Labels[kubeNamespaceLabel], name)

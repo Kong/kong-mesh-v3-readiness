@@ -2539,7 +2539,7 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 		a.rep.add(info, cpVersionCategory, "Audited control plane version check out of scope",
 			"The caller excluded the audited control plane's own patch level from this check; "+
 				"it was NOT checked against the latest 2.x line. Connected zone control planes are still audited.",
-			exampleNote(a.rep.cp.Version))
+			exampleNote("control plane ("+a.rep.cp.Version+")"))
 	}
 	detail := fmt.Sprintf("Upgrade to the latest 2.%d patch (%s) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.", UpgradeTargetMinor, a.latestPatch)
 
