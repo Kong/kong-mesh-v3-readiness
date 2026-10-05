@@ -1,5 +1,5 @@
 {
-  "tool_schema": "kuma3-preflight/v5",
+  "tool_schema": "kuma3-preflight/v6",
   "tool": "kuma3-preflight",
   "generated_at": "2026-06-25T09:30:00Z",
   "status": "inconclusive",
@@ -40,7 +40,9 @@
       "detail": "the field runtime.kubernetes.injector.unifiedResourceNamingEnabled value has to be changed from false to true",
       "count": 1,
       "example_resources": [
-        "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        {
+          "note": "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
@@ -52,7 +54,9 @@
       "detail": "the field experimental.deltaXds value has to be changed from false to true",
       "count": 1,
       "example_resources": [
-        "experimental.deltaXds=false"
+        {
+          "note": "experimental.deltaXds=false"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
@@ -64,7 +68,9 @@
       "detail": "the field experimental.inboundTagsDisabled value has to be changed from false to true",
       "count": 1,
       "example_resources": [
-        "experimental.inboundTagsDisabled=false"
+        {
+          "note": "experimental.inboundTagsDisabled=false"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
@@ -76,7 +82,9 @@
       "detail": "the field experimental.kdsEventBasedWatchdog.enabled value has to be changed from false to true",
       "count": 1,
       "example_resources": [
-        "experimental.kdsEventBasedWatchdog.enabled=false"
+        {
+          "note": "experimental.kdsEventBasedWatchdog.enabled=false"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
@@ -88,16 +96,76 @@
       "detail": "Inline mTLS on the Mesh object is removed in 3.0; migrate to a MeshTLS policy.",
       "count": 12,
       "example_resources": [
-        "default (field)",
-        "payments (field)",
-        "checkout (field)",
-        "inventory (field)",
-        "shipping (field)",
-        "auth (field)",
-        "search (field)",
-        "recommendations (field)",
-        "notifications (field)",
-        "billing (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____inventory_",
+          "type": "Mesh",
+          "mesh": "inventory",
+          "name": "inventory",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____shipping_",
+          "type": "Mesh",
+          "mesh": "shipping",
+          "name": "shipping",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____auth_",
+          "type": "Mesh",
+          "mesh": "auth",
+          "name": "auth",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____search_",
+          "type": "Mesh",
+          "mesh": "search",
+          "name": "search",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____recommendations_",
+          "type": "Mesh",
+          "mesh": "recommendations",
+          "name": "recommendations",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____notifications_",
+          "type": "Mesh",
+          "mesh": "notifications",
+          "name": "notifications",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____billing_",
+          "type": "Mesh",
+          "mesh": "billing",
+          "name": "billing",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -109,16 +177,76 @@
       "detail": "Inline metrics on the Mesh object is removed in 3.0; migrate to MeshMetric.",
       "count": 12,
       "example_resources": [
-        "default (field)",
-        "payments (field)",
-        "checkout (field)",
-        "inventory (field)",
-        "shipping (field)",
-        "auth (field)",
-        "search (field)",
-        "recommendations (field)",
-        "notifications (field)",
-        "billing (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____inventory_",
+          "type": "Mesh",
+          "mesh": "inventory",
+          "name": "inventory",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____shipping_",
+          "type": "Mesh",
+          "mesh": "shipping",
+          "name": "shipping",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____auth_",
+          "type": "Mesh",
+          "mesh": "auth",
+          "name": "auth",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____search_",
+          "type": "Mesh",
+          "mesh": "search",
+          "name": "search",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____recommendations_",
+          "type": "Mesh",
+          "mesh": "recommendations",
+          "name": "recommendations",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____notifications_",
+          "type": "Mesh",
+          "mesh": "notifications",
+          "name": "notifications",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____billing_",
+          "type": "Mesh",
+          "mesh": "billing",
+          "name": "billing",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -130,16 +258,76 @@
       "detail": "Inline tracing on the Mesh object is removed in 3.0; migrate to MeshTrace.",
       "count": 12,
       "example_resources": [
-        "default (field)",
-        "payments (field)",
-        "checkout (field)",
-        "inventory (field)",
-        "shipping (field)",
-        "auth (field)",
-        "search (field)",
-        "recommendations (field)",
-        "notifications (field)",
-        "billing (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____inventory_",
+          "type": "Mesh",
+          "mesh": "inventory",
+          "name": "inventory",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____shipping_",
+          "type": "Mesh",
+          "mesh": "shipping",
+          "name": "shipping",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____auth_",
+          "type": "Mesh",
+          "mesh": "auth",
+          "name": "auth",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____search_",
+          "type": "Mesh",
+          "mesh": "search",
+          "name": "search",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____recommendations_",
+          "type": "Mesh",
+          "mesh": "recommendations",
+          "name": "recommendations",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____notifications_",
+          "type": "Mesh",
+          "mesh": "notifications",
+          "name": "notifications",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____billing_",
+          "type": "Mesh",
+          "mesh": "billing",
+          "name": "billing",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -151,16 +339,76 @@
       "detail": "Inline logging on the Mesh object is removed in 3.0; migrate to MeshAccessLog.",
       "count": 12,
       "example_resources": [
-        "default (field)",
-        "payments (field)",
-        "checkout (field)",
-        "inventory (field)",
-        "shipping (field)",
-        "auth (field)",
-        "search (field)",
-        "recommendations (field)",
-        "notifications (field)",
-        "billing (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____inventory_",
+          "type": "Mesh",
+          "mesh": "inventory",
+          "name": "inventory",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____shipping_",
+          "type": "Mesh",
+          "mesh": "shipping",
+          "name": "shipping",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____auth_",
+          "type": "Mesh",
+          "mesh": "auth",
+          "name": "auth",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____search_",
+          "type": "Mesh",
+          "mesh": "search",
+          "name": "search",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____recommendations_",
+          "type": "Mesh",
+          "mesh": "recommendations",
+          "name": "recommendations",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____notifications_",
+          "type": "Mesh",
+          "mesh": "notifications",
+          "name": "notifications",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____billing_",
+          "type": "Mesh",
+          "mesh": "billing",
+          "name": "billing",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -172,16 +420,76 @@
       "detail": "Relocated to MeshLoadBalancingStrategy in 3.0.",
       "count": 12,
       "example_resources": [
-        "default (field)",
-        "payments (field)",
-        "checkout (field)",
-        "inventory (field)",
-        "shipping (field)",
-        "auth (field)",
-        "search (field)",
-        "recommendations (field)",
-        "notifications (field)",
-        "billing (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____inventory_",
+          "type": "Mesh",
+          "mesh": "inventory",
+          "name": "inventory",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____shipping_",
+          "type": "Mesh",
+          "mesh": "shipping",
+          "name": "shipping",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____auth_",
+          "type": "Mesh",
+          "mesh": "auth",
+          "name": "auth",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____search_",
+          "type": "Mesh",
+          "mesh": "search",
+          "name": "search",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____recommendations_",
+          "type": "Mesh",
+          "mesh": "recommendations",
+          "name": "recommendations",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____notifications_",
+          "type": "Mesh",
+          "mesh": "notifications",
+          "name": "notifications",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____billing_",
+          "type": "Mesh",
+          "mesh": "billing",
+          "name": "billing",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -193,16 +501,76 @@
       "detail": "Mesh passthrough relocates to MeshPassthrough in 3.0.",
       "count": 12,
       "example_resources": [
-        "default (field)",
-        "payments (field)",
-        "checkout (field)",
-        "inventory (field)",
-        "shipping (field)",
-        "auth (field)",
-        "search (field)",
-        "recommendations (field)",
-        "notifications (field)",
-        "billing (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____inventory_",
+          "type": "Mesh",
+          "mesh": "inventory",
+          "name": "inventory",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____shipping_",
+          "type": "Mesh",
+          "mesh": "shipping",
+          "name": "shipping",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____auth_",
+          "type": "Mesh",
+          "mesh": "auth",
+          "name": "auth",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____search_",
+          "type": "Mesh",
+          "mesh": "search",
+          "name": "search",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____recommendations_",
+          "type": "Mesh",
+          "mesh": "recommendations",
+          "name": "recommendations",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____notifications_",
+          "type": "Mesh",
+          "mesh": "notifications",
+          "name": "notifications",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____billing_",
+          "type": "Mesh",
+          "mesh": "billing",
+          "name": "billing",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -214,16 +582,56 @@
       "detail": "A `to[].targetRef.kind` removed in 3.0 (subset/selector or MeshGateway); migrate the policy.",
       "count": 112,
       "example_resources": [
-        "default/policy-1 [zone:east]",
-        "payments/policy-2 [zone:west]",
-        "checkout/policy-3 [zone:central]",
-        "inventory/policy-4 [zone:east]",
-        "shipping/policy-5 [zone:west]",
-        "auth/policy-6 [zone:central]",
-        "search/policy-7 [zone:east]",
-        "recommendations/policy-8 [zone:west]",
-        "notifications/policy-9 [zone:central]",
-        "billing/policy-10 [zone:east]"
+        {
+          "mesh": "default",
+          "zone": "east",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "payments",
+          "zone": "west",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "checkout",
+          "zone": "central",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "inventory",
+          "zone": "east",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "shipping",
+          "zone": "west",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "auth",
+          "zone": "central",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "search",
+          "zone": "east",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "recommendations",
+          "zone": "west",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "notifications",
+          "zone": "central",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "billing",
+          "zone": "east",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -235,16 +643,56 @@
       "detail": "A policy spec field moved location in 3.0; update the manifest.",
       "count": 187,
       "example_resources": [
-        "default/policy-1 [zone:east]",
-        "payments/policy-2 [zone:west]",
-        "checkout/policy-3 [zone:central]",
-        "inventory/policy-4 [zone:east]",
-        "shipping/policy-5 [zone:west]",
-        "auth/policy-6 [zone:central]",
-        "search/policy-7 [zone:east]",
-        "recommendations/policy-8 [zone:west]",
-        "notifications/policy-9 [zone:central]",
-        "billing/policy-10 [zone:east]"
+        {
+          "mesh": "default",
+          "zone": "east",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "payments",
+          "zone": "west",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "checkout",
+          "zone": "central",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "inventory",
+          "zone": "east",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "shipping",
+          "zone": "west",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "auth",
+          "zone": "central",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "search",
+          "zone": "east",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "recommendations",
+          "zone": "west",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "notifications",
+          "zone": "central",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "billing",
+          "zone": "east",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -256,16 +704,56 @@
       "detail": "The policy `from` array is removed in 3.0; express inbound rules differently.",
       "count": 73,
       "example_resources": [
-        "default/policy-1 [zone:east]",
-        "payments/policy-2 [zone:west]",
-        "checkout/policy-3 [zone:central]",
-        "inventory/policy-4 [zone:east]",
-        "shipping/policy-5 [zone:west]",
-        "auth/policy-6 [zone:central]",
-        "search/policy-7 [zone:east]",
-        "recommendations/policy-8 [zone:west]",
-        "notifications/policy-9 [zone:central]",
-        "billing/policy-10 [zone:east]"
+        {
+          "mesh": "default",
+          "zone": "east",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "payments",
+          "zone": "west",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "checkout",
+          "zone": "central",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "inventory",
+          "zone": "east",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "shipping",
+          "zone": "west",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "auth",
+          "zone": "central",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "search",
+          "zone": "east",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "recommendations",
+          "zone": "west",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "notifications",
+          "zone": "central",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "billing",
+          "zone": "east",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -277,16 +765,56 @@
       "detail": "`targetRef.proxyTypes` is removed in 3.0.",
       "count": 31,
       "example_resources": [
-        "default/policy-1 [zone:east]",
-        "payments/policy-2 [zone:west]",
-        "checkout/policy-3 [zone:central]",
-        "inventory/policy-4 [zone:east]",
-        "shipping/policy-5 [zone:west]",
-        "auth/policy-6 [zone:central]",
-        "search/policy-7 [zone:east]",
-        "recommendations/policy-8 [zone:west]",
-        "notifications/policy-9 [zone:central]",
-        "billing/policy-10 [zone:east]"
+        {
+          "mesh": "default",
+          "zone": "east",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "payments",
+          "zone": "west",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "checkout",
+          "zone": "central",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "inventory",
+          "zone": "east",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "shipping",
+          "zone": "west",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "auth",
+          "zone": "central",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "search",
+          "zone": "east",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "recommendations",
+          "zone": "west",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "notifications",
+          "zone": "central",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "billing",
+          "zone": "east",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -298,16 +826,56 @@
       "detail": "MeshTrace OpenTelemetry `endpoint` format changes in 3.0.",
       "count": 12,
       "example_resources": [
-        "default/policy-1 [zone:east]",
-        "payments/policy-2 [zone:west]",
-        "checkout/policy-3 [zone:central]",
-        "inventory/policy-4 [zone:east]",
-        "shipping/policy-5 [zone:west]",
-        "auth/policy-6 [zone:central]",
-        "search/policy-7 [zone:east]",
-        "recommendations/policy-8 [zone:west]",
-        "notifications/policy-9 [zone:central]",
-        "billing/policy-10 [zone:east]"
+        {
+          "mesh": "default",
+          "zone": "east",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "payments",
+          "zone": "west",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "checkout",
+          "zone": "central",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "inventory",
+          "zone": "east",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "shipping",
+          "zone": "west",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "auth",
+          "zone": "central",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "search",
+          "zone": "east",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "recommendations",
+          "zone": "west",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "notifications",
+          "zone": "central",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "billing",
+          "zone": "east",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/meshtrace/"
     },
@@ -319,16 +887,56 @@
       "detail": "A mesh-scoped resource type removed in 3.0 is still present.",
       "count": 44,
       "example_resources": [
-        "default/trafficroute-1 [zone:east]",
-        "payments/trafficroute-2 [zone:west]",
-        "checkout/trafficroute-3 [zone:central]",
-        "inventory/trafficroute-4 [zone:east]",
-        "shipping/trafficroute-5 [zone:west]",
-        "auth/trafficroute-6 [zone:central]",
-        "search/trafficroute-7 [zone:east]",
-        "recommendations/trafficroute-8 [zone:west]",
-        "notifications/trafficroute-9 [zone:central]",
-        "billing/trafficroute-10 [zone:east]"
+        {
+          "mesh": "default",
+          "zone": "east",
+          "name": "trafficroute-1"
+        },
+        {
+          "mesh": "payments",
+          "zone": "west",
+          "name": "trafficroute-2"
+        },
+        {
+          "mesh": "checkout",
+          "zone": "central",
+          "name": "trafficroute-3"
+        },
+        {
+          "mesh": "inventory",
+          "zone": "east",
+          "name": "trafficroute-4"
+        },
+        {
+          "mesh": "shipping",
+          "zone": "west",
+          "name": "trafficroute-5"
+        },
+        {
+          "mesh": "auth",
+          "zone": "central",
+          "name": "trafficroute-6"
+        },
+        {
+          "mesh": "search",
+          "zone": "east",
+          "name": "trafficroute-7"
+        },
+        {
+          "mesh": "recommendations",
+          "zone": "west",
+          "name": "trafficroute-8"
+        },
+        {
+          "mesh": "notifications",
+          "zone": "central",
+          "name": "trafficroute-9"
+        },
+        {
+          "mesh": "billing",
+          "zone": "east",
+          "name": "trafficroute-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/migration-to-3.0/"
     },
@@ -340,16 +948,56 @@
       "detail": "Builtin gateway config in the Dataplane resource is removed in 3.0; use MeshGateway.",
       "count": 302,
       "example_resources": [
-        "default/gw-1 [zone:east]",
-        "payments/gw-2 [zone:west]",
-        "checkout/gw-3 [zone:central]",
-        "inventory/gw-4 [zone:east]",
-        "shipping/gw-5 [zone:west]",
-        "auth/gw-6 [zone:central]",
-        "search/gw-7 [zone:east]",
-        "recommendations/gw-8 [zone:west]",
-        "notifications/gw-9 [zone:central]",
-        "billing/gw-10 [zone:east]"
+        {
+          "mesh": "default",
+          "zone": "east",
+          "name": "gw-1"
+        },
+        {
+          "mesh": "payments",
+          "zone": "west",
+          "name": "gw-2"
+        },
+        {
+          "mesh": "checkout",
+          "zone": "central",
+          "name": "gw-3"
+        },
+        {
+          "mesh": "inventory",
+          "zone": "east",
+          "name": "gw-4"
+        },
+        {
+          "mesh": "shipping",
+          "zone": "west",
+          "name": "gw-5"
+        },
+        {
+          "mesh": "auth",
+          "zone": "central",
+          "name": "gw-6"
+        },
+        {
+          "mesh": "search",
+          "zone": "east",
+          "name": "gw-7"
+        },
+        {
+          "mesh": "recommendations",
+          "zone": "west",
+          "name": "gw-8"
+        },
+        {
+          "mesh": "notifications",
+          "zone": "central",
+          "name": "gw-9"
+        },
+        {
+          "mesh": "billing",
+          "zone": "east",
+          "name": "gw-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -361,16 +1009,56 @@
       "detail": "`networking.transparentProxying.reachableServices` (tag form) is removed in 3.0.",
       "count": 537,
       "example_resources": [
-        "default/dp-1 [zone:east]",
-        "payments/dp-2 [zone:west]",
-        "checkout/dp-3 [zone:central]",
-        "inventory/dp-4 [zone:east]",
-        "shipping/dp-5 [zone:west]",
-        "auth/dp-6 [zone:central]",
-        "search/dp-7 [zone:east]",
-        "recommendations/dp-8 [zone:west]",
-        "notifications/dp-9 [zone:central]",
-        "billing/dp-10 [zone:east]"
+        {
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "payments",
+          "zone": "west",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "checkout",
+          "zone": "central",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "inventory",
+          "zone": "east",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "shipping",
+          "zone": "west",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "auth",
+          "zone": "central",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "search",
+          "zone": "east",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "recommendations",
+          "zone": "west",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "notifications",
+          "zone": "central",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "billing",
+          "zone": "east",
+          "name": "dp-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -382,16 +1070,56 @@
       "detail": "Dataplane proxy version is incompatible with the 3.0 control plane.",
       "count": 201,
       "example_resources": [
-        "default/dp-1 [zone:east]",
-        "payments/dp-2 [zone:west]",
-        "checkout/dp-3 [zone:central]",
-        "inventory/dp-4 [zone:east]",
-        "shipping/dp-5 [zone:west]",
-        "auth/dp-6 [zone:central]",
-        "search/dp-7 [zone:east]",
-        "recommendations/dp-8 [zone:west]",
-        "notifications/dp-9 [zone:central]",
-        "billing/dp-10 [zone:east]"
+        {
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "payments",
+          "zone": "west",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "checkout",
+          "zone": "central",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "inventory",
+          "zone": "east",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "shipping",
+          "zone": "west",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "auth",
+          "zone": "central",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "search",
+          "zone": "east",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "recommendations",
+          "zone": "west",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "notifications",
+          "zone": "central",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "billing",
+          "zone": "east",
+          "name": "dp-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -403,8 +1131,14 @@
       "detail": "Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy in 3.0.",
       "count": 2,
       "example_resources": [
-        "kuma-system/zoneingress-1 [zone:east]",
-        "kuma-system/zoneegress-1 [zone:west]"
+        {
+          "zone": "east",
+          "note": "kuma-system/zoneingress-1"
+        },
+        {
+          "zone": "west",
+          "note": "kuma-system/zoneegress-1"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/production/cp-deployment/zone-proxy/"
     },
@@ -416,7 +1150,10 @@
       "detail": "Inspection sampled a subset of dataplanes for per-proxy checks.",
       "count": 1,
       "example_resources": [
-        "sampled 50/1684 [zone:east]"
+        {
+          "zone": "east",
+          "note": "sampled 50/1684"
+        }
       ]
     }
   ],

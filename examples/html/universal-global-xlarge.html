@@ -317,7 +317,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 <noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
 <script id="report-data" type="application/json">
 {
-  "tool_schema": "kuma3-preflight/v5",
+  "tool_schema": "kuma3-preflight/v6",
   "tool": "kuma3-preflight",
   "generated_at": "2026-06-25T09:30:00Z",
   "status": "blockers",
@@ -367,7 +367,9 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "experimental.deltaXds=false"
+        {
+          "note": "experimental.deltaXds=false"
+        }
       ]
     },
     {
@@ -379,7 +381,9 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "experimental.inboundTagsDisabled=false"
+        {
+          "note": "experimental.inboundTagsDisabled=false"
+        }
       ]
     },
     {
@@ -391,7 +395,9 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "experimental.kdsEventBasedWatchdog.enabled=false"
+        {
+          "note": "experimental.kdsEventBasedWatchdog.enabled=false"
+        }
       ]
     },
     {
@@ -403,7 +409,9 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        {
+          "note": "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        }
       ]
     },
     {
@@ -415,16 +423,76 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/policies/",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ]
     },
     {
@@ -436,16 +504,76 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/policies/",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ]
     },
     {
@@ -457,16 +585,76 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/policies/",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ]
     },
     {
@@ -478,16 +666,76 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/policies/",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ]
     },
     {
@@ -499,16 +747,76 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/policies/",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ]
     },
     {
@@ -520,16 +828,76 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/policies/",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ]
     },
     {
@@ -541,16 +909,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/policies/meshtrace/",
       "count": 41,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ]
     },
     {
@@ -562,16 +960,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/targetref/",
       "count": 233,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ]
     },
     {
@@ -583,16 +1011,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/targetref/",
       "count": 706,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ]
     },
     {
@@ -604,16 +1062,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/targetref/",
       "count": 421,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ]
     },
     {
@@ -625,16 +1113,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/targetref/",
       "count": 88,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ]
     },
     {
@@ -646,16 +1164,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/migration-to-3.0/",
       "count": 167,
       "example_resources": [
-        "default/trafficroute-1",
-        "orders/trafficroute-2",
-        "users/trafficroute-3",
-        "catalog/trafficroute-4",
-        "gateway-edge/trafficroute-5",
-        "internal-tools/trafficroute-6",
-        "data-pipeline/trafficroute-7",
-        "ml-serving/trafficroute-8",
-        "payments/trafficroute-9",
-        "checkout/trafficroute-10"
+        {
+          "mesh": "default",
+          "name": "trafficroute-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "trafficroute-2"
+        },
+        {
+          "mesh": "users",
+          "name": "trafficroute-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "trafficroute-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "trafficroute-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "trafficroute-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "trafficroute-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "trafficroute-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "trafficroute-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "trafficroute-10"
+        }
       ]
     },
     {
@@ -667,16 +1215,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/dataplane/",
       "count": 623,
       "example_resources": [
-        "default/dp-1",
-        "orders/dp-2",
-        "users/dp-3",
-        "catalog/dp-4",
-        "gateway-edge/dp-5",
-        "internal-tools/dp-6",
-        "data-pipeline/dp-7",
-        "ml-serving/dp-8",
-        "payments/dp-9",
-        "checkout/dp-10"
+        {
+          "mesh": "default",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp-10"
+        }
       ]
     },
     {
@@ -688,16 +1266,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/dataplane/",
       "count": 488,
       "example_resources": [
-        "default/dp-1",
-        "orders/dp-2",
-        "users/dp-3",
-        "catalog/dp-4",
-        "gateway-edge/dp-5",
-        "internal-tools/dp-6",
-        "data-pipeline/dp-7",
-        "ml-serving/dp-8",
-        "payments/dp-9",
-        "checkout/dp-10"
+        {
+          "mesh": "default",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp-10"
+        }
       ]
     },
     {
@@ -709,16 +1317,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/dataplane/",
       "count": 2890,
       "example_resources": [
-        "default/dp-1",
-        "orders/dp-2",
-        "users/dp-3",
-        "catalog/dp-4",
-        "gateway-edge/dp-5",
-        "internal-tools/dp-6",
-        "data-pipeline/dp-7",
-        "ml-serving/dp-8",
-        "payments/dp-9",
-        "checkout/dp-10"
+        {
+          "mesh": "default",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp-10"
+        }
       ]
     },
     {
@@ -730,16 +1368,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/dataplane/",
       "count": 1644,
       "example_resources": [
-        "default/dp-1",
-        "orders/dp-2",
-        "users/dp-3",
-        "catalog/dp-4",
-        "gateway-edge/dp-5",
-        "internal-tools/dp-6",
-        "data-pipeline/dp-7",
-        "ml-serving/dp-8",
-        "payments/dp-9",
-        "checkout/dp-10"
+        {
+          "mesh": "default",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp-10"
+        }
       ]
     },
     {
@@ -751,16 +1419,46 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 57,
       "example_resources": [
-        "default/dp_Bad-1",
-        "orders/dp_Bad-2",
-        "users/dp_Bad-3",
-        "catalog/dp_Bad-4",
-        "gateway-edge/dp_Bad-5",
-        "internal-tools/dp_Bad-6",
-        "data-pipeline/dp_Bad-7",
-        "ml-serving/dp_Bad-8",
-        "payments/dp_Bad-9",
-        "checkout/dp_Bad-10"
+        {
+          "mesh": "default",
+          "name": "dp_Bad-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp_Bad-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp_Bad-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp_Bad-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp_Bad-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp_Bad-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp_Bad-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp_Bad-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp_Bad-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp_Bad-10"
+        }
       ]
     },
     {
@@ -772,14 +1470,38 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "doc_url": "https://developer.konghq.com/mesh/production/cp-deployment/zone-proxy/",
       "count": 8,
       "example_resources": [
-        "default/zoneproxy-1",
-        "default/zoneproxy-2",
-        "default/zoneproxy-3",
-        "default/zoneproxy-4",
-        "default/zoneproxy-5",
-        "default/zoneproxy-6",
-        "default/zoneproxy-7",
-        "default/zoneproxy-8"
+        {
+          "mesh": "default",
+          "name": "zoneproxy-1"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-2"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-3"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-4"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-5"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-6"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-7"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-8"
+        }
       ]
     },
     {
@@ -790,7 +1512,9 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       "detail": "Inspection sampled a subset of dataplanes for per-proxy checks.",
       "count": 1,
       "example_resources": [
-        "sampled 50/5214"
+        {
+          "note": "sampled 50/5214"
+        }
       ]
     }
   ],
@@ -870,43 +1594,26 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   function fid(f){ return f.severity + '|' + groupOf(f) + '|' + f.title; }
   function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
 
-  // The authoritative mesh set; an example "belongs" to a mesh only if its
-  // leading segment matches a real mesh name. This disambiguates resource refs
-  // ("mesh/name", "mesh (field)", bare "mesh") from control-plane-wide examples
-  // ("experimental.x=false", inspect coverage "0/1") which carry no mesh.
-  var meshSet = {};
-  (data.meshes || []).forEach(function(m){ meshSet[m] = true; });
-
-  function meshOf(example){
-    var s = example.replace(/ \(system[^)]*\)\s*$/, '');
-    var cand, slash = s.indexOf('/');
-    if(slash > 0){ cand = s.slice(0, slash); }
-    else { var p = s.indexOf(' ('); cand = p > 0 ? s.slice(0, p) : s; }
-    return meshSet[cand] ? cand : null;
-  }
+  /* Example mesh/zone scoping reads the structured example fields directly —
+     the audit stamps every example with the KRI parts it knows, so no display
+     string is parsed to recover them. An empty mesh is a control-plane-wide
+     example ("store.cache.enabled=false", inspect coverage "0/1"). */
   function findingMeshes(f){
     if(!f._meshes){
       var seen = {};
-      (f.example_resources || []).forEach(function(e){ var m = meshOf(e); if(m) seen[m] = true; });
+      (f.example_resources || []).forEach(function(e){ if(e.mesh) seen[e.mesh] = true; });
       f._meshes = Object.keys(seen);
     }
     return f._meshes;
   }
   function isMeshScoped(f){ return findingMeshes(f).length > 0; }
 
-  // Zone attribution parallels mesh. A resource example carries its zone as a
-  // "[zone:<name>]" suffix (added by the audit from kuma.io/zone); per-zone CP
-  // config and version findings carry a leading "zone <name>" instead.
-  function zoneOf(example){
-    var m = example.match(/\[zone:([^\]]+)\]/);
-    if(m) return m[1];
-    m = example.match(/^zone ([^\s:]+)/);
-    return m ? m[1] : null;
-  }
+  /* Zone attribution parallels mesh: the structured zone field covers both
+     zone-synced resources and per-zone CP config/version examples. */
   function findingZones(f){
     if(!f._zones){
       var seen = {};
-      (f.example_resources || []).forEach(function(e){ var z = zoneOf(e); if(z) seen[z] = true; });
+      (f.example_resources || []).forEach(function(e){ if(e.zone) seen[e.zone] = true; });
       f._zones = Object.keys(seen);
     }
     return f._zones;
@@ -929,8 +1636,8 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     return exhaustive(f) && ((meshFilter && isMeshScoped(f)) || (zoneFilter && isZoneScoped(f)));
   }
   function exampleInFilters(f, e){
-    if(meshFilter && isMeshScoped(f) && meshOf(e) !== meshFilter) return false;
-    if(zoneFilter && isZoneScoped(f) && zoneOf(e) !== zoneFilter) return false;
+    if(meshFilter && isMeshScoped(f) && e.mesh !== meshFilter) return false;
+    if(zoneFilter && isZoneScoped(f) && e.zone !== zoneFilter) return false;
     return true;
   }
   function shownExamples(f){
@@ -941,6 +1648,24 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   function shownCount(f){
     if(narrowed(f)) return shownExamples(f).length;
     return f.count;
+  }
+  /* Mirrors Go's ExampleResource.Display: the compact text form of an
+     example — "mesh/name" plus zone/system/note tags, or the free note. */
+  function displayExample(e){
+    if(e.name){
+      var s = e.name;
+      if(e.mesh && e.type !== 'Mesh') s = e.mesh + '/' + s;
+      if(e.zone) s += ' [zone:' + e.zone + ']';
+      if(e.note) s += ' (' + e.note + ')';
+      if(e.system) s += ' (system — CP-managed, update before 3.0)';
+      return s;
+    }
+    if(e.zone){
+      if(e.mesh) return 'mesh ' + e.mesh + ', zone ' + e.zone;
+      if(e.note) return 'zone ' + e.zone + ': ' + e.note;
+      return 'zone ' + e.zone;
+    }
+    return e.note || '';
   }
 
   function el(tag, attrs, kids){
@@ -997,7 +1722,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
       if(zoneFilter && isZoneScoped(f) && findingZones(f).indexOf(zoneFilter) < 0) return false;
     }
     if(!query) return true;
-    var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.example_resources||[]).join(' ')).toLowerCase();
+    var hay = (f.title + ' ' + f.detail + ' ' + f.category + ' ' + (f.example_resources||[]).map(displayExample).join(' ')).toLowerCase();
     return hay.indexOf(query) >= 0;
   }
   function shownFindings(){ return (data.findings || []).filter(matches); }
@@ -1301,8 +2026,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     if(ex.length){
       var box = el('div', {class:'ex'});
       ex.forEach(function(e){
-        var sys = e.indexOf('(system') >= 0;
-        box.appendChild(el('span', {class:'e' + (sys ? ' sys' : ''), text:e}));
+        box.appendChild(el('span', {class:'e' + (e.system ? ' sys' : ''), text:displayExample(e)}));
       });
       if(cnt > ex.length) box.appendChild(el('span', {class:'more', text:'+' + (cnt - ex.length) + ' more'}));
       body.appendChild(box);

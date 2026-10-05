@@ -423,6 +423,10 @@ func (m Report) RenderHTML() (string, error) {
 // RenderJSON / captured via --from-json), normalizing it so every renderer sees
 // group-contiguous findings regardless of when the payload was captured.
 func ParseReport(data []byte) (Report, error) {
+	// EXC:FILE011:sniff the schema first — an older version (v5 examples are strings, not objects) fails the body decode with a confusing type error
+	if s := declaredSchema(data); s != "" && s != SchemaVersion {
+		return Report{}, fmt.Errorf("report schema %q is not supported by this build (expects %q) — re-run the audit", s, SchemaVersion)
+	}
 	var m Report
 	if err := json.Unmarshal(data, &m); err != nil {
 		return Report{}, fmt.Errorf("parsing JSON report: %w", err)
@@ -442,6 +446,22 @@ func ParseReport(data []byte) (Report, error) {
 	}
 	normalizeModel(&m)
 	return m, nil
+}
+
+// declaredSchema returns the tool_schema a payload carries ("" when absent,
+// unreadable, or not one of this tool's versions) so ParseReport can reject
+// an incompatible version before decoding its differently-shaped body.
+func declaredSchema(data []byte) string {
+	var m struct {
+		Schema string `json:"tool_schema"`
+	}
+	if json.Unmarshal(data, &m) != nil {
+		return ""
+	}
+	if !strings.HasPrefix(m.Schema, ToolName+"/") {
+		return ""
+	}
+	return m.Schema
 }
 
 func legacySchema(data []byte) string {

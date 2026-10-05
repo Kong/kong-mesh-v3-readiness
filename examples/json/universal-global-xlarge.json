@@ -1,5 +1,5 @@
 {
-  "tool_schema": "kuma3-preflight/v5",
+  "tool_schema": "kuma3-preflight/v6",
   "tool": "kuma3-preflight",
   "generated_at": "2026-06-25T09:30:00Z",
   "status": "blockers",
@@ -48,7 +48,9 @@
       "detail": "the field runtime.kubernetes.injector.unifiedResourceNamingEnabled value has to be changed from false to true",
       "count": 1,
       "example_resources": [
-        "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        {
+          "note": "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
@@ -60,7 +62,9 @@
       "detail": "the field experimental.deltaXds value has to be changed from false to true",
       "count": 1,
       "example_resources": [
-        "experimental.deltaXds=false"
+        {
+          "note": "experimental.deltaXds=false"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
@@ -72,7 +76,9 @@
       "detail": "the field experimental.inboundTagsDisabled value has to be changed from false to true",
       "count": 1,
       "example_resources": [
-        "experimental.inboundTagsDisabled=false"
+        {
+          "note": "experimental.inboundTagsDisabled=false"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
@@ -84,7 +90,9 @@
       "detail": "the field experimental.kdsEventBasedWatchdog.enabled value has to be changed from false to true",
       "count": 1,
       "example_resources": [
-        "experimental.kdsEventBasedWatchdog.enabled=false"
+        {
+          "note": "experimental.kdsEventBasedWatchdog.enabled=false"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
@@ -96,16 +104,76 @@
       "detail": "Inline mTLS on the Mesh object is removed in 3.0; migrate to a MeshTLS policy.",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -117,16 +185,76 @@
       "detail": "Inline metrics on the Mesh object is removed in 3.0; migrate to MeshMetric.",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -138,16 +266,76 @@
       "detail": "Inline tracing on the Mesh object is removed in 3.0; migrate to MeshTrace.",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -159,16 +347,76 @@
       "detail": "Inline logging on the Mesh object is removed in 3.0; migrate to MeshAccessLog.",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -180,16 +428,76 @@
       "detail": "Relocated to MeshLoadBalancingStrategy in 3.0.",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -201,16 +509,76 @@
       "detail": "Mesh passthrough relocates to MeshPassthrough in 3.0.",
       "count": 20,
       "example_resources": [
-        "default (field)",
-        "orders (field)",
-        "users (field)",
-        "catalog (field)",
-        "gateway-edge (field)",
-        "internal-tools (field)",
-        "data-pipeline (field)",
-        "ml-serving (field)",
-        "payments (field)",
-        "checkout (field)"
+        {
+          "kri": "kri_m____default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____orders_",
+          "type": "Mesh",
+          "mesh": "orders",
+          "name": "orders",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____users_",
+          "type": "Mesh",
+          "mesh": "users",
+          "name": "users",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____catalog_",
+          "type": "Mesh",
+          "mesh": "catalog",
+          "name": "catalog",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____gateway-edge_",
+          "type": "Mesh",
+          "mesh": "gateway-edge",
+          "name": "gateway-edge",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____internal-tools_",
+          "type": "Mesh",
+          "mesh": "internal-tools",
+          "name": "internal-tools",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____data-pipeline_",
+          "type": "Mesh",
+          "mesh": "data-pipeline",
+          "name": "data-pipeline",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____ml-serving_",
+          "type": "Mesh",
+          "mesh": "ml-serving",
+          "name": "ml-serving",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____payments_",
+          "type": "Mesh",
+          "mesh": "payments",
+          "name": "payments",
+          "note": "field"
+        },
+        {
+          "kri": "kri_m____checkout_",
+          "type": "Mesh",
+          "mesh": "checkout",
+          "name": "checkout",
+          "note": "field"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -222,16 +590,46 @@
       "detail": "A `to[].targetRef.kind` removed in 3.0 (subset/selector or MeshGateway); migrate the policy.",
       "count": 421,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -243,16 +641,46 @@
       "detail": "A policy spec field moved location in 3.0; update the manifest.",
       "count": 706,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -264,16 +692,46 @@
       "detail": "The policy `from` array is removed in 3.0; express inbound rules differently.",
       "count": 233,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -285,16 +743,46 @@
       "detail": "`targetRef.proxyTypes` is removed in 3.0.",
       "count": 88,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/targetref/"
     },
@@ -306,16 +794,46 @@
       "detail": "MeshTrace OpenTelemetry `endpoint` format changes in 3.0.",
       "count": 41,
       "example_resources": [
-        "default/policy-1",
-        "orders/policy-2",
-        "users/policy-3",
-        "catalog/policy-4",
-        "gateway-edge/policy-5",
-        "internal-tools/policy-6",
-        "data-pipeline/policy-7",
-        "ml-serving/policy-8",
-        "payments/policy-9",
-        "checkout/policy-10"
+        {
+          "mesh": "default",
+          "name": "policy-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "policy-2"
+        },
+        {
+          "mesh": "users",
+          "name": "policy-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "policy-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "policy-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "policy-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "policy-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "policy-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "policy-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "policy-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/meshtrace/"
     },
@@ -327,16 +845,46 @@
       "detail": "A mesh-scoped resource type removed in 3.0 is still present.",
       "count": 167,
       "example_resources": [
-        "default/trafficroute-1",
-        "orders/trafficroute-2",
-        "users/trafficroute-3",
-        "catalog/trafficroute-4",
-        "gateway-edge/trafficroute-5",
-        "internal-tools/trafficroute-6",
-        "data-pipeline/trafficroute-7",
-        "ml-serving/trafficroute-8",
-        "payments/trafficroute-9",
-        "checkout/trafficroute-10"
+        {
+          "mesh": "default",
+          "name": "trafficroute-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "trafficroute-2"
+        },
+        {
+          "mesh": "users",
+          "name": "trafficroute-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "trafficroute-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "trafficroute-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "trafficroute-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "trafficroute-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "trafficroute-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "trafficroute-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "trafficroute-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/migration-to-3.0/"
     },
@@ -348,16 +896,46 @@
       "detail": "Universal Dataplane is missing the `kuma.io/workload` label required in 3.0.",
       "count": 2890,
       "example_resources": [
-        "default/dp-1",
-        "orders/dp-2",
-        "users/dp-3",
-        "catalog/dp-4",
-        "gateway-edge/dp-5",
-        "internal-tools/dp-6",
-        "data-pipeline/dp-7",
-        "ml-serving/dp-8",
-        "payments/dp-9",
-        "checkout/dp-10"
+        {
+          "mesh": "default",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -369,16 +947,46 @@
       "detail": "`networking.transparentProxying.reachableServices` (tag form) is removed in 3.0.",
       "count": 1644,
       "example_resources": [
-        "default/dp-1",
-        "orders/dp-2",
-        "users/dp-3",
-        "catalog/dp-4",
-        "gateway-edge/dp-5",
-        "internal-tools/dp-6",
-        "data-pipeline/dp-7",
-        "ml-serving/dp-8",
-        "payments/dp-9",
-        "checkout/dp-10"
+        {
+          "mesh": "default",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -390,16 +998,46 @@
       "detail": "Universal Dataplane `probes` block is removed in 3.0; use virtual probes.",
       "count": 623,
       "example_resources": [
-        "default/dp-1",
-        "orders/dp-2",
-        "users/dp-3",
-        "catalog/dp-4",
-        "gateway-edge/dp-5",
-        "internal-tools/dp-6",
-        "data-pipeline/dp-7",
-        "ml-serving/dp-8",
-        "payments/dp-9",
-        "checkout/dp-10"
+        {
+          "mesh": "default",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -411,16 +1049,46 @@
       "detail": "Dataplane proxy version is incompatible with the 3.0 control plane.",
       "count": 488,
       "example_resources": [
-        "default/dp-1",
-        "orders/dp-2",
-        "users/dp-3",
-        "catalog/dp-4",
-        "gateway-edge/dp-5",
-        "internal-tools/dp-6",
-        "data-pipeline/dp-7",
-        "ml-serving/dp-8",
-        "payments/dp-9",
-        "checkout/dp-10"
+        {
+          "mesh": "default",
+          "name": "dp-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/dataplane/"
     },
@@ -432,16 +1100,46 @@
       "detail": "Resource name is not RFC-1035 compliant and breaks unified naming in 3.0.",
       "count": 57,
       "example_resources": [
-        "default/dp_Bad-1",
-        "orders/dp_Bad-2",
-        "users/dp_Bad-3",
-        "catalog/dp_Bad-4",
-        "gateway-edge/dp_Bad-5",
-        "internal-tools/dp_Bad-6",
-        "data-pipeline/dp_Bad-7",
-        "ml-serving/dp_Bad-8",
-        "payments/dp_Bad-9",
-        "checkout/dp_Bad-10"
+        {
+          "mesh": "default",
+          "name": "dp_Bad-1"
+        },
+        {
+          "mesh": "orders",
+          "name": "dp_Bad-2"
+        },
+        {
+          "mesh": "users",
+          "name": "dp_Bad-3"
+        },
+        {
+          "mesh": "catalog",
+          "name": "dp_Bad-4"
+        },
+        {
+          "mesh": "gateway-edge",
+          "name": "dp_Bad-5"
+        },
+        {
+          "mesh": "internal-tools",
+          "name": "dp_Bad-6"
+        },
+        {
+          "mesh": "data-pipeline",
+          "name": "dp_Bad-7"
+        },
+        {
+          "mesh": "ml-serving",
+          "name": "dp_Bad-8"
+        },
+        {
+          "mesh": "payments",
+          "name": "dp_Bad-9"
+        },
+        {
+          "mesh": "checkout",
+          "name": "dp_Bad-10"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/"
     },
@@ -453,14 +1151,38 @@
       "detail": "Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy in 3.0.",
       "count": 8,
       "example_resources": [
-        "default/zoneproxy-1",
-        "default/zoneproxy-2",
-        "default/zoneproxy-3",
-        "default/zoneproxy-4",
-        "default/zoneproxy-5",
-        "default/zoneproxy-6",
-        "default/zoneproxy-7",
-        "default/zoneproxy-8"
+        {
+          "mesh": "default",
+          "name": "zoneproxy-1"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-2"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-3"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-4"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-5"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-6"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-7"
+        },
+        {
+          "mesh": "default",
+          "name": "zoneproxy-8"
+        }
       ],
       "doc_url": "https://developer.konghq.com/mesh/production/cp-deployment/zone-proxy/"
     },
@@ -472,7 +1194,9 @@
       "detail": "Inspection sampled a subset of dataplanes for per-proxy checks.",
       "count": 1,
       "example_resources": [
-        "sampled 50/5214"
+        {
+          "note": "sampled 50/5214"
+        }
       ]
     }
   ],
