@@ -471,7 +471,7 @@ func (a *auditor) listServed(ctx context.Context, path string) ([]resourceItem, 
 // unmarshalSpec decodes the resource spec into v, recording a parse error +
 // blocker (and returning false) when the spec is malformed. ref is supplied by
 // the caller so system-tagging applies where relevant.
-func (a *auditor) unmarshalSpec(it resourceItem, v any, ref ExampleResource) bool {
+func (a *auditor) unmarshalSpec(it resourceItem, v any, ref string) bool {
 	if err := json.Unmarshal(it.specBytes(), v); err != nil {
 		a.rep.parseErrors++
 		a.rep.add(blocker, "Unparseable resources", it.Type+" spec could not be parsed",
@@ -487,10 +487,11 @@ func (a *auditor) unmarshalSpec(it resourceItem, v any, ref ExampleResource) boo
 // counts a resource only when it actually yields a finding (ref is computed
 // eagerly, before the checks run, so counting here would over-report
 // resources that turn out clean).
-func (a *auditor) ref(it resourceItem) ExampleResource {
-	e := qualified(it)
-	e.System = isSystem(it)
-	return e
+func (a *auditor) ref(it resourceItem) string {
+	if isSystem(it) {
+		return qualified(it) + " (system — CP-managed, update before 3.0)"
+	}
+	return qualified(it)
 }
 
 // countSystem records a CP-managed (policy-role: system) resource in the system
@@ -507,7 +508,7 @@ func (a *auditor) countSystem(it resourceItem, totalBefore int) {
 func (a *auditor) checkMeshSettings(m resourceItem) {
 	var spec meshSpec
 	_ = json.Unmarshal(m.specBytes(), &spec) // Mesh inlines its spec at the top level
-	ref := func(field string) ExampleResource { return qualifiedNote(m, field) }
+	ref := func(field string) string { return qualifiedNote(m, field) }
 
 	if spec.Mtls != nil && (spec.Mtls.EnabledBackend != "" || len(spec.Mtls.Backends) > 0) {
 		a.rep.addDoc(blocker, "Mesh object settings", "Inline mTLS on Mesh",
@@ -710,7 +711,7 @@ func (a *auditor) checkUnauthenticatedBinding(it resourceItem) {
 
 // checkRBACRules records each finding at most once per resource. With --mesh, a
 // rule pinned to another mesh is skipped.
-func (a *auditor) checkRBACRules(kind string, rules []rbacRule, removed map[string]bool, ref ExampleResource) {
+func (a *auditor) checkRBACRules(kind string, rules []rbacRule, removed map[string]bool, ref string) {
 	flagged := map[string]bool{}
 	add := func(sev severity, title, detail string) {
 		if !flagged[title] {
@@ -776,7 +777,7 @@ func (a *auditor) checkRBACRules(kind string, rules []rbacRule, removed map[stri
 // checkConfigAccess flags an AccessRole that reads `/config` on 2.14 but not on
 // 3.0: 2.14 gates it on GENERATE_DATAPLANE_TOKEN, 3.0 on VIEW_CONTROL_PLANE_METADATA.
 // Any rule grants access regardless of its types or mesh, so --mesh does not narrow it.
-func (a *auditor) checkConfigAccess(rules []rbacRule, ref ExampleResource) {
+func (a *auditor) checkConfigAccess(rules []rbacRule, ref string) {
 	has := func(access string) bool {
 		return slices.ContainsFunc(rules, func(r rbacRule) bool { return slices.Contains(r.Access, access) })
 	}
@@ -873,7 +874,7 @@ func (a *auditor) checkNewPolicy(it resourceItem) {
 	a.countSystem(it, before)
 }
 
-func (a *auditor) addSelectsByName(typ string, ref ExampleResource) {
+func (a *auditor) addSelectsByName(typ string, ref string) {
 	a.rep.addDoc(blocker, "Reference by name", typ+" references a resource by name",
 		"3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
 		docPolicies, ref)
@@ -885,7 +886,7 @@ var routeBackendKinds = map[string]bool{"MeshService": true, "MeshExternalServic
 // checkRouteBackendRefs flags MeshHTTPRoute/MeshTCPRoute backendRefs (and the
 // RequestMirror filter's) whose kind 3.0 cannot resolve, once per kind, and
 // reports whether any of them references its resource by name.
-func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref ExampleResource) bool {
+func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref string) bool {
 	var s struct {
 		To []struct {
 			Rules []struct {
@@ -937,7 +938,7 @@ func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref ExampleReso
 // covered by the generic from/targetRef/to checks. These are documented field
 // deprecations/relocations; like every finding they are blockers. ref is reused
 // from the caller so a system policy is counted once.
-func (a *auditor) checkPolicyFields(it resourceItem, ref ExampleResource) {
+func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 	spec := it.specBytes()
 	switch it.Type {
 	case "MeshAccessLog":
@@ -1130,7 +1131,7 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref ExampleResource) {
 	}
 }
 
-func (a *auditor) addOtelEndpoint(typ string, ref ExampleResource) {
+func (a *auditor) addOtelEndpoint(typ string, ref string) {
 	a.rep.addDoc(blocker, "OpenTelemetry endpoint", typ+" uses OpenTelemetry `endpoint`",
 		"The OpenTelemetry `endpoint` field is deprecated; use `backendRef` (MeshOpenTelemetryBackend).", docOtelCollector, ref)
 }
@@ -1408,7 +1409,7 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 	// refs are further split by the governing control plane's outboundMode.
 	var total [2]int
 	var denied [2][3]int
-	var refs [2][3][]ExampleResource
+	var refs [2][3][]string
 	for _, it := range items {
 		var ov dpOverview
 		// Not a policy spec: a decode failure is skipped, not counted as a parse
@@ -1452,7 +1453,7 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 // addOutboundDenyFinding reports the proxies without reachableBackends governed
 // by control planes in one outboundMode. Only an unset switch breaks on upgrade:
 // a pinned `false` keeps allow-all on 3.0, and `true` already denies today.
-func (a *auditor) addOutboundDenyFinding(subject, env, fix string, mode outboundMode, denied, total int, refs []ExampleResource) {
+func (a *auditor) addOutboundDenyFinding(subject, env, fix string, mode outboundMode, denied, total int, refs []string) {
 	sev := info
 	var impact string
 	switch mode {
@@ -1517,7 +1518,7 @@ func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
 			selected[p.Mesh+"/"+dp.Name] = true
 		}
 	}
-	var refs [3][]ExampleResource
+	var refs [3][]string
 	var affected [3]int
 	eligible := 0
 	for _, it := range a.tpProxies {
@@ -1639,7 +1640,7 @@ func (a *auditor) checkZoneNames(ctx context.Context) error {
 // addZoneNameFinding records the non-RFC-1035 zone-name blocker for one zone. ref
 // names the zone as the report should show it (the resource name on a global, the
 // configured name on a directly audited zone CP).
-func (a *auditor) addZoneNameFinding(name string, ref ExampleResource) {
+func (a *auditor) addZoneNameFinding(name string, ref string) {
 	if name == "" || validRFC1035(name) {
 		return
 	}
@@ -1697,7 +1698,7 @@ func (a *auditor) checkMeshZoneAddresses(ctx context.Context) error {
 		mesh, zone, _ := strings.Cut(mz, "/")
 		a.rep.addDoc(blocker, "Zone proxies", "Mesh has no MeshZoneAddress for a zone it spans",
 			"MeshZoneAddress is mesh-scoped: every mesh whose services are consumed from another zone needs its own resource in the zone that serves them, or cross-zone MeshService traffic to that mesh is down on 3.0. This mesh has proxies in more than one zone and this zone terminates cross-zone traffic on Universal, but no MeshZoneAddress in the mesh advertises it. 2.14 already registers the type, so create it before upgrading. (Kubernetes zones are not flagged — there the 3.0 control plane creates the resource from the zone-proxy Service.)",
-			docZoneProxies, ExampleResource{Mesh: mesh, Zone: zone})
+			docZoneProxies, "mesh "+mesh+", zone "+zone)
 	}
 	return nil
 }
@@ -1772,7 +1773,7 @@ func supportedAppProtocol(p string) bool {
 	return false
 }
 
-func (a *auditor) addUnsupportedAppProtocol(kind string, ports []servicePort, ref ExampleResource) {
+func (a *auditor) addUnsupportedAppProtocol(kind string, ports []servicePort, ref string) {
 	for _, p := range ports {
 		if !supportedAppProtocol(p.AppProtocol) {
 			a.rep.addDoc(blocker, "Service ports", kind+" port uses an appProtocol 3.0 rejects",
@@ -2106,15 +2107,18 @@ func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
 	if strings.EqualFold(cfg.Environment, "kubernetes") && strings.EqualFold(cfg.Mode, "global") {
 		a.rep.addDoc(blocker, cpConfigCategory, "Global control plane on Kubernetes",
 			cpConfigDetail("environment", "kubernetes", "universal"),
-			docUniversal, exampleNote("mode=global"))
+			docUniversal, "mode=global")
 	}
 }
 
 // zoneRef qualifies a config example with the zone it came from; zone is ""
 // for the control plane the tool connected to.
-func zoneRef(zone string) func(string) ExampleResource {
-	return func(s string) ExampleResource {
-		return ExampleResource{Zone: zone, Note: s}
+func zoneRef(zone string) func(string) string {
+	return func(s string) string {
+		if zone != "" {
+			return "zone " + zone + ": " + s
+		}
+		return s
 	}
 }
 
@@ -2124,7 +2128,7 @@ func zoneRef(zone string) func(string) ExampleResource {
 // removed with it and, since the CP loads its config non-strictly, silently
 // ignored: certificates trusted only through that directory stop authenticating
 // to the HTTPS API server. Both apply to every mode, a global included.
-func (a *auditor) addAPIServerFindings(cfg cpConfig, ref func(string) ExampleResource) {
+func (a *auditor) addAPIServerFindings(cfg cpConfig, ref func(string) string) {
 	if cfg.ApiServer.Authn.Type == "adminClientCerts" {
 		a.rep.addDoc(blocker, cpConfigCategory, "API server adminClientCerts authn removed",
 			cpConfigDetail("apiServer.authn.type", "adminClientCerts", "tokens"),
@@ -2140,7 +2144,7 @@ func (a *auditor) addAPIServerFindings(cfg cpConfig, ref func(string) ExampleRes
 // addDroppedSettingFindings flags settings 3.0 removes on every mode, a global
 // included. The 3.0 CP loads its config non-strictly, so each is silently
 // ignored and the behavior it selected reverts to the 3.0 default.
-func (a *auditor) addDroppedSettingFindings(cfg cpConfig, ref func(string) ExampleResource) {
+func (a *auditor) addDroppedSettingFindings(cfg cpConfig, ref func(string) string) {
 	if e := cfg.Store.Cache.Enabled; e != nil && !*e {
 		a.rep.addDoc(blocker, cpConfigCategory, "Store cache can no longer be disabled",
 			cpConfigDetail("store.cache.enabled", "false", "true"),
@@ -2196,7 +2200,7 @@ func (a *auditor) addZoneTokenIssuerFinding(cfg cpConfig) {
 	if e := cfg.DpServer.Authn.ZoneProxy.ZoneToken.EnableIssuer; e != nil && !*e {
 		a.rep.addDoc(blocker, cpConfigCategory, "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer",
 			"3.0 ignores dpServer.authn.zoneProxy.zoneToken.enableIssuer, so the issuer turns back on. Set multizone.global.kds.auth.zoneToken.enableIssuer to false on the global to keep it off.",
-			docKumaCPReference, exampleNote("dpServer.authn.zoneProxy.zoneToken.enableIssuer=false"))
+			docKumaCPReference, "dpServer.authn.zoneProxy.zoneToken.enableIssuer=false")
 	}
 }
 
@@ -2228,7 +2232,7 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	// every zone name (checkZoneNames), so checking the fanned-out zone configs
 	// too would double-count the same zone.
 	if zone == "" {
-		a.addZoneNameFinding(cfg.Multizone.Zone.Name, exampleNote("multizone.zone.name="+cfg.Multizone.Zone.Name))
+		a.addZoneNameFinding(cfg.Multizone.Zone.Name, "multizone.zone.name="+cfg.Multizone.Zone.Name)
 	}
 
 	// Hard removals — the upgrade breaks while these are in use.
@@ -2399,7 +2403,7 @@ func (m outboundMode) String() string {
 // upgrade does to it. Unset and pinned `false` are info: the per-proxy and
 // per-mesh consequences are gated by checkOutboundDefaults and
 // checkPassthroughDefault, which read the mode recorded here.
-func (a *auditor) noteOutboundDefault(cfg cpConfig, zone string, ref func(string) ExampleResource) {
+func (a *auditor) noteOutboundDefault(cfg cpConfig, zone string, ref func(string) string) {
 	mode := outboundModeOf(cfg.Defaults.RestrictOutbound)
 	if a.outboundModes == nil {
 		a.outboundModes = map[string]outboundMode{}
@@ -2464,7 +2468,7 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 		}
 		a.rep.add(info, cpConfigCategory, "No zones connected to the global control plane",
 			"This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
-			exampleNote("zones=0"))
+			"zones=0")
 		return nil
 	}
 	for _, it := range items {
@@ -2539,7 +2543,7 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 		a.rep.add(info, cpVersionCategory, "Audited control plane version check out of scope",
 			"The caller excluded the audited control plane's own patch level from this check; "+
 				"it was NOT checked against the latest 2.x line. Connected zone control planes are still audited.",
-			exampleNote("control plane ("+a.rep.cp.Version+")"))
+			"control plane ("+a.rep.cp.Version+")")
 	}
 	detail := fmt.Sprintf("Upgrade to the latest 2.%d patch (%s) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.", UpgradeTargetMinor, a.latestPatch)
 
@@ -2574,13 +2578,13 @@ func (a *auditor) flagIfBehind(version, zone string, latestMin, latestPatch int,
 		return
 	}
 	if behind(maj, minor, patch, latestMin, latestPatch) {
-		ex := ExampleResource{Zone: zone, Note: version}
-		if zone == "" {
-			ex.Note = "control plane (" + version + ")"
+		origin := "control plane"
+		if zone != "" {
+			origin = "zone " + zone
 		}
 		a.rep.addDoc(blocker, cpVersionCategory,
 			fmt.Sprintf("Control plane behind the latest 2.%d patch", UpgradeTargetMinor),
-			detail, docUpgrade, ex)
+			detail, docUpgrade, origin+" ("+version+")")
 	}
 }
 
@@ -2781,9 +2785,9 @@ func (a *auditor) cniFor(it resourceItem) bool {
 	return a.cniEnabled[zoneOf(it)]
 }
 
-func legacyCoreDNSRef(it resourceItem, ins dpInsight, corednsVersion string) (ExampleResource, bool) {
+func legacyCoreDNSRef(it resourceItem, ins dpInsight, corednsVersion string) (string, bool) {
 	if corednsVersion != "" {
-		return qualifiedNote(it, "coredns "+corednsVersion), true
+		return qualified(it) + " (coredns " + corednsVersion + ")", true
 	}
 	feats := ins.DataplaneInsight.Metadata.Features
 	net := ins.Dataplane.Networking
@@ -2791,7 +2795,7 @@ func legacyCoreDNSRef(it resourceItem, ins dpInsight, corednsVersion string) (Ex
 	if len(feats) > 0 && !slices.Contains(feats, featureEmbeddedDNS) && net != nil && net.TransparentProxying != nil {
 		return qualified(it), true
 	}
-	return ExampleResource{}, false
+	return "", false
 }
 
 // dnsFilterMarker is the Envoy UDP DNS filter name; its presence in a proxy's
@@ -2851,7 +2855,7 @@ func (a *auditor) checkDataplaneEnvoyConfig(ctx context.Context) error {
 	if inspected < len(items) {
 		a.rep.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes",
 			fmt.Sprintf("Inspected the Envoy config of %d of %d dataplane(s); raise --inspect-dataplanes to cover more.", inspected, len(items)),
-			exampleNote(fmt.Sprintf("%d/%d", inspected, len(items))))
+			fmt.Sprintf("%d/%d", inspected, len(items)))
 	}
 	return nil
 }
@@ -2884,45 +2888,37 @@ func (a *auditor) checkName(it resourceItem, kind string) {
 	}
 }
 
-// qualified is the structured example of a flagged resource: its KRI (the
-// identifier Kuma 3.0 addresses it by) and its identifying parts. The zone
-// comes from zoneOf: the kuma.io/zone label a global CP stamps on KDS-synced
-// resources, falling back to the ZoneIngress/ZoneEgress spec field a zone CP
-// serves without the label. The KRI itself still uses the label only, the
-// way Kuma 3.0 builds it.
-func qualified(it resourceItem) ExampleResource {
-	typ := it.Type
-	// EXC:FILE011:Kuma treats an overview as its base resource (DataplaneOverview -> Dataplane)
-	typ, _ = strings.CutSuffix(typ, "Overview")
-	return ExampleResource{
-		KRI:       kriOf(it),
-		Type:      typ,
-		Mesh:      meshOfItem(it),
-		Zone:      zoneOf(it),
-		Namespace: it.Labels[kubeNamespaceLabel],
-		Name:      displayName(it),
+// qualified is the example string of a flagged resource: its KRI (the
+// identifier Kuma 3.0 addresses it by) when the type has a 3.0 short name,
+// otherwise the legacy "mesh/name" display form — types removed in 3.0 are
+// not addressable by KRI, and neither are names containing "_" (Kuma decodes
+// a KRI by splitting on it). The zone comes from zoneOf: the kuma.io/zone
+// label a global CP stamps on KDS-synced resources, falling back to the
+// ZoneIngress/ZoneEgress spec field a zone CP serves without the label.
+func qualified(it resourceItem) string {
+	if kri := kriOf(it); kri != "" {
+		return kri
 	}
+	name := it.Name
+	if it.Mesh != "" {
+		name = it.Mesh + "/" + it.Name
+	}
+	if z := zoneOf(it); z != "" {
+		name += " [zone:" + z + "]"
+	}
+	return name
 }
 
 // qualifiedNote is qualified with an annotation (the kuma-dp or CoreDNS
-// version, the roles a binding grants, the field a Mesh setting lives in).
-func qualifiedNote(it resourceItem, note string) ExampleResource {
-	e := qualified(it)
-	e.Note = note
-	return e
+// version, the field a Mesh setting lives in).
+func qualifiedNote(it resourceItem, note string) string {
+	return qualified(it) + " (" + note + ")"
 }
 
-// refNote copies ref, annotating it (the roles a binding grants, the types a
-// rule names).
-func refNote(ref ExampleResource, note string) ExampleResource {
-	ref.Note = note
-	return ref
-}
-
-// exampleNote is the free-text example of a finding that is not about one
-// resource (a control-plane config setting, a coverage ratio, a version).
-func exampleNote(text string) ExampleResource {
-	return ExampleResource{Note: text}
+// refNote annotates a resource example (the roles a binding grants, the
+// types a rule names).
+func refNote(ref, note string) string {
+	return ref + " (" + note + ")"
 }
 
 func hasJSON(raw json.RawMessage) bool {
@@ -3600,7 +3596,7 @@ func unknownReservedKeys(labels map[string]string, skip map[string]bool) []strin
 
 // checkReservedLabels flags a user-authored resource carrying reserved labels 3.0
 // does not know: the resource keeps working, but re-applying it fails.
-func (a *auditor) checkReservedLabels(it resourceItem, ref ExampleResource) {
+func (a *auditor) checkReservedLabels(it resourceItem, ref string) {
 	if keys := unknownReservedKeys(it.Labels, cpStampedLabels); len(keys) > 0 {
 		a.rep.addDoc(blocker, "Reserved labels", it.Type+" carries a reserved label 3.0 rejects",
 			"3.0 rejects creating or updating a resource with a `kuma.io/` or `k8s.kuma.io/` label it does not know (for example `kuma.io/service`, `kuma.io/protocol`, `kuma.io/instance`, `k8s.kuma.io/service-port`), through the API and the Kubernetes webhook alike. The stored resource keeps working, but re-applying it (GitOps, `kumactl apply`) fails. Remove the label, or move it outside the reserved prefixes.",
@@ -3675,7 +3671,7 @@ func (s selectorSpec) labelSets() []map[string]string {
 
 // addSelectorOnRemovedLabel flags a resource whose selectors key on a reserved
 // label 3.0 no longer sets, which then matches nothing.
-func (a *auditor) addSelectorOnRemovedLabel(typ string, ref ExampleResource, sets ...map[string]string) {
+func (a *auditor) addSelectorOnRemovedLabel(typ string, ref string, sets ...map[string]string) {
 	merged := map[string]string{}
 	for _, s := range sets {
 		maps.Copy(merged, s)

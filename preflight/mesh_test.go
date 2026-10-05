@@ -137,7 +137,7 @@ func TestResourceNameUsesDisplayName(t *testing.T) {
 	if f.Count != 2 {
 		t.Errorf("count = %d, want 2 (synced copy of legacy.api and label-less dotted.name)\nexamples: %v", f.Count, f.Examples)
 	}
-	for _, ex := range displayExamples(f.Examples) {
+	for _, ex := range f.Examples {
 		if strings.Contains(ex, "fraud") || strings.Contains(ex, "api.shop") {
 			t.Errorf("valid logical name flagged: %s", ex)
 		}

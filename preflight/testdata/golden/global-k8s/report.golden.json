@@ -28,9 +28,7 @@
       "doc_url": "https://developer.konghq.com/mesh/universal/",
       "count": 1,
       "example_resources": [
-        {
-          "note": "mode=global"
-        }
+        "mode=global"
       ]
     },
     {
@@ -41,9 +39,7 @@
       "detail": "This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
       "count": 1,
       "example_resources": [
-        {
-          "note": "zones=0"
-        }
+        "zones=0"
       ]
     }
   ],

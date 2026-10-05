@@ -27,12 +27,7 @@
       "detail": "Could not parse this resource; audit it manually before upgrading.",
       "count": 1,
       "example_resources": [
-        {
-          "kri": "kri_mal_default___bad-log_",
-          "type": "MeshAccessLog",
-          "mesh": "default",
-          "name": "bad-log"
-        }
+        "kri_mal_default___bad-log_"
       ]
     }
   ],

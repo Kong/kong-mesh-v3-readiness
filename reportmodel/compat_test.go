@@ -45,7 +45,7 @@ func TestAliasedReportRendersThroughPreflight(t *testing.T) {
 			Title:    "TrafficPermission removed in 3.0",
 			Detail:   "migrate to MeshTrafficPermission",
 			Count:    1,
-			Examples: []preflight.ExampleResource{{Mesh: "default", Name: "allow-all"}},
+			Examples: []string{"default/allow-all"},
 		}},
 		Coverage: []reportmodel.CoverageGap{},
 		Manual:   []reportmodel.ManualCheck{{Title: "check Helm values"}},

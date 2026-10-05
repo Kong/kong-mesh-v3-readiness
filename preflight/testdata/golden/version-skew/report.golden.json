@@ -26,14 +26,8 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 2,
       "example_resources": [
-        {
-          "zone": "zone-b",
-          "note": "2.13.5"
-        },
-        {
-          "zone": "zone-c",
-          "note": "2.11.2"
-        }
+        "zone zone-b (2.13.5)",
+        "zone zone-c (2.11.2)"
       ]
     },
     {
@@ -45,18 +39,9 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 3,
       "example_resources": [
-        {
-          "zone": "zone-a",
-          "note": "defaults.restrictOutbound=unset"
-        },
-        {
-          "zone": "zone-b",
-          "note": "defaults.restrictOutbound=unset"
-        },
-        {
-          "zone": "zone-c",
-          "note": "defaults.restrictOutbound=unset"
-        }
+        "zone zone-a: defaults.restrictOutbound=unset",
+        "zone zone-b: defaults.restrictOutbound=unset",
+        "zone zone-c: defaults.restrictOutbound=unset"
       ]
     }
   ],

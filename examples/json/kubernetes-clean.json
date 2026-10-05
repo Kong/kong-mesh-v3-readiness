@@ -29,9 +29,7 @@
       "detail": "Inspection sampled all dataplanes for per-proxy checks.",
       "count": 1,
       "example_resources": [
-        {
-          "note": "sampled 6/6"
-        }
+        "sampled 6/6"
       ]
     }
   ],

@@ -16,7 +16,7 @@ type rawFinding struct {
 	// EXC:FILE011:doc is a Kong Mesh URL; empty when no replacement exists (unparseable spec, coverage note)
 	doc      string
 	count    int
-	examples []ExampleResource
+	examples []string
 }
 
 type coverageGap struct {
@@ -59,14 +59,14 @@ func (r *collector) addGap(path, reason string) {
 // add records one occurrence of a finding with no documentation link — for
 // advisory/info items, coverage notes and unparseable specs that have no 3.0
 // replacement API to point at. Most blockers use addDoc instead.
-func (r *collector) add(sev severity, category, title, detail string, example ExampleResource) {
+func (r *collector) add(sev severity, category, title, detail, example string) {
 	r.addDoc(sev, category, title, detail, "", example)
 }
 
 // addDoc records one occurrence of a finding, merging by (severity, category,
 // title) and accumulating an example reference (capped). doc is a Kong Mesh
 // documentation URL explaining the 3.0 replacement.
-func (r *collector) addDoc(sev severity, category, title, detail, doc string, example ExampleResource) {
+func (r *collector) addDoc(sev severity, category, title, detail, doc, example string) {
 	r.total++
 	for i := range r.findings {
 		f := &r.findings[i]
@@ -87,7 +87,7 @@ func (r *collector) addDoc(sev severity, category, title, detail, doc string, ex
 	}
 	r.findings = append(r.findings, rawFinding{
 		severity: sev, category: category, title: title, detail: detail,
-		doc: doc, count: 1, examples: []ExampleResource{example},
+		doc: doc, count: 1, examples: []string{example},
 	})
 }
 
@@ -104,7 +104,7 @@ func (r *collector) count(sev severity) int {
 // addSummary records a finding whose count and examples are known up front — an
 // aggregate check reporting "N of M" rather than one resource at a time. A zero
 // count records nothing, so a caller can hand over an empty tally unguarded.
-func (r *collector) addSummary(sev severity, category, title, detail, doc string, count int, examples []ExampleResource) {
+func (r *collector) addSummary(sev severity, category, title, detail, doc string, count int, examples []string) {
 	if count <= 0 {
 		return
 	}
@@ -114,6 +114,6 @@ func (r *collector) addSummary(sev severity, category, title, detail, doc string
 	}
 	r.findings = append(r.findings, rawFinding{
 		severity: sev, category: category, title: title, detail: detail,
-		doc: doc, count: count, examples: append([]ExampleResource(nil), examples...),
+		doc: doc, count: count, examples: append([]string(nil), examples...),
 	})
 }

@@ -268,8 +268,8 @@ func TestPassthroughDefaultFlagsMeshWithNoPolicy(t *testing.T) {
 	if f.Doc != docMeshPassthrough {
 		t.Errorf("doc = %q, want %q", f.Doc, docMeshPassthrough)
 	}
-	if len(f.Examples) != 1 || f.Examples[0].Display() != "default/dp-1" {
-		t.Errorf("examples = %v, want [default/dp-1]", f.Examples)
+	if len(f.Examples) != 1 || f.Examples[0] != "kri_dp_default___dp-1_" {
+		t.Errorf("examples = %v, want [kri_dp_default___dp-1_]", f.Examples)
 	}
 }
 
@@ -365,7 +365,7 @@ func TestOutboundDefaultNoteTellsUnsetFromPinned(t *testing.T) {
 			if !ok {
 				t.Fatalf("missing info finding %q\nfindings: %+v", tc.title, m.Findings)
 			}
-			if len(f.Examples) != 1 || f.Examples[0].Display() != tc.wantExample {
+			if len(f.Examples) != 1 || f.Examples[0] != tc.wantExample {
 				t.Errorf("examples = %v, want [%s]", f.Examples, tc.wantExample)
 			}
 			// Info alone must not gate: an otherwise-ready estate stays clean.
@@ -430,17 +430,17 @@ func TestOutboundDefaultsJudgedPerZone(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing blocker for the unset zone\nfindings: %+v", m.Findings)
 	}
-	if !slices.Equal(displayExamples(f.Examples), []string{"default/dp-east [zone:east]"}) || !strings.Contains(f.Detail, "1 of 3") {
+	if !slices.Equal(f.Examples, []string{"kri_dp_default_east__dp-east_"}) || !strings.Contains(f.Detail, "1 of 3") {
 		t.Errorf("blocker = %v %q, want only dp-east, 1 of 3", f.Examples, f.Detail)
 	}
 	var infoRefs []string
 	for _, f := range m.Findings {
 		if f.Severity == SeverityInfo && f.Category == categoryOutboundDefaults && f.Title == titleUniversalDeny {
-			infoRefs = append(infoRefs, displayExamples(f.Examples)...)
+			infoRefs = append(infoRefs, f.Examples...)
 		}
 	}
 	slices.Sort(infoRefs)
-	if want := []string{"default/dp-north [zone:north]", "default/dp-west [zone:west]"}; !slices.Equal(infoRefs, want) {
+	if want := []string{"kri_dp_default_north__dp-north_", "kri_dp_default_west__dp-west_"}; !slices.Equal(infoRefs, want) {
 		t.Errorf("info examples = %v, want %v", infoRefs, want)
 	}
 }
@@ -469,14 +469,14 @@ func TestPassthroughDefaultReadsSelection(t *testing.T) {
 	t.Run("partial selection flags the rest", func(t *testing.T) {
 		m := auditResponses(t, responses(nil))
 		f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoMeshPassthrough)
-		if !ok || !slices.Equal(displayExamples(f.Examples), []string{"default/dp-b"}) || !strings.Contains(f.Detail, "1 of 2") {
+		if !ok || !slices.Equal(f.Examples, []string{"kri_dp_default___dp-b_"}) || !strings.Contains(f.Detail, "1 of 2") {
 			t.Errorf("finding = %+v (found %v), want dp-b flagged 1 of 2", f, ok)
 		}
 	})
 	t.Run("shadow policy selects nothing", func(t *testing.T) {
 		m := auditResponses(t, responses(map[string]any{"kuma.io/effect": "shadow"}))
 		f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoMeshPassthrough)
-		if !ok || !slices.Equal(displayExamples(f.Examples), []string{"default/dp-a", "default/dp-b"}) {
+		if !ok || !slices.Equal(f.Examples, []string{"kri_dp_default___dp-a_", "kri_dp_default___dp-b_"}) {
 			t.Errorf("finding = %+v (found %v), want both proxies flagged", f, ok)
 		}
 	})

@@ -128,52 +128,6 @@ components:
       - path
       - reason
       type: object
-    ExampleResource:
-      additionalProperties: false
-      description: ExampleResource identifies one example behind a finding.
-      properties:
-        kri:
-          description: |-
-            KRI is the canonical 3.0 identifier
-            kri_<short>_<mesh>_<zone>_<namespace>_<name>_<section>; empty when the
-            type has no 3.0 short name (removed or not registered by 3.0).
-          type: string
-        mesh:
-          description: |-
-            Mesh is the mesh the resource (or the example) belongs to; empty for
-            control-plane-wide examples.
-          type: string
-        name:
-          description: |-
-            Name is the resource display name, the one that survives a KDS
-            hash-suffix; empty for non-resource examples.
-          type: string
-        namespace:
-          description: |-
-            Namespace is the k8s.kuma.io/namespace the resource carries; empty on
-            Universal and for global-origin resources.
-          type: string
-        note:
-          description: |-
-            Note is the free text of a non-resource example, or an annotation
-            accompanying a resource one (the Mesh field it flagged, a version).
-          type: string
-        system:
-          description: |-
-            System marks CP-managed (kuma.io/policy-role: system) resources, whose
-            defaults the operator must update before 3.0.
-          type: boolean
-        type:
-          description: |-
-            Type is the Kuma resource type, e.g. "MeshTimeout"; empty for
-            non-resource examples.
-          type: string
-        zone:
-          description: |-
-            Zone is the kuma.io/zone the resource carries — set on a global CP for
-            resources synced from a zone, and on per-zone control-plane findings.
-          type: string
-      type: object
     Feature:
       additionalProperties: false
       description: Feature is one e2e suite's deprecation classification.
@@ -213,8 +167,16 @@ components:
           format: uri
           type: string
         example_resources:
+          description: |-
+            Examples name a sample of the flagged resources by their KRI (the
+            identifier Kuma 3.0 addresses a resource by,
+            kri_<short>_<mesh>_<zone>_<namespace>_<name>_<section>) — capped, so a
+            finding with a higher count has occurrences outside the sample. A type
+            removed in 3.0, a name containing "_", and a non-resource example
+            (a control-plane config setting, a zone version, a coverage ratio)
+            have no KRI and keep the legacy display string.
           items:
-            $ref: '#/components/schemas/ExampleResource'
+            type: string
           maxItems: 10
           type: array
         group:

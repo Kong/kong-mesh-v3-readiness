@@ -17,7 +17,7 @@ func TestReservedLabelsOnWrite(t *testing.T) {
 		{
 			"policy with kuma.io/service", "/meshtimeouts", "MeshTimeout", "MeshTimeout carries a reserved label 3.0 rejects",
 			map[string]any{"kuma.io/service": "web", "kuma.io/zone": "east", "app": "web"},
-			[]string{"default/p-1 [zone:east] (kuma.io/service)"},
+			[]string{"kri_mt_default_east__p-1_ (kuma.io/service)"},
 		},
 		{
 			"policy with only registry labels", "/meshtimeouts", "MeshTimeout", "MeshTimeout carries a reserved label 3.0 rejects",
@@ -27,7 +27,7 @@ func TestReservedLabelsOnWrite(t *testing.T) {
 		{
 			"universal dataplane", "/dataplanes", "Dataplane", "Dataplane carries a reserved label 3.0 rejects",
 			map[string]any{"kuma.io/env": "universal", "kuma.io/workload": "w", "kuma.io/protocol": "http", "k8s.kuma.io/service-port": "80", "kuma.io/proxy-type": "sidecar"},
-			[]string{"default/p-1 (k8s.kuma.io/service-port, kuma.io/protocol)"},
+			[]string{"kri_dp_default___p-1_ (k8s.kuma.io/service-port, kuma.io/protocol)"},
 		},
 		{
 			"kubernetes dataplane", "/dataplanes", "Dataplane", "Dataplane carries a reserved label 3.0 rejects",
@@ -37,7 +37,7 @@ func TestReservedLabelsOnWrite(t *testing.T) {
 		{
 			"user meshservice", "/meshservices", "MeshService", "MeshService carries a reserved label 3.0 rejects",
 			map[string]any{"kuma.io/service": "web"},
-			[]string{"default/p-1 (kuma.io/service)"},
+			[]string{"kri_msvc_default___p-1_ (kuma.io/service)"},
 		},
 		{
 			"generated meshservice", "/meshservices", "MeshService", "MeshService carries a reserved label 3.0 rejects",
@@ -48,7 +48,7 @@ func TestReservedLabelsOnWrite(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditResponses(t, map[string]string{tc.path: policyBody(t, tc.typ, map[string]any{}, tc.labels)})
 			f, ok := findFinding(m, "blocker", "Reserved labels", tc.title)
-			if ok != (tc.want != nil) || (ok && !slices.Equal(displayExamples(f.Examples), tc.want)) {
+			if ok != (tc.want != nil) || (ok && !slices.Equal(f.Examples, tc.want)) {
 				t.Errorf("finding = %+v (found %v), want examples %v\nfindings: %+v", f, ok, tc.want, m.Findings)
 			}
 		})

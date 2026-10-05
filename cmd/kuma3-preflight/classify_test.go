@@ -176,13 +176,13 @@ func TestIngestReportsMergeAndDelta(t *testing.T) {
 	reports := t.TempDir()
 	removed := preflight.Finding{
 		Severity: "blocker", Category: "Removed policies",
-		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []preflight.ExampleResource{{Mesh: "trafficroute", Name: "route-all"}},
+		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []string{"trafficroute/route-all"},
 	}
 	infoFinding := preflight.Finding{Severity: "info", Category: "Dataplane DNS", Title: "Envoy config inspected for a sample of dataplanes", Count: 1}
 	// CP-level findings describe the e2e CP itself, not a test's resource — excluded.
 	cpFinding := preflight.Finding{
 		Severity: "blocker", Category: cpConfigCategory, Title: "Delta xDS not enabled",
-		Count: 1, Examples: []preflight.ExampleResource{{Note: "experimental.deltaXds=false"}},
+		Count: 1, Examples: []string{"experimental.deltaXds=false"},
 	}
 	// The shared CP is cumulative + parallel, so the same finding recurs across
 	// snapshots; dedupe by (feature, kind, example) must collapse it.
@@ -402,7 +402,7 @@ func TestDynamicFieldMergesIntoStaticFeatureBucket(t *testing.T) {
 	reports := t.TempDir()
 	writeSnapshot(t, reports, "0001-mtls.json", []preflight.Finding{{
 		Severity: "blocker", Category: "Mesh object settings", Title: "Inline mTLS on Mesh",
-		Count: 1, Examples: []preflight.ExampleResource{{Type: "Mesh", Mesh: "mtls", Name: "mtls", Note: "mtls"}},
+		Count: 1, Examples: []string{"mtls (mtls)"},
 	}})
 	if err := ci.ingestReports(reports); err != nil {
 		t.Fatal(err)
@@ -429,7 +429,7 @@ func TestIngestReportsSkipsForeignJSON(t *testing.T) {
 	reports := t.TempDir()
 	writeSnapshot(t, reports, "0001-spec.json", []preflight.Finding{{
 		Severity: "blocker", Category: "Removed policies",
-		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []preflight.ExampleResource{{Mesh: "tr", Name: "route"}},
+		Title: "TrafficRoute (removed in 3.0)", Count: 1, Examples: []string{"tr/route"},
 	}})
 	// A classification report and plain garbage in the same dir must be skipped, not fatal.
 	writeFixture(t, reports, "classification.json", `{"schema":"`+classificationSchema+`","features":[]}`)

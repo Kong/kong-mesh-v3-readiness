@@ -26,10 +26,6 @@ type Summary = preflight.Summary
 // Finding is one deprecation/blocker/advisory item, merged by (Severity, Category, Title).
 type Finding = preflight.Finding
 
-// ExampleResource identifies one example behind a Finding: a resource's KRI,
-// or the free-text reference of a control-plane-wide example.
-type ExampleResource = preflight.ExampleResource
-
 // CoverageGap is a collection that could not be audited — for example a 404 on a resource list.
 type CoverageGap = preflight.CoverageGap
 

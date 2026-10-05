@@ -74,72 +74,6 @@ type Summary struct {
 	SystemFindings int `json:"system_findings" jsonschema:"minimum=0"`
 }
 
-// ExampleResource identifies one example behind a finding. When the example
-// names a resource, it carries the KRI (the identifier Kuma 3.0 addresses the
-// resource by) and its parts; otherwise (a control-plane config setting, a
-// zone version, a coverage ratio) Note holds the free-text reference and the
-// scope fields stay empty or carry what the audit knows.
-type ExampleResource struct {
-	// KRI is the canonical 3.0 identifier
-	// kri_<short>_<mesh>_<zone>_<namespace>_<name>_<section>; empty when the
-	// type has no 3.0 short name (removed or not registered by 3.0).
-	KRI string `json:"kri,omitempty"`
-	// Type is the Kuma resource type, e.g. "MeshTimeout"; empty for
-	// non-resource examples.
-	Type string `json:"type,omitempty"`
-	// Mesh is the mesh the resource (or the example) belongs to; empty for
-	// control-plane-wide examples.
-	Mesh string `json:"mesh,omitempty"`
-	// Zone is the kuma.io/zone the resource carries — set on a global CP for
-	// resources synced from a zone, and on per-zone control-plane findings.
-	Zone string `json:"zone,omitempty"`
-	// Namespace is the k8s.kuma.io/namespace the resource carries; empty on
-	// Universal and for global-origin resources.
-	Namespace string `json:"namespace,omitempty"`
-	// Name is the resource display name, the one that survives a KDS
-	// hash-suffix; empty for non-resource examples.
-	Name string `json:"name,omitempty"`
-	// System marks CP-managed (kuma.io/policy-role: system) resources, whose
-	// defaults the operator must update before 3.0.
-	System bool `json:"system,omitempty"`
-	// Note is the free text of a non-resource example, or an annotation
-	// accompanying a resource one (the Mesh field it flagged, a version).
-	Note string `json:"note,omitempty"`
-}
-
-// Display renders the compact, human-readable form of an example — the shape
-// text renderers (the classify model, dedup keys) consume: "mesh/name",
-// a zone-qualified control-plane note, or the bare note. A Mesh is its own
-// mesh, so it renders by name alone, like the pre-KRI reports.
-func (e ExampleResource) Display() string {
-	if e.Name != "" {
-		s := e.Name
-		if e.Mesh != "" && e.Type != "Mesh" {
-			s = e.Mesh + "/" + s
-		}
-		if e.Zone != "" {
-			s += " [zone:" + e.Zone + "]"
-		}
-		if e.Note != "" {
-			s += " (" + e.Note + ")"
-		}
-		if e.System {
-			s += " (system — CP-managed, update before 3.0)"
-		}
-		return s
-	}
-	if e.Zone != "" {
-		if e.Mesh != "" {
-			return "mesh " + e.Mesh + ", zone " + e.Zone
-		}
-		if e.Note != "" {
-			return "zone " + e.Zone + ": " + e.Note
-		}
-		return "zone " + e.Zone
-	}
-	return e.Note
-}
-
 // Finding is one (severity, category, title) grouped occurrence in the report.
 type Finding struct {
 	// Severity "warning" stays in the enum; no current check emits one.
@@ -150,9 +84,16 @@ type Finding struct {
 	Detail   string `json:"detail"`
 	// Doc links to the Kong Mesh page explaining the 3.0 replacement API/feature.
 	// Optional: omitted for findings with no replacement to point at.
-	Doc      string            `json:"doc_url,omitempty" jsonschema:"format=uri"`
-	Count    int               `json:"count" jsonschema:"minimum=1"`
-	Examples []ExampleResource `json:"example_resources" jsonschema:"maxItems=10"`
+	Doc   string `json:"doc_url,omitempty" jsonschema:"format=uri"`
+	Count int    `json:"count" jsonschema:"minimum=1"`
+	// Examples name a sample of the flagged resources by their KRI (the
+	// identifier Kuma 3.0 addresses a resource by,
+	// kri_<short>_<mesh>_<zone>_<namespace>_<name>_<section>) — capped, so a
+	// finding with a higher count has occurrences outside the sample. A type
+	// removed in 3.0, a name containing "_", and a non-resource example
+	// (a control-plane config setting, a zone version, a coverage ratio)
+	// have no KRI and keep the legacy display string.
+	Examples []string `json:"example_resources" jsonschema:"maxItems=10"`
 }
 
 // CoverageGap records a collection that could not be audited — a 404 or a
@@ -363,7 +304,7 @@ func (r *collector) toModel(generatedAt string) Report {
 			Detail:   f.detail,
 			Doc:      f.doc,
 			Count:    f.count,
-			Examples: append([]ExampleResource{}, f.examples...),
+			Examples: append([]string{}, f.examples...),
 		})
 	}
 	normalizeModel(&m)

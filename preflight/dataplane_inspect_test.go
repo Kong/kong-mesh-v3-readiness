@@ -16,7 +16,7 @@ import (
 // incompatible proxy arrives with its version and no kumaCpCompatible key.
 func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 	insights := `{"total":4,"items":[
-		{"type":"DataplaneOverview","mesh":"default","name":"old-dp",
+		{"type":"DataplaneOverview","mesh":"default","name":"kri_dp_default___old-dp_",
 		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.5.0","kumaCpCompatible":false}}}]}},
 		{"type":"DataplaneOverview","mesh":"default","name":"omitted-dp",
 		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.11.19"}}}]}},
@@ -33,8 +33,8 @@ func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 	if f.Count != 2 {
 		t.Errorf("count = %d, want 2 (old-dp and omitted-dp)", f.Count)
 	}
-	got := strings.Join(displayExamples(f.Examples), " ")
-	for _, want := range []string{"old-dp", "omitted-dp (kuma-dp 2.11.19)"} {
+	got := strings.Join(f.Examples, " ")
+	for _, want := range []string{"old-dp", "kri_dp_default___omitted-dp_ (kuma-dp 2.11.19)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("examples %v missing %q", f.Examples, want)
 		}
@@ -64,7 +64,7 @@ func TestDataplaneCoreDNSDependencyReported(t *testing.T) {
 	if f.Count != 1 {
 		t.Errorf("count = %d, want 1 (only the proxy reporting coredns)", f.Count)
 	}
-	if len(f.Examples) == 0 || !strings.Contains(f.Examples[0].Display(), "dns-dp") {
+	if len(f.Examples) == 0 || !strings.Contains(f.Examples[0], "dns-dp") {
 		t.Errorf("example should name dns-dp, got %+v", f.Examples)
 	}
 }
@@ -97,7 +97,7 @@ func TestDataplaneEmbeddedDNSFeatureMissingReported(t *testing.T) {
 	if f.Count != 2 {
 		t.Errorf("count = %d, want 2 (coredns-dp and both-dp, once each), examples %+v", f.Count, f.Examples)
 	}
-	joined := strings.Join(displayExamples(f.Examples), "\n")
+	joined := strings.Join(f.Examples, "\n")
 	for _, want := range []string{"coredns-dp", "both-dp", "(coredns 1.11.1)"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("examples should contain %q, got %+v", want, f.Examples)

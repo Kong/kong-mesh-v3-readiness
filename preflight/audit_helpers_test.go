@@ -127,16 +127,3 @@ func findFinding(m Report, severity, category, title string) (Finding, bool) {
 	}
 	return Finding{}, false
 }
-
-// displayExamples renders examples to their compact text form for substring
-// assertions.
-func displayExamples(examples []ExampleResource) []string {
-	if len(examples) == 0 {
-		return nil
-	}
-	out := make([]string, len(examples))
-	for i, e := range examples {
-		out[i] = e.Display()
-	}
-	return out
-}

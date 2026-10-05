@@ -172,15 +172,15 @@ func TestRBACRemovedTypes(t *testing.T) {
 		}}),
 	})
 	for _, tc := range []struct{ title, example string }{
-		{"AccessRole rule types name a kind removed in 3.0", "team-a (OPAPolicy, TrafficPermission, ZoneIngress)"},
-		{"AccessAudit rule types name a kind removed in 3.0", "audit (MeshGateway, MeshGlobalRateLimit)"},
+		{"AccessRole rule types name a kind removed in 3.0", "kri_ar____team-a_ (OPAPolicy, TrafficPermission, ZoneIngress)"},
+		{"AccessAudit rule types name a kind removed in 3.0", "kri_aa____audit_ (MeshGateway, MeshGlobalRateLimit)"},
 	} {
 		f, ok := findFinding(m, "blocker", categoryAccessRoles, tc.title)
 		if !ok {
 			t.Errorf("%q not flagged; findings: %+v", tc.title, m.Findings)
 			continue
 		}
-		if len(f.Examples) != 1 || f.Examples[0].Display() != tc.example {
+		if len(f.Examples) != 1 || f.Examples[0] != tc.example {
 			t.Errorf("%q examples = %v, want [%s]", tc.title, f.Examples, tc.example)
 		}
 	}
@@ -212,8 +212,8 @@ func TestRemovedKindNamesCoversCatalogs(t *testing.T) {
 func TestRBACMeshFilter(t *testing.T) {
 	c := &auditor{meshFilter: "default", rep: &collector{}}
 	rules := []rbacRule{{Types: []string{"TrafficRoute"}, Mesh: "other"}, {Types: []string{"ZoneEgress"}}}
-	c.checkRBACRules("AccessRole", rules, removedKindNames(), qualified(resourceItem{Type: "AccessRoleBinding", Mesh: "default", Name: "team-a"}))
-	if len(c.rep.findings) != 1 || !strings.HasSuffix(c.rep.findings[0].examples[0].Display(), "(ZoneEgress)") {
+	c.checkRBACRules("AccessRole", rules, removedKindNames(), "team-a")
+	if len(c.rep.findings) != 1 || !strings.HasSuffix(c.rep.findings[0].examples[0], "(ZoneEgress)") {
 		t.Fatalf("findings = %+v, want one ZoneEgress types finding", c.rep.findings)
 	}
 }
