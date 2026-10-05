@@ -172,8 +172,8 @@ func TestRBACRemovedTypes(t *testing.T) {
 		}}),
 	})
 	for _, tc := range []struct{ title, example string }{
-		{"AccessRole rule types name a kind removed in 3.0", "kri_ar____team-a_ (OPAPolicy, TrafficPermission, ZoneIngress)"},
-		{"AccessAudit rule types name a kind removed in 3.0", "kri_aa____audit_ (MeshGateway, MeshGlobalRateLimit)"},
+		{"AccessRole rule types name a kind removed in 3.0", "kri_ar__default__team-a_ (OPAPolicy, TrafficPermission, ZoneIngress)"},
+		{"AccessAudit rule types name a kind removed in 3.0", "kri_aa__default__audit_ (MeshGateway, MeshGlobalRateLimit)"},
 	} {
 		f, ok := findFinding(m, "blocker", categoryAccessRoles, tc.title)
 		if !ok {

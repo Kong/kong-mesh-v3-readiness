@@ -239,7 +239,9 @@ type auditor struct {
 	skipAuditedCPVersion bool
 	// EXC:FILE011:the connected zone CP's own name; fills the KRI zone segment of label-less local resources (3.0 materializes the zone on read)
 	cpZone string
-	rep    *collector
+	// EXC:FILE011:/config was readable early; when it was not, the CP's mode is unknown and a label-less resource might be zone-local
+	configKnown bool
+	rep         *collector
 
 	// /zones+insights is read by both the config and version fan-outs on a global;
 	// memoize the (single) fetch so one global audit makes one round-trip for it.
@@ -308,14 +310,21 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 
 	// EXC:FILE011:the CP's own zone name fills the KRI zone segment of label-less local resources (3.0 materializes the zone on read)
 	var zoneCfg struct {
+		Mode      string `json:"mode"`
 		Multizone struct {
 			Zone struct {
 				Name string `json:"name"`
 			} `json:"zone"`
 		} `json:"multizone"`
 	}
-	if _, err := a.c.getJSON(ctx, "/config", &zoneCfg); err == nil {
-		a.cpZone = zoneCfg.Multizone.Zone.Name
+	if status, err := a.c.getJSON(ctx, "/config", &zoneCfg); err == nil && status == http.StatusOK {
+		a.configKnown = true
+		if strings.EqualFold(zoneCfg.Mode, "zone") {
+			a.cpZone = zoneCfg.Multizone.Zone.Name
+			if a.cpZone == "" {
+				a.cpZone = "default"
+			}
+		}
 	}
 
 	meshes, found, err := c.list(ctx, "/meshes")
@@ -427,18 +436,23 @@ func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 // read — the KRI must carry it to resolve on the upgraded CP. A resource
 // synced down from the global (kuma.io/origin: global) keeps no zone.
 func (a *auditor) stampZone(items []resourceItem) {
-	if a.cpZone == "" {
+	if a.configKnown && a.cpZone == "" {
 		return
 	}
 	for i := range items {
 		it := &items[i]
-		if it.Labels[zoneLabel] != "" || it.Labels["kuma.io/origin"] == "global" {
+		if it.Type == "Zone" || it.Labels[zoneLabel] != "" || it.Labels["kuma.io/origin"] == "global" {
 			continue
 		}
-		if it.Labels == nil {
-			it.Labels = map[string]string{}
+		if a.cpZone != "" {
+			if it.Labels == nil {
+				it.Labels = map[string]string{}
+			}
+			it.Labels[zoneLabel] = a.cpZone
+			continue
 		}
-		it.Labels[zoneLabel] = a.cpZone
+		// EXC:FILE011:zone CP, zone unreadable -> an empty-zone KRI mis-resolves on 3.0 (non-local hash name, 404)
+		it.zoneUnknown = true
 	}
 }
 

@@ -27,7 +27,7 @@
       "detail": "Could not parse this resource; audit it manually before upgrading.",
       "count": 1,
       "example_resources": [
-        "kri_mal_default___bad-log_"
+        "default/bad-log"
       ]
     }
   ],

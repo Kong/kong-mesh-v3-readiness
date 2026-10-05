@@ -27,7 +27,7 @@ func TestReservedLabelsOnWrite(t *testing.T) {
 		{
 			"universal dataplane", "/dataplanes", "Dataplane", "Dataplane carries a reserved label 3.0 rejects",
 			map[string]any{"kuma.io/env": "universal", "kuma.io/workload": "w", "kuma.io/protocol": "http", "k8s.kuma.io/service-port": "80", "kuma.io/proxy-type": "sidecar"},
-			[]string{"kri_dp_default___p-1_ (k8s.kuma.io/service-port, kuma.io/protocol)"},
+			[]string{"kri_dp_default_default__p-1_ (k8s.kuma.io/service-port, kuma.io/protocol)"},
 		},
 		{
 			"kubernetes dataplane", "/dataplanes", "Dataplane", "Dataplane carries a reserved label 3.0 rejects",
@@ -37,7 +37,7 @@ func TestReservedLabelsOnWrite(t *testing.T) {
 		{
 			"user meshservice", "/meshservices", "MeshService", "MeshService carries a reserved label 3.0 rejects",
 			map[string]any{"kuma.io/service": "web"},
-			[]string{"kri_msvc_default___p-1_ (kuma.io/service)"},
+			[]string{"kri_msvc_default_default__p-1_ (kuma.io/service)"},
 		},
 		{
 			"generated meshservice", "/meshservices", "MeshService", "MeshService carries a reserved label 3.0 rejects",

@@ -268,8 +268,8 @@ func TestPassthroughDefaultFlagsMeshWithNoPolicy(t *testing.T) {
 	if f.Doc != docMeshPassthrough {
 		t.Errorf("doc = %q, want %q", f.Doc, docMeshPassthrough)
 	}
-	if len(f.Examples) != 1 || f.Examples[0] != "kri_dp_default___dp-1_" {
-		t.Errorf("examples = %v, want [kri_dp_default___dp-1_]", f.Examples)
+	if len(f.Examples) != 1 || f.Examples[0] != "kri_dp_default_default__dp-1_" {
+		t.Errorf("examples = %v, want [kri_dp_default_default__dp-1_]", f.Examples)
 	}
 }
 
@@ -469,14 +469,14 @@ func TestPassthroughDefaultReadsSelection(t *testing.T) {
 	t.Run("partial selection flags the rest", func(t *testing.T) {
 		m := auditResponses(t, responses(nil))
 		f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoMeshPassthrough)
-		if !ok || !slices.Equal(f.Examples, []string{"kri_dp_default___dp-b_"}) || !strings.Contains(f.Detail, "1 of 2") {
+		if !ok || !slices.Equal(f.Examples, []string{"kri_dp_default_default__dp-b_"}) || !strings.Contains(f.Detail, "1 of 2") {
 			t.Errorf("finding = %+v (found %v), want dp-b flagged 1 of 2", f, ok)
 		}
 	})
 	t.Run("shadow policy selects nothing", func(t *testing.T) {
 		m := auditResponses(t, responses(map[string]any{"kuma.io/effect": "shadow"}))
 		f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoMeshPassthrough)
-		if !ok || !slices.Equal(f.Examples, []string{"kri_dp_default___dp-a_", "kri_dp_default___dp-b_"}) {
+		if !ok || !slices.Equal(f.Examples, []string{"kri_dp_default_default__dp-a_", "kri_dp_default_default__dp-b_"}) {
 			t.Errorf("finding = %+v (found %v), want both proxies flagged", f, ok)
 		}
 	})

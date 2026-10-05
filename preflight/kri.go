@@ -55,6 +55,9 @@ var shortNames = map[string]string{
 // has no 3.0 short name, or any segment contains "_" (Kuma decodes a KRI
 // by splitting on it, so such an identifier would resolve elsewhere).
 func kriOf(it resourceItem) string {
+	if it.zoneUnknown {
+		return ""
+	}
 	typ := it.Type
 	// EXC:FILE011:Kuma's KRI treats an overview as its base resource (DataplaneOverview -> Dataplane)
 	typ, _ = strings.CutSuffix(typ, "Overview")

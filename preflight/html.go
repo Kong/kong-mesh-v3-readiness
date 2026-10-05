@@ -399,9 +399,10 @@ const htmlTail = `
     if(example.indexOf('kri_') === 0){
       var parts = example.split('_');
       if(parts.length < 6) return null;
-      /* EXC:FILE011:Mesh/Zone/global-scoped resources carry their identity in the name segment; only a real mesh name attributes */
       if(parts[2]) return parts[2];
-      return meshSet[parts[5]] ? parts[5] : null;
+      /* EXC:FILE011:only a Mesh (short "m") is its own mesh — a Zone or global-scoped KRI never mesh-attributes by name */
+      if(parts[1] === 'm' && meshSet[parts[5]]) return parts[5];
+      return null;
     }
     var s = example.replace(/ \(system[^)]*\)\s*$/, '');
     var cand, slash = s.indexOf('/');
