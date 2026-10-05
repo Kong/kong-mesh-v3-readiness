@@ -53,7 +53,7 @@
       "detail": "Inline mTLS on the Mesh object is removed in 3.0; migrate to a MeshTLS policy.",
       "count": 1,
       "example_resources": [
-        "kri_m__default__default_ (field)"
+        "default (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -65,7 +65,7 @@
       "detail": "Inline logging on the Mesh object is removed in 3.0; migrate to MeshAccessLog.",
       "count": 1,
       "example_resources": [
-        "kri_m__default__default_ (field)"
+        "default (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },

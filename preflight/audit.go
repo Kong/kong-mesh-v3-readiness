@@ -241,9 +241,9 @@ type auditor struct {
 	cpZone string
 	// EXC:FILE011:/config was readable early; when it was not, the CP's mode is unknown and a label-less resource might be zone-local
 	configKnown bool
-	// EXC:FILE011:the connected CP is a zone (not a global/standalone); a Mesh KRI resolves only at the global
-	cpModeZone bool
-	rep        *collector
+	// EXC:FILE011:the connected CP is a zone or standalone, not a global; a Mesh KRI resolves only at the global
+	cpNotGlobal bool
+	rep         *collector
 
 	// /zones+insights is read by both the config and version fan-outs on a global;
 	// memoize the (single) fetch so one global audit makes one round-trip for it.
@@ -328,7 +328,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 			if a.cpZone == "" {
 				a.cpZone = "default"
 			}
-			a.cpModeZone = strings.EqualFold(zoneCfg.Mode, "zone")
+			a.cpNotGlobal = true
 		}
 	}
 
@@ -450,7 +450,7 @@ func (a *auditor) stampZone(items []resourceItem) {
 			continue
 		}
 		// EXC:FILE011:a Mesh is global-scoped and SkipKDSHash — its KRI resolves only at the global, never at a zone CP
-		if it.Type == "Mesh" && a.cpModeZone {
+		if it.Type == "Mesh" && a.cpNotGlobal {
 			it.zoneUnknown = true
 			continue
 		}
