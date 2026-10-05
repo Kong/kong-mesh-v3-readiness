@@ -474,12 +474,15 @@ func TestMeshHTTPRouteCatchAll(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditResponses(t, map[string]string{"/meshhttproutes": route(tc.rules...)})
-			_, got := findFinding(m, "info", "MeshHTTPRoute routing", title)
+			_, got := findFinding(m, "blocker", "MeshHTTPRoute routing", title)
 			if got != tc.want {
 				t.Errorf("flagged = %v, want %v\nfindings: %+v", got, tc.want, m.Findings)
 			}
-			if tc.want && m.Status != StatusClean {
-				t.Errorf("status = %q, want %q — an info finding must not gate the run", m.Status, StatusClean)
+			if tc.want && m.Status != StatusBlockers {
+				t.Errorf("status = %q, want %q — a blocker finding must gate the run", m.Status, StatusBlockers)
+			}
+			if !tc.want && m.Status != StatusClean {
+				t.Errorf("status = %q, want %q", m.Status, StatusClean)
 			}
 		})
 	}

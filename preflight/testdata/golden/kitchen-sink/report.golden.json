@@ -11,9 +11,9 @@
     "default"
   ],
   "summary": {
-    "blockers": 85,
+    "blockers": 86,
     "warnings": 0,
-    "info": 3,
+    "info": 2,
     "coverage_gaps": 3,
     "parse_errors": 0,
     "system_findings": 3
@@ -342,6 +342,18 @@
       "count": 1,
       "example_resources": [
         "kri_mlbs_default___mlbs-crosszone_"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "MeshHTTPRoute routing",
+      "title": "MeshHTTPRoute has no catch-all rule",
+      "detail": "In 3.0 a request that matches no rule of an applicable MeshHTTPRoute gets a `404` instead of falling through to the destination. This route matches only some requests, so if it exists to anchor a MeshTimeout/MeshRetry/MeshAccessLog the unmatched traffic starts failing after the upgrade. Review it and add a catch-all rule (`path: {type: PathPrefix, value: /}` with no other matchers) if the fall-through is intended.",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshhttproute/",
+      "count": 1,
+      "example_resources": [
+        "kri_mhttpr_default___anchor-only_"
       ]
     },
     {
@@ -885,18 +897,6 @@
       "count": 1,
       "example_resources": [
         "zone zone-1: defaults.restrictOutbound=unset"
-      ]
-    },
-    {
-      "severity": "info",
-      "group": "policies",
-      "category": "MeshHTTPRoute routing",
-      "title": "MeshHTTPRoute has no catch-all rule",
-      "detail": "In 3.0 a request that matches no rule of an applicable MeshHTTPRoute gets a `404` instead of falling through to the destination. This route matches only some requests, so if it exists to anchor a MeshTimeout/MeshRetry/MeshAccessLog the unmatched traffic starts failing after the upgrade. Review it and add a catch-all rule (`path: {type: PathPrefix, value: /}` with no other matchers) if the fall-through is intended.",
-      "doc_url": "https://developer.konghq.com/mesh/policies/meshhttproute/",
-      "count": 1,
-      "example_resources": [
-        "kri_mhttpr_default___anchor-only_"
       ]
     }
   ],

@@ -104,7 +104,7 @@ every kind from `to[].targetRef` (the destination), which keeps `Mesh` / `Mesh*S
 - **Timeout (legacy)**: `timeout.http.grpc.streamIdleTimeout` / `maxStreamDuration` / whole `grpc` section → `timeout.http.*`
 - **MeshInsight**: `policyStat` → `resources`
 - **MeshLoadBalancingStrategy**: `localityAwareness.crossZone` is accepted only when `to[].targetRef.kind` is `MeshMultiZoneService` (`meshloadbalancingstrategy/api/v1alpha1/validator.go`)
-- **MeshHTTPRoute**: a request matching no rule of an applicable route now returns `404` instead of falling through to the destination. A route written only to anchor a MeshTimeout/MeshRetry/MeshAccessLog silently changes traffic; preflight surfaces routes with no catch-all rule as **info** (a heuristic — the narrowing may well be intended — so it must not gate CI)
+- **MeshHTTPRoute**: a request matching no rule of an applicable route now returns `404` instead of falling through to the destination. A route written only to anchor a MeshTimeout/MeshRetry/MeshAccessLog silently changes traffic; preflight reports routes with no catch-all rule as a **blocker** — add a catch-all rule if the fall-through is intended
 
 ## Resources dropped
 
