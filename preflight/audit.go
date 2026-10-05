@@ -3792,9 +3792,12 @@ func (a *auditor) checkExternalServiceIdentity(ctx context.Context) error {
 	}
 	for _, m := range slices.Sorted(maps.Keys(a.externalServiceMeshes)) {
 		if !withIdentity[m] {
+			// EXC:FILE011:a synthetic Mesh must obey the same zone stamping/suppression the listed ones get
+			meshItem := []resourceItem{{Type: "Mesh", Name: m}}
+			a.stampZone(meshItem)
 			a.rep.addDoc(blocker, "MeshIdentity coverage", "Mesh has MeshExternalServices but no MeshIdentity",
 				"3.0 gives a client proxy without a workload identity no cluster for a MeshExternalService, so its requests fail locally with a 503 (`cluster_not_found`). Create a MeshIdentity in this mesh that selects every proxy calling a MeshExternalService before upgrading.",
-				docMeshIdentity, qualified(resourceItem{Type: "Mesh", Name: m}))
+				docMeshIdentity, qualified(meshItem[0]))
 		}
 	}
 	return nil

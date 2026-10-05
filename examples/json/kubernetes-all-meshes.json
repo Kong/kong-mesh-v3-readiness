@@ -79,8 +79,8 @@
       "detail": "Inline mTLS on the Mesh object is removed in 3.0; migrate to a MeshTLS policy.",
       "count": 2,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____legacy_ (field)"
+        "default (field)",
+        "legacy (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -92,8 +92,8 @@
       "detail": "Inline metrics on the Mesh object is removed in 3.0; migrate to MeshMetric.",
       "count": 2,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____legacy_ (field)"
+        "default (field)",
+        "legacy (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -105,8 +105,8 @@
       "detail": "Inline tracing on the Mesh object is removed in 3.0; migrate to MeshTrace.",
       "count": 2,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____legacy_ (field)"
+        "default (field)",
+        "legacy (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -118,8 +118,8 @@
       "detail": "Inline logging on the Mesh object is removed in 3.0; migrate to MeshAccessLog.",
       "count": 2,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____legacy_ (field)"
+        "default (field)",
+        "legacy (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -131,8 +131,8 @@
       "detail": "Relocated to MeshLoadBalancingStrategy in 3.0.",
       "count": 2,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____legacy_ (field)"
+        "default (field)",
+        "legacy (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -144,8 +144,8 @@
       "detail": "Mesh passthrough relocates to MeshPassthrough in 3.0.",
       "count": 2,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____legacy_ (field)"
+        "default (field)",
+        "legacy (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -157,8 +157,8 @@
       "detail": "`defaultForbidMeshExternalServiceAccess` flips to true in 3.0; set it explicitly and validate.",
       "count": 2,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____legacy_ (field)"
+        "default (field)",
+        "legacy (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -170,7 +170,7 @@
       "detail": "Mesh membership constraints move to MeshTrafficPermission in 3.0.",
       "count": 1,
       "example_resources": [
-        "kri_m____legacy_ (field)"
+        "legacy (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },

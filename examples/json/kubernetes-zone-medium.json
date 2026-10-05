@@ -57,11 +57,11 @@
       "detail": "Inline mTLS on the Mesh object is removed in 3.0; migrate to a MeshTLS policy.",
       "count": 5,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____payments_ (field)",
-        "kri_m____checkout_ (field)",
-        "kri_m____inventory_ (field)",
-        "kri_m____shipping_ (field)"
+        "default (field)",
+        "payments (field)",
+        "checkout (field)",
+        "inventory (field)",
+        "shipping (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -73,11 +73,11 @@
       "detail": "Inline metrics on the Mesh object is removed in 3.0; migrate to MeshMetric.",
       "count": 5,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____payments_ (field)",
-        "kri_m____checkout_ (field)",
-        "kri_m____inventory_ (field)",
-        "kri_m____shipping_ (field)"
+        "default (field)",
+        "payments (field)",
+        "checkout (field)",
+        "inventory (field)",
+        "shipping (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
@@ -89,11 +89,11 @@
       "detail": "Inline tracing on the Mesh object is removed in 3.0; migrate to MeshTrace.",
       "count": 5,
       "example_resources": [
-        "kri_m____default_ (field)",
-        "kri_m____payments_ (field)",
-        "kri_m____checkout_ (field)",
-        "kri_m____inventory_ (field)",
-        "kri_m____shipping_ (field)"
+        "default (field)",
+        "payments (field)",
+        "checkout (field)",
+        "inventory (field)",
+        "shipping (field)"
       ],
       "doc_url": "https://developer.konghq.com/mesh/policies/"
     },
