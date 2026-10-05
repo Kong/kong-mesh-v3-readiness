@@ -1143,7 +1143,7 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 				"A rule with an empty `matches` list generates no Envoy routes at all — the Universal API accepts it, but nothing is emitted for it. In 3.0 a request that matches no rule of an applicable MeshHTTPRoute gets a `404` instead of falling through to the destination, so every request to this destination fails after the upgrade. Give the rule at least one match (`path: {type: PathPrefix, value: /}` matches everything).",
 				docMeshHTTPRoute, ref)
 		case noCatchAll:
-			a.rep.addDoc(info, "MeshHTTPRoute routing", "MeshHTTPRoute has no catch-all rule",
+			a.rep.addDoc(blocker, "MeshHTTPRoute routing", "MeshHTTPRoute has no catch-all rule",
 				"In 3.0 a request that matches no rule of an applicable MeshHTTPRoute gets a `404` instead of falling through to the destination. This route matches only some requests, so if it exists to anchor a MeshTimeout/MeshRetry/MeshAccessLog the unmatched traffic starts failing after the upgrade. Review it and add a catch-all rule (`path: {type: PathPrefix, value: /}` with no other matchers) if the fall-through is intended.",
 				docMeshHTTPRoute, ref)
 		}
