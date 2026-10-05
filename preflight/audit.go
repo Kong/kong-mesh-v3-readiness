@@ -2885,9 +2885,11 @@ func (a *auditor) checkName(it resourceItem, kind string) {
 }
 
 // qualified is the structured example of a flagged resource: its KRI (the
-// identifier Kuma 3.0 addresses it by) and its identifying parts. The mesh
-// stays the leading scoping field so mesh attribution is unaffected by the
-// kuma.io/zone a global CP stamps on zone-synced resources.
+// identifier Kuma 3.0 addresses it by) and its identifying parts. The zone
+// comes from zoneOf: the kuma.io/zone label a global CP stamps on KDS-synced
+// resources, falling back to the ZoneIngress/ZoneEgress spec field a zone CP
+// serves without the label. The KRI itself still uses the label only, the
+// way Kuma 3.0 builds it.
 func qualified(it resourceItem) ExampleResource {
 	typ := it.Type
 	// EXC:FILE011:Kuma treats an overview as its base resource (DataplaneOverview -> Dataplane)
@@ -2896,7 +2898,7 @@ func qualified(it resourceItem) ExampleResource {
 		KRI:       kriOf(it),
 		Type:      typ,
 		Mesh:      meshOfItem(it),
-		Zone:      it.Labels[zoneLabel],
+		Zone:      zoneOf(it),
 		Namespace: it.Labels[kubeNamespaceLabel],
 		Name:      displayName(it),
 	}

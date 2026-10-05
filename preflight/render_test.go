@@ -1,6 +1,7 @@
 package preflight
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -495,5 +496,25 @@ func TestExampleResourceDisplay(t *testing.T) {
 				t.Errorf("Display() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestQualifiedZoneFallback pins the zone attribution of an example: the
+// kuma.io/zone label first, then the ZoneIngress/ZoneEgress spec field a
+// directly audited zone CP serves without the label.
+func TestQualifiedZoneFallback(t *testing.T) {
+	labeled := resourceItem{
+		Type: "ZoneIngress", Name: "zi-1",
+		Labels: map[string]string{zoneLabel: "east"}, Spec: json.RawMessage(`{"zone":"west"}`),
+	}
+	if e := qualified(labeled); e.Zone != "east" {
+		t.Errorf("zone = %q, want the label east", e.Zone)
+	}
+	spec := resourceItem{Type: "ZoneEgress", Name: "ze-1", Spec: json.RawMessage(`{"zone":"east"}`)}
+	if e := qualified(spec); e.Zone != "east" {
+		t.Errorf("zone = %q, want the spec fallback east", e.Zone)
+	}
+	if e := qualified(spec); e.KRI != "" {
+		t.Errorf("kri = %q, want none for a type removed in 3.0", e.KRI)
 	}
 }
