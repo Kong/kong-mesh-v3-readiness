@@ -16,7 +16,7 @@ import (
 // incompatible proxy arrives with its version and no kumaCpCompatible key.
 func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 	insights := `{"total":4,"items":[
-		{"type":"DataplaneOverview","mesh":"default","name":"kri_dp_default___old-dp_",
+		{"type":"DataplaneOverview","mesh":"default","name":"old-dp",
 		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.5.0","kumaCpCompatible":false}}}]}},
 		{"type":"DataplaneOverview","mesh":"default","name":"omitted-dp",
 		 "dataplaneInsight":{"subscriptions":[{"version":{"kumaDp":{"version":"2.11.19"}}}]}},
@@ -34,7 +34,7 @@ func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 		t.Errorf("count = %d, want 2 (old-dp and omitted-dp)", f.Count)
 	}
 	got := strings.Join(f.Examples, " ")
-	for _, want := range []string{"old-dp", "kri_dp_default___omitted-dp_ (kuma-dp 2.11.19)"} {
+	for _, want := range []string{"kri_dp_default___old-dp_ (kuma-dp 2.5.0)", "kri_dp_default___omitted-dp_ (kuma-dp 2.11.19)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("examples %v missing %q", f.Examples, want)
 		}

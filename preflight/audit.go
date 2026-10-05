@@ -237,7 +237,9 @@ type auditor struct {
 	checkVersionCurrency bool
 	latestPatch          string
 	skipAuditedCPVersion bool
-	rep                  *collector
+	// EXC:FILE011:the connected zone CP's own name; fills the KRI zone segment of label-less local resources (3.0 materializes the zone on read)
+	cpZone string
+	rep    *collector
 
 	// /zones+insights is read by both the config and version fan-outs on a global;
 	// memoize the (single) fetch so one global audit makes one round-trip for it.
@@ -304,6 +306,18 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		rep:                  &collector{cp: idx},
 	}
 
+	// EXC:FILE011:the CP's own zone name fills the KRI zone segment of label-less local resources (3.0 materializes the zone on read)
+	var zoneCfg struct {
+		Multizone struct {
+			Zone struct {
+				Name string `json:"name"`
+			} `json:"zone"`
+		} `json:"multizone"`
+	}
+	if _, err := a.c.getJSON(ctx, "/config", &zoneCfg); err == nil {
+		a.cpZone = zoneCfg.Multizone.Zone.Name
+	}
+
 	meshes, found, err := c.list(ctx, "/meshes")
 	meshesHitResourceLimit := false
 	if err != nil {
@@ -318,6 +332,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	if !found {
 		return nil, fmt.Errorf("GET /meshes returned 404; is %s a Kuma control plane?", c.base)
 	}
+	a.stampZone(meshes)
 	for _, m := range meshes {
 		if opts.meshFilter != "" && m.Name != opts.meshFilter {
 			continue
@@ -406,6 +421,27 @@ func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 	return items
 }
 
+// stampZone fills a local resource's missing kuma.io/zone with the connected
+// zone CP's own name: 2.x stamps the label on write, but a resource created
+// before that and never re-applied carries none, and 3.0 materializes it on
+// read — the KRI must carry it to resolve on the upgraded CP. A resource
+// synced down from the global (kuma.io/origin: global) keeps no zone.
+func (a *auditor) stampZone(items []resourceItem) {
+	if a.cpZone == "" {
+		return
+	}
+	for i := range items {
+		it := &items[i]
+		if it.Labels[zoneLabel] != "" || it.Labels["kuma.io/origin"] == "global" {
+			continue
+		}
+		if it.Labels == nil {
+			it.Labels = map[string]string{}
+		}
+		it.Labels[zoneLabel] = a.cpZone
+	}
+}
+
 // listCollObserved also reports whether the collection was read: a check that
 // concludes something from a resource's absence must not fire on a coverage gap.
 // Memoized by path, so a shared collection costs one round-trip and one gap.
@@ -414,6 +450,7 @@ func (a *auditor) listCollObserved(ctx context.Context, path string) ([]resource
 		return r.items, r.observed
 	}
 	items, observed := a.readColl(ctx, path)
+	a.stampZone(items)
 	if a.listCache == nil {
 		a.listCache = map[string]listResult{}
 	}
@@ -437,6 +474,7 @@ func (a *auditor) readColl(ctx context.Context, path string) ([]resourceItem, bo
 		a.rep.addGap(path, "endpoint returned 404 — NOT audited")
 		return nil, false
 	}
+	a.stampZone(items)
 	return items, true
 }
 
@@ -465,6 +503,7 @@ func (a *auditor) listServed(ctx context.Context, path string) ([]resourceItem, 
 	if !found {
 		return nil, true
 	}
+	a.stampZone(items)
 	return items, true
 }
 
