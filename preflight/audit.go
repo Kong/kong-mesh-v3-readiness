@@ -195,6 +195,7 @@ const policyRoleLabel = "kuma.io/policy-role"
 const (
 	envLabel                 = "kuma.io/env"
 	zoneLabel                = "kuma.io/zone"
+	kubeNamespaceLabel       = "k8s.kuma.io/namespace"
 	gatewayLabel             = "kuma.io/gateway"
 	protocolTag              = "kuma.io/protocol"
 	serviceAccountLabel      = "k8s.kuma.io/service-account"
