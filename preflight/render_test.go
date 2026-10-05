@@ -303,6 +303,19 @@ func TestParseReportRejectsOlderSchema(t *testing.T) {
 			t.Errorf("error should name both the found and expected schema, got: %v", err)
 		}
 	}
+	// EXC:FILE011:a real v5 capture declares tool_schema and display-string examples; it must be refused with the re-run message, not silently re-rendered
+	capture := `{"tool_schema":"kuma3-preflight/v5","tool":"kuma3-preflight","status":"blockers",` +
+		`"control_plane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
+		`"findings":[{"severity":"blocker","group":"policies","category":"Policy from field",` +
+		`"title":"MeshTimeout uses from","detail":"d","count":1,` +
+		`"example_resources":["default/my-timeout"]}],"coverage_gaps":[],"manual_checks":[]}`
+	_, err := ParseReport([]byte(capture))
+	if err == nil {
+		t.Fatal("v5 capture was accepted; want rejection")
+	}
+	if !strings.Contains(err.Error(), "not supported by this build") || !strings.Contains(err.Error(), "re-run the audit") {
+		t.Errorf("v5 capture should fail with the re-run message, got: %v", err)
+	}
 }
 
 func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {

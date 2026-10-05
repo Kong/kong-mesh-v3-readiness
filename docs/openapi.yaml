@@ -167,6 +167,14 @@ components:
           format: uri
           type: string
         example_resources:
+          description: |-
+            Examples name a sample of the flagged resources by their KRI (the
+            identifier Kuma 3.0 addresses a resource by,
+            kri_<short>_<mesh>_<zone>_<namespace>_<name>_<section>) — capped, so a
+            finding with a higher count has occurrences outside the sample. A type
+            removed in 3.0, a name containing "_", and a non-resource example
+            (a control-plane config setting, a zone version, a coverage ratio)
+            have no KRI and keep the legacy display string.
           items:
             type: string
           maxItems: 10

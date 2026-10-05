@@ -29,11 +29,16 @@ Pick the site by check shape:
   `meshSpec`).
 - **Dataplane / zone-proxy / resource-name check:** extend the matching `check*` method.
 
-Record findings with `a.rep.add(sev, category, title, detail, exampleRef)`
+Record findings with `a.rep.add(sev, category, title, detail, example)`
 (`preflight/report.go`) — identical `(severity, category, title)` tuples merge and
-accumulate example refs (capped at `preflight.ExampleCap` = 10). Use `a.ref(it)` for the
-example ref so CP-managed (`policy-role: system`) resources are tagged and counted; use
-`qualified(it)` only where system-tagging doesn't apply.
+accumulate examples (capped at `preflight.ExampleCap` = 10). Build the example string
+with the helpers in `preflight/audit.go`: `a.ref(it)` for a flagged resource (its KRI,
+the identifier Kuma 3.0 addresses it by, tagged `(system — CP-managed, update before
+3.0)` for `policy-role: system` resources); `qualified(it)`/`qualifiedNote(it, note)`
+where system-tagging doesn't apply; a plain string for control-plane-wide free text;
+`zoneRef(zone)` for per-zone config. A type without a 3.0 KRI (removed kinds, names
+containing `_`) falls back to the legacy `mesh/name [zone:z]` display string — don't
+hand-build KRI strings; `qualified` owns the fallback.
 
 Then add a case to `sampleReport()` (`preflight/render_test.go`) / golden assertions. To
 cover the check end-to-end (CP API → JSON), add a fixture under

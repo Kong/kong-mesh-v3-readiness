@@ -13,9 +13,7 @@ type rawFinding struct {
 	category string
 	title    string
 	detail   string
-	// doc is a Kong Mesh documentation URL explaining the 3.0 replacement API or
-	// feature for this finding (empty when there is no replacement to point at,
-	// e.g. an unparseable spec or a coverage note).
+	// EXC:FILE011:doc is a Kong Mesh URL; empty when no replacement exists (unparseable spec, coverage note)
 	doc      string
 	count    int
 	examples []string

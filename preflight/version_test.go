@@ -309,7 +309,7 @@ func TestSkipAuditedControlPlaneVersion(t *testing.T) {
 
 func TestFlagIfBehindUnparseableIsGap(t *testing.T) {
 	a := &auditor{rep: &collector{}}
-	a.flagIfBehind("unknown", "control plane", 14, 0, "detail")
+	a.flagIfBehind("unknown", "", 14, 0, "detail")
 	if len(a.rep.findings) != 0 {
 		t.Errorf("unparseable version produced a finding, want a gap only")
 	}

@@ -1,5 +1,5 @@
 {
-  "tool_schema": "kuma3-preflight/v5",
+  "tool_schema": "kuma3-preflight/v6",
   "tool": "kuma3-preflight",
   "generated_at": "2026-06-25T09:30:00Z",
   "status": "failed",
@@ -21,5 +21,5 @@
   "findings": [],
   "coverage_gaps": [],
   "manual_checks": [],
-  "error": "endpoint http://localhost:8080 is not a Kuma control plane: GET / returned content-type text/html (a web UI), not the JSON control-plane index \u2014 check the address and port (the CP API is usually :5681)"
+  "error": "endpoint http://localhost:8080 is not a Kuma control plane: GET / returned content-type text/html (a web UI), not the JSON control-plane index — check the address and port (the CP API is usually :5681)"
 }

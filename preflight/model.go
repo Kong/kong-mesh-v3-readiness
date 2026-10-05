@@ -10,7 +10,7 @@ import (
 // Schema/tool identifiers stamped into every JSON report so a consumer (or
 // ParseReport) can recognize and version the payload.
 const (
-	SchemaVersion = "kuma3-preflight/v5"
+	SchemaVersion = "kuma3-preflight/v6"
 	// ToolName identifies this tool in the JSON payload and in the User-Agent
 	// header of outbound HTTP requests.
 	ToolName = "kuma3-preflight"
@@ -84,8 +84,15 @@ type Finding struct {
 	Detail   string `json:"detail"`
 	// Doc links to the Kong Mesh page explaining the 3.0 replacement API/feature.
 	// Optional: omitted for findings with no replacement to point at.
-	Doc      string   `json:"doc_url,omitempty" jsonschema:"format=uri"`
-	Count    int      `json:"count" jsonschema:"minimum=1"`
+	Doc   string `json:"doc_url,omitempty" jsonschema:"format=uri"`
+	Count int    `json:"count" jsonschema:"minimum=1"`
+	// Examples name a sample of the flagged resources by their KRI (the
+	// identifier Kuma 3.0 addresses a resource by,
+	// kri_<short>_<mesh>_<zone>_<namespace>_<name>_<section>) — capped, so a
+	// finding with a higher count has occurrences outside the sample. A type
+	// removed in 3.0, a name containing "_", and a non-resource example
+	// (a control-plane config setting, a zone version, a coverage ratio)
+	// have no KRI and keep the legacy display string.
 	Examples []string `json:"example_resources" jsonschema:"maxItems=10"`
 }
 
@@ -357,6 +364,10 @@ func (m Report) RenderHTML() (string, error) {
 // RenderJSON / captured via --from-json), normalizing it so every renderer sees
 // group-contiguous findings regardless of when the payload was captured.
 func ParseReport(data []byte) (Report, error) {
+	// EXC:FILE011:sniff the schema first — an older version (v5 examples are strings, not objects) fails the body decode with a confusing type error
+	if s := declaredSchema(data); s != "" && s != SchemaVersion {
+		return Report{}, fmt.Errorf("report schema %q is not supported by this build (expects %q) — re-run the audit", s, SchemaVersion)
+	}
 	var m Report
 	if err := json.Unmarshal(data, &m); err != nil {
 		return Report{}, fmt.Errorf("parsing JSON report: %w", err)
@@ -376,6 +387,22 @@ func ParseReport(data []byte) (Report, error) {
 	}
 	normalizeModel(&m)
 	return m, nil
+}
+
+// declaredSchema returns the tool_schema a payload carries ("" when absent,
+// unreadable, or not one of this tool's versions) so ParseReport can reject
+// an incompatible version before decoding its differently-shaped body.
+func declaredSchema(data []byte) string {
+	var m struct {
+		Schema string `json:"tool_schema"`
+	}
+	if json.Unmarshal(data, &m) != nil {
+		return ""
+	}
+	if !strings.HasPrefix(m.Schema, ToolName+"/") {
+		return ""
+	}
+	return m.Schema
 }
 
 func legacySchema(data []byte) string {

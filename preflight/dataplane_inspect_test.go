@@ -34,7 +34,7 @@ func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 		t.Errorf("count = %d, want 2 (old-dp and omitted-dp)", f.Count)
 	}
 	got := strings.Join(f.Examples, " ")
-	for _, want := range []string{"old-dp", "omitted-dp (kuma-dp 2.11.19)"} {
+	for _, want := range []string{"kri_dp_default_default__old-dp_ (kuma-dp 2.5.0)", "kri_dp_default_default__omitted-dp_ (kuma-dp 2.11.19)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("examples %v missing %q", f.Examples, want)
 		}

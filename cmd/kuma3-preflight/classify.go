@@ -374,18 +374,30 @@ func replacementFor(kind string) string {
 	return ""
 }
 
-// featureForExample maps a finding's example reference to a feature. Examples are
-// mesh-qualified ("mesh/name") or field-tagged ("mesh (field)"); the leading token is
-// the mesh, whose name is a test's feature. The mesh is mapped onto a known static
-// feature when one is a normalized substring match (so "external-service-base" folds
-// into "externalservices"); otherwise the mesh name itself is the feature.
+// featureForExample maps a finding's example to a feature. An example's mesh is
+// named after a test's feature: the mesh segment of a KRI
+// (kri_<short>_<mesh>_...), or the leading token of a legacy "mesh/name" or
+// field-tagged reference. The mesh is mapped onto a known static feature when
+// one is a normalized substring match (so "external-service-base" folds into
+// "externalservices"); otherwise the mesh name itself is the feature.
 func featureForExample(ex string, known []string) string {
 	s := ex
-	if i := strings.Index(s, " ("); i >= 0 {
-		s = s[:i] // drop " (field)" / " (system…)" annotations
-	}
-	if i := strings.IndexByte(s, '/'); i >= 0 {
-		s = s[:i] // mesh from "mesh/name"
+	if strings.HasPrefix(s, "kri_") {
+		parts := strings.Split(s, "_")
+		if len(parts) > 5 {
+			s = parts[2]
+			// EXC:FILE011:Mesh/Zone/global-scoped resources carry their identity in the name segment
+			if s == "" {
+				s = parts[5]
+			}
+		}
+	} else {
+		if i := strings.Index(s, " ("); i >= 0 {
+			s = s[:i]
+		}
+		if i := strings.IndexByte(s, '/'); i >= 0 {
+			s = s[:i]
+		}
 	}
 	s = strings.TrimSpace(s)
 	if s == "" {
