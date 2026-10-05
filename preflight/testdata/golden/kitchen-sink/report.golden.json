@@ -1,5 +1,5 @@
 {
-  "tool_schema": "kuma3-preflight/v5",
+  "tool_schema": "kuma3-preflight/v6",
   "tool": "kuma3-preflight",
   "status": "inconclusive",
   "control_plane": {
@@ -28,7 +28,9 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
       "example_resources": [
-        "control plane (2.9.0)"
+        {
+          "note": "2.9.0"
+        }
       ]
     },
     {
@@ -40,7 +42,14 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
       "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)"
+        {
+          "kri": "kri_dp_default_east__legacy-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "legacy-dp.kuma-demo",
+          "note": "kuma-dp 2.5.0"
+        }
       ]
     },
     {
@@ -52,8 +61,22 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 2,
       "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east] (kuma-dp 2.5.0)",
-        "default/current-dp.kuma-demo [zone:west] (kuma-dp 2.9.0)"
+        {
+          "kri": "kri_dp_default_east__legacy-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "legacy-dp.kuma-demo",
+          "note": "kuma-dp 2.5.0"
+        },
+        {
+          "kri": "kri_dp_default_west__current-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "west",
+          "name": "current-dp.kuma-demo",
+          "note": "kuma-dp 2.9.0"
+        }
       ]
     },
     {
@@ -65,7 +88,12 @@
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [
-        "audit-gateways (MeshGateway, MeshGlobalRateLimit)"
+        {
+          "kri": "kri_aa____audit-gateways_",
+          "type": "AccessAudit",
+          "name": "audit-gateways",
+          "note": "MeshGateway, MeshGlobalRateLimit"
+        }
       ]
     },
     {
@@ -77,7 +105,11 @@
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [
-        "backend-team"
+        {
+          "kri": "kri_ar____backend-team_",
+          "type": "AccessRole",
+          "name": "backend-team"
+        }
       ]
     },
     {
@@ -89,7 +121,11 @@
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [
-        "backend-team"
+        {
+          "kri": "kri_ar____backend-team_",
+          "type": "AccessRole",
+          "name": "backend-team"
+        }
       ]
     },
     {
@@ -101,7 +137,11 @@
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [
-        "legacy-policy-admin"
+        {
+          "kri": "kri_ar____legacy-policy-admin_",
+          "type": "AccessRole",
+          "name": "legacy-policy-admin"
+        }
       ]
     },
     {
@@ -113,7 +153,12 @@
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [
-        "legacy-policy-admin (MeshGateway, TrafficPermission, TrafficRoute)"
+        {
+          "kri": "kri_ar____legacy-policy-admin_",
+          "type": "AccessRole",
+          "name": "legacy-policy-admin",
+          "note": "MeshGateway, TrafficPermission, TrafficRoute"
+        }
       ]
     },
     {
@@ -125,7 +170,11 @@
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [
-        "backend-team"
+        {
+          "kri": "kri_ar____backend-team_",
+          "type": "AccessRole",
+          "name": "backend-team"
+        }
       ]
     },
     {
@@ -137,7 +186,11 @@
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [
-        "backend-team"
+        {
+          "kri": "kri_ar____backend-team_",
+          "type": "AccessRole",
+          "name": "backend-team"
+        }
       ]
     },
     {
@@ -149,7 +202,11 @@
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [
-        "backend-team"
+        {
+          "kri": "kri_ar____backend-team_",
+          "type": "AccessRole",
+          "name": "backend-team"
+        }
       ]
     },
     {
@@ -161,7 +218,9 @@
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "apiServer.authn.type=adminClientCerts"
+        {
+          "note": "apiServer.authn.type=adminClientCerts"
+        }
       ]
     },
     {
@@ -173,7 +232,9 @@
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "apiServer.auth.clientCertsDir=/etc/kuma/client-certs"
+        {
+          "note": "apiServer.auth.clientCertsDir=/etc/kuma/client-certs"
+        }
       ]
     },
     {
@@ -185,7 +246,10 @@
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "zone zone-1: experimental.deltaXds=false"
+        {
+          "zone": "zone-1",
+          "note": "experimental.deltaXds=false"
+        }
       ]
     },
     {
@@ -197,7 +261,9 @@
       "doc_url": "https://developer.konghq.com/mesh/universal/",
       "count": 1,
       "example_resources": [
-        "mode=global"
+        {
+          "note": "mode=global"
+        }
       ]
     },
     {
@@ -209,7 +275,10 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/",
       "count": 1,
       "example_resources": [
-        "zone zone-1: experimental.inboundTagsDisabled=false"
+        {
+          "zone": "zone-1",
+          "note": "experimental.inboundTagsDisabled=false"
+        }
       ]
     },
     {
@@ -221,7 +290,10 @@
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "zone zone-1: experimental.kdsEventBasedWatchdog.enabled=false"
+        {
+          "zone": "zone-1",
+          "note": "experimental.kdsEventBasedWatchdog.enabled=false"
+        }
       ]
     },
     {
@@ -233,7 +305,10 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshmetric/",
       "count": 1,
       "example_resources": [
-        "zone zone-1: monitoringAssignmentServer.enabled=true"
+        {
+          "zone": "zone-1",
+          "note": "monitoringAssignmentServer.enabled=true"
+        }
       ]
     },
     {
@@ -245,7 +320,10 @@
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "zone zone-1: experimental.sidecarContainers=false"
+        {
+          "zone": "zone-1",
+          "note": "experimental.sidecarContainers=false"
+        }
       ]
     },
     {
@@ -257,7 +335,10 @@
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "zone zone-1: bootstrapServer.params.readinessPort=0"
+        {
+          "zone": "zone-1",
+          "note": "bootstrapServer.params.readinessPort=0"
+        }
       ]
     },
     {
@@ -269,7 +350,10 @@
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "zone zone-1: runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        {
+          "zone": "zone-1",
+          "note": "runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+        }
       ]
     },
     {
@@ -281,7 +365,10 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshmetric/",
       "count": 1,
       "example_resources": [
-        "zone zone-1: experimental.exposeZoneProxyMetrics=true"
+        {
+          "zone": "zone-1",
+          "note": "experimental.exposeZoneProxyMetrics=true"
+        }
       ]
     },
     {
@@ -293,7 +380,10 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 1,
       "example_resources": [
-        "zone zone-1: experimental.autoReachableServices=true"
+        {
+          "zone": "zone-1",
+          "note": "experimental.autoReachableServices=true"
+        }
       ]
     },
     {
@@ -305,7 +395,10 @@
       "doc_url": "https://developer.konghq.com/mesh/transparent-proxying/",
       "count": 1,
       "example_resources": [
-        "zone zone-1: runtime.kubernetes.injector.ebpf.enabled=true"
+        {
+          "zone": "zone-1",
+          "note": "runtime.kubernetes.injector.ebpf.enabled=true"
+        }
       ]
     },
     {
@@ -317,7 +410,13 @@
       "doc_url": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
       "count": 1,
       "example_resources": [
-        "default (mtls)"
+        {
+          "kri": "kri_m_default___default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default",
+          "note": "mtls"
+        }
       ]
     },
     {
@@ -329,7 +428,12 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#exclusive",
       "count": 1,
       "example_resources": [
-        "default"
+        {
+          "kri": "kri_m_default___default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default"
+        }
       ]
     },
     {
@@ -341,7 +445,12 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshloadbalancingstrategy/",
       "count": 1,
       "example_resources": [
-        "default/mlbs-crosszone"
+        {
+          "kri": "kri_mlbs_default___mlbs-crosszone_",
+          "type": "MeshLoadBalancingStrategy",
+          "mesh": "default",
+          "name": "mlbs-crosszone"
+        }
       ]
     },
     {
@@ -353,7 +462,12 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshopa/",
       "count": 1,
       "example_resources": [
-        "default/opa-flat-datasource"
+        {
+          "kri": "kri_mopa_default___opa-flat-datasource_",
+          "type": "MeshOPA",
+          "mesh": "default",
+          "name": "opa-flat-datasource"
+        }
       ]
     },
     {
@@ -365,8 +479,20 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
       "count": 2,
       "example_resources": [
-        "default/mesh-gateways-timeout-all-default (system — CP-managed, update before 3.0)",
-        "default/mesh-timeout-all-default (system — CP-managed, update before 3.0)"
+        {
+          "kri": "kri_mt_default___mesh-gateways-timeout-all-default_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "name": "mesh-gateways-timeout-all-default",
+          "system": true
+        },
+        {
+          "kri": "kri_mt_default___mesh-timeout-all-default_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "name": "mesh-timeout-all-default",
+          "system": true
+        }
       ]
     },
     {
@@ -378,8 +504,19 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
       "count": 2,
       "example_resources": [
-        "default/mtp-user",
-        "default/mtp-system (system — CP-managed, update before 3.0)"
+        {
+          "kri": "kri_mtp_default___mtp-user_",
+          "type": "MeshTrafficPermission",
+          "mesh": "default",
+          "name": "mtp-user"
+        },
+        {
+          "kri": "kri_mtp_default___mtp-system_",
+          "type": "MeshTrafficPermission",
+          "mesh": "default",
+          "name": "mtp-system",
+          "system": true
+        }
       ]
     },
     {
@@ -391,7 +528,14 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
       "example_resources": [
-        "default/mt-producer [zone:east]"
+        {
+          "kri": "kri_mt_default_east_backend-ns_mt-producer_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "zone": "east",
+          "namespace": "backend-ns",
+          "name": "mt-producer"
+        }
       ]
     },
     {
@@ -403,8 +547,18 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 2,
       "example_resources": [
-        "default/anchor-only",
-        "default/catch-all"
+        {
+          "kri": "kri_mhttpr_default___anchor-only_",
+          "type": "MeshHTTPRoute",
+          "mesh": "default",
+          "name": "anchor-only"
+        },
+        {
+          "kri": "kri_mhttpr_default___catch-all_",
+          "type": "MeshHTTPRoute",
+          "mesh": "default",
+          "name": "catch-all"
+        }
       ]
     },
     {
@@ -416,7 +570,12 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
       "example_resources": [
-        "default/mlbs-crosszone"
+        {
+          "kri": "kri_mlbs_default___mlbs-crosszone_",
+          "type": "MeshLoadBalancingStrategy",
+          "mesh": "default",
+          "name": "mlbs-crosszone"
+        }
       ]
     },
     {
@@ -428,7 +587,12 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
       "example_resources": [
-        "default/opa-meshservice"
+        {
+          "kri": "kri_mopa_default___opa-meshservice_",
+          "type": "MeshOPA",
+          "mesh": "default",
+          "name": "opa-meshservice"
+        }
       ]
     },
     {
@@ -440,8 +604,20 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 2,
       "example_resources": [
-        "default/mt-producer [zone:east]",
-        "default/mt-to-route"
+        {
+          "kri": "kri_mt_default_east_backend-ns_mt-producer_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "zone": "east",
+          "namespace": "backend-ns",
+          "name": "mt-producer"
+        },
+        {
+          "kri": "kri_mt_default___mt-to-route_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "name": "mt-to-route"
+        }
       ]
     },
     {
@@ -453,7 +629,11 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
       "example_resources": [
-        "default/global-rl"
+        {
+          "type": "MeshGlobalRateLimit",
+          "mesh": "default",
+          "name": "global-rl"
+        }
       ]
     },
     {
@@ -465,7 +645,11 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshopa/",
       "count": 1,
       "example_resources": [
-        "default/legacy-opa"
+        {
+          "type": "OPAPolicy",
+          "mesh": "default",
+          "name": "legacy-opa"
+        }
       ]
     },
     {
@@ -477,7 +661,11 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshtrafficpermission/",
       "count": 1,
       "example_resources": [
-        "default/allow-all"
+        {
+          "type": "TrafficPermission",
+          "mesh": "default",
+          "name": "allow-all"
+        }
       ]
     },
     {
@@ -489,7 +677,12 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
       "example_resources": [
-        "default/opa-meshservice"
+        {
+          "kri": "kri_mopa_default___opa-meshservice_",
+          "type": "MeshOPA",
+          "mesh": "default",
+          "name": "opa-meshservice"
+        }
       ]
     },
     {
@@ -501,7 +694,12 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
       "example_resources": [
-        "default/mt-to-subset"
+        {
+          "kri": "kri_mt_default___mt-to-subset_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "name": "mt-to-subset"
+        }
       ]
     },
     {
@@ -513,7 +711,12 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
       "example_resources": [
-        "default/mr-gateways"
+        {
+          "kri": "kri_mr_default___mr-gateways_",
+          "type": "MeshRetry",
+          "mesh": "default",
+          "name": "mr-gateways"
+        }
       ]
     },
     {
@@ -525,7 +728,13 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
       "example_resources": [
-        "default/mesh-gateways-timeout-all-default (system — CP-managed, update before 3.0)"
+        {
+          "kri": "kri_mt_default___mesh-gateways-timeout-all-default_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "name": "mesh-gateways-timeout-all-default",
+          "system": true
+        }
       ]
     },
     {
@@ -537,7 +746,13 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
       "example_resources": [
-        "default/mesh-timeout-all-default (system — CP-managed, update before 3.0)"
+        {
+          "kri": "kri_mt_default___mesh-timeout-all-default_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "name": "mesh-timeout-all-default",
+          "system": true
+        }
       ]
     },
     {
@@ -549,7 +764,12 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
       "example_resources": [
-        "default/mt-all-proxy-types"
+        {
+          "kri": "kri_mt_default___mt-all-proxy-types_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "name": "mt-all-proxy-types"
+        }
       ]
     },
     {
@@ -561,8 +781,21 @@
       "doc_url": "https://developer.konghq.com/mesh/dns/",
       "count": 2,
       "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east] (coredns 1.11.1)",
-        "default/current-dp.kuma-demo [zone:west]"
+        {
+          "kri": "kri_dp_default_east__legacy-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "legacy-dp.kuma-demo",
+          "note": "coredns 1.11.1"
+        },
+        {
+          "kri": "kri_dp_default_west__current-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "west",
+          "name": "current-dp.kuma-demo"
+        }
       ]
     },
     {
@@ -574,8 +807,20 @@
       "doc_url": "https://developer.konghq.com/mesh/deploy-an-opentelemetry-collector/",
       "count": 2,
       "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east]",
-        "default/current-dp.kuma-demo [zone:west]"
+        {
+          "kri": "kri_dp_default_east__legacy-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "legacy-dp.kuma-demo"
+        },
+        {
+          "kri": "kri_dp_default_west__current-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "west",
+          "name": "current-dp.kuma-demo"
+        }
       ]
     },
     {
@@ -587,7 +832,13 @@
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 1,
       "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east]"
+        {
+          "kri": "kri_dp_default_east__legacy-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "legacy-dp.kuma-demo"
+        }
       ]
     },
     {
@@ -599,8 +850,20 @@
       "doc_url": "https://developer.konghq.com/mesh/data-plane-proxy/",
       "count": 2,
       "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east]",
-        "default/current-dp.kuma-demo [zone:west]"
+        {
+          "kri": "kri_dp_default_east__legacy-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "legacy-dp.kuma-demo"
+        },
+        {
+          "kri": "kri_dp_default_west__current-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "west",
+          "name": "current-dp.kuma-demo"
+        }
       ]
     },
     {
@@ -612,8 +875,20 @@
       "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
       "count": 2,
       "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east]",
-        "default/current-dp.kuma-demo [zone:west]"
+        {
+          "kri": "kri_dp_default_east__legacy-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "legacy-dp.kuma-demo"
+        },
+        {
+          "kri": "kri_dp_default_west__current-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "west",
+          "name": "current-dp.kuma-demo"
+        }
       ]
     },
     {
@@ -625,7 +900,13 @@
       "doc_url": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
       "count": 1,
       "example_resources": [
-        "default/dp-legacy-universal [zone:east]"
+        {
+          "kri": "kri_dp_default_east__dp-legacy-universal_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-legacy-universal"
+        }
       ]
     },
     {
@@ -637,7 +918,13 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshmetric/",
       "count": 1,
       "example_resources": [
-        "default/dp-1 [zone:east]"
+        {
+          "kri": "kri_dp_default_east__dp-1_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-1"
+        }
       ]
     },
     {
@@ -649,7 +936,13 @@
       "doc_url": "https://developer.konghq.com/mesh/transparent-proxying/",
       "count": 1,
       "example_resources": [
-        "default/dp-legacy-universal [zone:east]"
+        {
+          "kri": "kri_dp_default_east__dp-legacy-universal_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-legacy-universal"
+        }
       ]
     },
     {
@@ -661,7 +954,13 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/",
       "count": 1,
       "example_resources": [
-        "default/dp-legacy-universal [zone:east]"
+        {
+          "kri": "kri_dp_default_east__dp-legacy-universal_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-legacy-universal"
+        }
       ]
     },
     {
@@ -673,7 +972,13 @@
       "doc_url": "https://developer.konghq.com/mesh/data-plane-proxy/",
       "count": 1,
       "example_resources": [
-        "default/dp-legacy-universal [zone:east]"
+        {
+          "kri": "kri_dp_default_east__dp-legacy-universal_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-legacy-universal"
+        }
       ]
     },
     {
@@ -685,7 +990,13 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/",
       "count": 1,
       "example_resources": [
-        "default/dp-legacy-universal [zone:east]"
+        {
+          "kri": "kri_dp_default_east__dp-legacy-universal_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-legacy-universal"
+        }
       ]
     },
     {
@@ -697,7 +1008,13 @@
       "doc_url": "https://developer.konghq.com/mesh/data-plane-proxy/",
       "count": 1,
       "example_resources": [
-        "default/dp-1 [zone:east]"
+        {
+          "kri": "kri_dp_default_east__dp-1_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-1"
+        }
       ]
     },
     {
@@ -709,8 +1026,20 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 2,
       "example_resources": [
-        "default/dp-legacy-universal [zone:east]",
-        "default/dp-gateway [zone:west]"
+        {
+          "kri": "kri_dp_default_east__dp-legacy-universal_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-legacy-universal"
+        },
+        {
+          "kri": "kri_dp_default_west__dp-gateway_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "west",
+          "name": "dp-gateway"
+        }
       ]
     },
     {
@@ -722,7 +1051,13 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 1,
       "example_resources": [
-        "default/frontend.kuma-demo [zone:east]"
+        {
+          "kri": "kri_dp_default_east__frontend.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "frontend.kuma-demo"
+        }
       ]
     },
     {
@@ -734,11 +1069,41 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshpassthrough/",
       "count": 5,
       "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east]",
-        "default/current-dp.kuma-demo [zone:west]",
-        "default/frontend.kuma-demo [zone:east]",
-        "default/dp-tproxy-universal [zone:east]",
-        "default/dp-reachable-universal [zone:east]"
+        {
+          "kri": "kri_dp_default_east__legacy-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "legacy-dp.kuma-demo"
+        },
+        {
+          "kri": "kri_dp_default_west__current-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "west",
+          "name": "current-dp.kuma-demo"
+        },
+        {
+          "kri": "kri_dp_default_east__frontend.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "frontend.kuma-demo"
+        },
+        {
+          "kri": "kri_dp_default_east__dp-tproxy-universal_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-tproxy-universal"
+        },
+        {
+          "kri": "kri_dp_default_east__dp-reachable-universal_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-reachable-universal"
+        }
       ]
     },
     {
@@ -750,9 +1115,27 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 3,
       "example_resources": [
-        "default/legacy-dp.kuma-demo [zone:east]",
-        "default/current-dp.kuma-demo [zone:west]",
-        "default/dp-tproxy-universal [zone:east]"
+        {
+          "kri": "kri_dp_default_east__legacy-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "legacy-dp.kuma-demo"
+        },
+        {
+          "kri": "kri_dp_default_west__current-dp.kuma-demo_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "west",
+          "name": "current-dp.kuma-demo"
+        },
+        {
+          "kri": "kri_dp_default_east__dp-tproxy-universal_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-tproxy-universal"
+        }
       ]
     },
     {
@@ -764,7 +1147,13 @@
       "doc_url": "https://developer.konghq.com/mesh/annotations/",
       "count": 1,
       "example_resources": [
-        "default/dp-1 [zone:east]"
+        {
+          "kri": "kri_dp_default_east__dp-1_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-1"
+        }
       ]
     },
     {
@@ -776,7 +1165,13 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 1,
       "example_resources": [
-        "default/dp-1 [zone:east]"
+        {
+          "kri": "kri_dp_default_east__dp-1_",
+          "type": "Dataplane",
+          "mesh": "default",
+          "zone": "east",
+          "name": "dp-1"
+        }
       ]
     },
     {
@@ -788,7 +1183,12 @@
       "doc_url": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
       "count": 1,
       "example_resources": [
-        "default"
+        {
+          "kri": "kri_m_default___default_",
+          "type": "Mesh",
+          "mesh": "default",
+          "name": "default"
+        }
       ]
     },
     {
@@ -800,7 +1200,12 @@
       "doc_url": "https://developer.konghq.com/mesh/hostnamegenerator/",
       "count": 1,
       "example_resources": [
-        "default/My_Service"
+        {
+          "kri": "kri_msvc_default___My_Service_",
+          "type": "MeshService",
+          "mesh": "default",
+          "name": "My_Service"
+        }
       ]
     },
     {
@@ -812,7 +1217,11 @@
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
       "example_resources": [
-        "eu.west"
+        {
+          "kri": "kri_z____eu.west_",
+          "type": "Zone",
+          "name": "eu.west"
+        }
       ]
     },
     {
@@ -824,7 +1233,14 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
       "example_resources": [
-        "default/mt-reserved-labels [zone:east] (kuma.io/service)"
+        {
+          "kri": "kri_mt_default_east__mt-reserved-labels_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "zone": "east",
+          "name": "mt-reserved-labels",
+          "note": "kuma.io/service"
+        }
       ]
     },
     {
@@ -836,7 +1252,14 @@
       "doc_url": "https://developer.konghq.com/mesh/policies-introduction/",
       "count": 1,
       "example_resources": [
-        "default/mt-reserved-labels [zone:east] (kuma.io/service)"
+        {
+          "kri": "kri_mt_default_east__mt-reserved-labels_",
+          "type": "MeshTimeout",
+          "mesh": "default",
+          "zone": "east",
+          "name": "mt-reserved-labels",
+          "note": "kuma.io/service"
+        }
       ]
     },
     {
@@ -848,7 +1271,10 @@
       "doc_url": "https://developer.konghq.com/mesh/zone-proxies/",
       "count": 1,
       "example_resources": [
-        "mesh default, zone east"
+        {
+          "mesh": "default",
+          "zone": "east"
+        }
       ]
     },
     {
@@ -860,7 +1286,11 @@
       "doc_url": "https://developer.konghq.com/mesh/zone-proxies/",
       "count": 1,
       "example_resources": [
-        "zi-1"
+        {
+          "type": "ZoneIngress",
+          "zone": "east",
+          "name": "zi-1"
+        }
       ]
     },
     {
@@ -872,7 +1302,11 @@
       "doc_url": "https://developer.konghq.com/mesh/rbac/",
       "count": 1,
       "example_resources": [
-        "backend-team"
+        {
+          "kri": "kri_ar____backend-team_",
+          "type": "AccessRole",
+          "name": "backend-team"
+        }
       ]
     },
     {
@@ -884,7 +1318,10 @@
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 1,
       "example_resources": [
-        "zone zone-1: defaults.restrictOutbound=unset"
+        {
+          "zone": "zone-1",
+          "note": "defaults.restrictOutbound=unset"
+        }
       ]
     },
     {
@@ -896,7 +1333,12 @@
       "doc_url": "https://developer.konghq.com/mesh/policies/meshhttproute/",
       "count": 1,
       "example_resources": [
-        "default/anchor-only"
+        {
+          "kri": "kri_mhttpr_default___anchor-only_",
+          "type": "MeshHTTPRoute",
+          "mesh": "default",
+          "name": "anchor-only"
+        }
       ]
     }
   ],

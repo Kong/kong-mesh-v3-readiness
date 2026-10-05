@@ -2,7 +2,6 @@ package preflight
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -59,8 +58,8 @@ func TestAddCPConfigFindings(t *testing.T) {
 		}
 		for _, f := range a.rep.findings {
 			for _, ex := range f.examples {
-				if strings.HasPrefix(ex, "zone ") {
-					t.Errorf("unqualified run leaked a zone-prefixed example: %q", ex)
+				if ex.Zone != "" {
+					t.Errorf("unqualified run leaked a zone-scoped example: %+v", ex)
 				}
 			}
 		}
@@ -71,8 +70,8 @@ func TestAddCPConfigFindings(t *testing.T) {
 		a.addCPConfigFindings(badK8sConfig(), "zone-1")
 		for _, f := range a.rep.findings {
 			for _, ex := range f.examples {
-				if !strings.HasPrefix(ex, "zone zone-1: ") {
-					t.Errorf("finding %q example not zone-qualified: %q", f.title, ex)
+				if ex.Zone != "zone-1" {
+					t.Errorf("finding %q example not zone-qualified: %+v", f.title, ex)
 				}
 			}
 		}

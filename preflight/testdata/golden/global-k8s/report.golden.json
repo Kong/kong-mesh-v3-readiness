@@ -1,5 +1,5 @@
 {
-  "tool_schema": "kuma3-preflight/v5",
+  "tool_schema": "kuma3-preflight/v6",
   "tool": "kuma3-preflight",
   "status": "blockers",
   "control_plane": {
@@ -28,7 +28,9 @@
       "doc_url": "https://developer.konghq.com/mesh/universal/",
       "count": 1,
       "example_resources": [
-        "mode=global"
+        {
+          "note": "mode=global"
+        }
       ]
     },
     {
@@ -39,7 +41,9 @@
       "detail": "This global CP reports no zones, so no per-zone control-plane settings were audited; re-run once zones connect.",
       "count": 1,
       "example_resources": [
-        "zones=0"
+        {
+          "note": "zones=0"
+        }
       ]
     }
   ],

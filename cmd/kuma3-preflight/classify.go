@@ -292,16 +292,16 @@ func (ci *classIndex) ingestReports(dir string) error {
 			kind, removable, category, replacement := dynamicUsage(f)
 			examples := f.Examples
 			if len(examples) == 0 {
-				examples = []string{""}
+				examples = []preflight.ExampleResource{{}}
 			}
 			for _, ex := range examples {
 				feat := featureForExample(ex, known)
-				key := feat + "|" + kind + "|" + ex
+				key := feat + "|" + kind + "|" + ex.Display()
 				if seen[key] {
 					continue
 				}
 				seen[key] = true
-				ci.addUsage(feat, kind, category, replacement, removable, "dynamic", ex)
+				ci.addUsage(feat, kind, category, replacement, removable, "dynamic", ex.Display())
 			}
 		}
 	}
@@ -374,20 +374,15 @@ func replacementFor(kind string) string {
 	return ""
 }
 
-// featureForExample maps a finding's example reference to a feature. Examples are
-// mesh-qualified ("mesh/name") or field-tagged ("mesh (field)"); the leading token is
-// the mesh, whose name is a test's feature. The mesh is mapped onto a known static
-// feature when one is a normalized substring match (so "external-service-base" folds
-// into "externalservices"); otherwise the mesh name itself is the feature.
-func featureForExample(ex string, known []string) string {
-	s := ex
-	if i := strings.Index(s, " ("); i >= 0 {
-		s = s[:i] // drop " (field)" / " (system…)" annotations
+// featureForExample maps a finding's example to a feature. The example's mesh
+// is named after a test's feature; the mesh is mapped onto a known static
+// feature when one is a normalized substring match (so "external-service-base"
+// folds into "externalservices"); otherwise the mesh name itself is the feature.
+func featureForExample(ex preflight.ExampleResource, known []string) string {
+	s := ex.Mesh
+	if s == "" {
+		s = ex.Name
 	}
-	if i := strings.IndexByte(s, '/'); i >= 0 {
-		s = s[:i] // mesh from "mesh/name"
-	}
-	s = strings.TrimSpace(s)
 	if s == "" {
 		return "(unknown)"
 	}

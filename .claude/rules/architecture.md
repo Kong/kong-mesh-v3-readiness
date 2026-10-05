@@ -43,9 +43,16 @@
 
 - Internal finding type: `rawFinding` struct (`preflight/report.go`) — `{ severity, category,
   title, detail, count, examples[] }`, accumulated on the internal `collector` type (also
-  `report.go`). `add()`/`addDoc()` merge duplicates, appends example refs up to
+  `report.go`). `add()`/`addDoc()` merge duplicates, appends examples up to
   `preflight.ExampleCap` (10). Rendered as one bullet per `(severity, category, title)` with
-  merged count + capped example list.
+  merged count + capped example list. Every example is a structured
+  `preflight.ExampleResource` (`preflight/model.go`): a flagged resource carries its KRI
+  (`kri_<short>_<mesh>_<zone>_<namespace>_<name>_`, built by `preflight/kri.go` from Kuma
+  3.0's short names) plus `type`/`mesh`/`zone`/`namespace`/`name` and a `system` flag for
+  CP-managed resources; non-resource examples (CP config flags, zone versions, coverage
+  ratios) carry the free text in `note` with the scope fields carrying what the audit knows.
+  The HTML mesh/zone filters and the classify mode read those fields — never re-parse a
+  display string.
 - `preflight.Finding` (`preflight/model.go`) is the serialized form; JSON top-level contract
   is `preflight.Report` (`preflight/model.go`): `tool_schema`, `tool`, `status`, `control_plane`,
   `summary`, `findings[]`, `coverage_gaps[]`, `manual_checks[]`. **Every emitted JSON key is

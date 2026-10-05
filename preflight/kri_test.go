@@ -18,20 +18,26 @@ func TestKriOf(t *testing.T) {
 		},
 		{
 			name: "zone-synced resource carries kuma.io/zone",
-			item: resourceItem{Type: "MeshService", Mesh: "default", Name: "backend-x4f9",
-				Labels: map[string]string{"kuma.io/zone": "east", "kuma.io/display-name": "backend"}},
+			item: resourceItem{
+				Type: "MeshService", Mesh: "default", Name: "backend-x4f9",
+				Labels: map[string]string{"kuma.io/zone": "east", "kuma.io/display-name": "backend"},
+			},
 			want: "kri_msvc_default_east__backend_",
 		},
 		{
 			name: "kubernetes resource carries k8s.kuma.io/namespace",
-			item: resourceItem{Type: "Dataplane", Mesh: "default", Name: "backend-app",
-				Labels: map[string]string{"kuma.io/zone": "east", "k8s.kuma.io/namespace": "kuma-demo"}},
+			item: resourceItem{
+				Type: "Dataplane", Mesh: "default", Name: "backend-app",
+				Labels: map[string]string{"kuma.io/zone": "east", "k8s.kuma.io/namespace": "kuma-demo"},
+			},
 			want: "kri_dp_default_east_kuma-demo_backend-app_",
 		},
 		{
 			name: "overview resolves to its base resource",
-			item: resourceItem{Type: "DataplaneOverview", Mesh: "default", Name: "backend-app-x1",
-				Labels: map[string]string{"kuma.io/display-name": "backend-app"}},
+			item: resourceItem{
+				Type: "DataplaneOverview", Mesh: "default", Name: "backend-app-x1",
+				Labels: map[string]string{"kuma.io/display-name": "backend-app"},
+			},
 			want: "kri_dp_default___backend-app_",
 		},
 		{

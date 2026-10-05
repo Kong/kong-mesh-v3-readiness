@@ -210,7 +210,7 @@ func TestZoneNameFromZonesCollection(t *testing.T) {
 	if f.Count != 1 {
 		t.Errorf("count = %d, want 1 (only eu.west is invalid)", f.Count)
 	}
-	if len(f.Examples) != 1 || f.Examples[0] != "eu.west" {
+	if len(f.Examples) != 1 || f.Examples[0].Display() != "eu.west" {
 		t.Errorf("examples = %v, want [eu.west]", f.Examples)
 	}
 }
@@ -226,7 +226,7 @@ func TestZoneNameFromZoneControlPlaneConfig(t *testing.T) {
 	if !ok {
 		t.Fatalf("zone CP with a dotted configured name not flagged\nfindings: %+v", m.Findings)
 	}
-	if len(f.Examples) != 1 || !strings.Contains(f.Examples[0], "eu.west") {
+	if len(f.Examples) != 1 || !strings.Contains(f.Examples[0].Display(), "eu.west") {
 		t.Errorf("examples = %v, want one naming eu.west", f.Examples)
 	}
 }
@@ -285,7 +285,7 @@ func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
 		maps.Copy(r, extra)
 		return r
 	}
-	examples := func(m Report) []string {
+	examples := func(m Report) []ExampleResource {
 		f, ok := findFinding(m, "blocker", "Zone proxies", title)
 		if !ok {
 			return nil
@@ -294,7 +294,7 @@ func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
 	}
 
 	t.Run("every zone-spanning mesh is required to cover the zone", func(t *testing.T) {
-		got := examples(auditResponses(t, globalResponses(nil)))
+		got := displayExamples(examples(auditResponses(t, globalResponses(nil))))
 		want := []string{"mesh default, zone east", "mesh payments, zone east"}
 		if !slices.Equal(got, want) {
 			t.Errorf("examples = %v, want %v", got, want)
@@ -302,12 +302,12 @@ func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
 	})
 
 	t.Run("coverage in one mesh does not satisfy another", func(t *testing.T) {
-		got := examples(auditResponses(t, globalResponses(map[string]string{
+		got := displayExamples(examples(auditResponses(t, globalResponses(map[string]string{
 			"/meshzoneaddresses": listBody(t, map[string]any{
 				"type": "MeshZoneAddress", "mesh": "default", "name": "east-ingress",
 				"labels": map[string]any{"kuma.io/zone": "east"},
 			}),
-		})))
+		}))))
 		want := []string{"mesh payments, zone east"}
 		if !slices.Equal(got, want) {
 			t.Errorf("examples = %v, want %v — a MeshZoneAddress in one mesh covered another", got, want)
@@ -315,7 +315,7 @@ func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
 	})
 
 	t.Run("fully covered estate is not flagged", func(t *testing.T) {
-		got := examples(auditResponses(t, globalResponses(map[string]string{
+		got := displayExamples(examples(auditResponses(t, globalResponses(map[string]string{
 			"/meshzoneaddresses": listBody(t,
 				map[string]any{
 					"type": "MeshZoneAddress", "mesh": "default", "name": "east-ingress",
@@ -326,14 +326,14 @@ func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
 					"labels": map[string]any{"kuma.io/zone": "east"},
 				},
 			),
-		})))
+		}))))
 		if got != nil {
 			t.Errorf("covered estate flagged: %v", got)
 		}
 	})
 
 	t.Run("zone-local mesh is not required to cover the zone", func(t *testing.T) {
-		got := examples(auditResponses(t, globalResponses(map[string]string{
+		got := displayExamples(examples(auditResponses(t, globalResponses(map[string]string{
 			"/dataplanes": listBody(t,
 				universalDP("default", "dp-e", "east"), universalDP("default", "dp-w", "west"),
 				universalDP("payments", "pay-e", "east"),
@@ -342,19 +342,19 @@ func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
 				"type": "MeshZoneAddress", "mesh": "default", "name": "east-ingress",
 				"labels": map[string]any{"kuma.io/zone": "east"},
 			}),
-		})))
+		}))))
 		if got != nil {
 			t.Errorf("mesh confined to one zone wrongly flagged: %v", got)
 		}
 	})
 
 	t.Run("kubernetes zone proxy is not flagged", func(t *testing.T) {
-		got := examples(auditResponses(t, globalResponses(map[string]string{
+		got := displayExamples(examples(auditResponses(t, globalResponses(map[string]string{
 			"/zoneingresses": listBody(t, map[string]any{
 				"type": "ZoneIngress", "name": "zi-east", "zone": "east",
 				"labels": map[string]any{"kuma.io/env": "kubernetes"},
 			}),
-		})))
+		}))))
 		if got != nil {
 			t.Errorf("kubernetes zone flagged, but the 3.0 CP creates the resource itself: %v", got)
 		}
@@ -363,12 +363,12 @@ func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
 	// Shape captured from a 2.14.5 global: a Universal ZoneIngress carries no
 	// kuma.io/env label, unlike a Kubernetes one.
 	t.Run("universal zone proxy without env label is flagged", func(t *testing.T) {
-		got := examples(auditResponses(t, globalResponses(map[string]string{
+		got := displayExamples(examples(auditResponses(t, globalResponses(map[string]string{
 			"/zoneingresses": listBody(t, map[string]any{
 				"type": "ZoneIngress", "name": "zi-east", "zone": "east",
 				"labels": map[string]any{"kuma.io/display-name": "zi-east", "kuma.io/origin": "zone", "kuma.io/zone": "east"},
 			}),
-		})))
+		}))))
 		want := []string{"mesh default, zone east", "mesh payments, zone east"}
 		if !slices.Equal(got, want) {
 			t.Errorf("examples = %v, want %v", got, want)
@@ -376,9 +376,9 @@ func TestMeshZoneAddressPerMeshAndZone(t *testing.T) {
 	})
 
 	t.Run("single-zone estate is not checked", func(t *testing.T) {
-		got := examples(auditResponses(t, globalResponses(map[string]string{
+		got := displayExamples(examples(auditResponses(t, globalResponses(map[string]string{
 			"/zones+insights": listBody(t, map[string]any{"type": "ZoneOverview", "name": "east"}),
-		})))
+		}))))
 		if got != nil {
 			t.Errorf("single-zone estate wrongly flagged: %v", got)
 		}

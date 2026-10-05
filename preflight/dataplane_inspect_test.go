@@ -33,7 +33,7 @@ func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 	if f.Count != 2 {
 		t.Errorf("count = %d, want 2 (old-dp and omitted-dp)", f.Count)
 	}
-	got := strings.Join(f.Examples, " ")
+	got := strings.Join(displayExamples(f.Examples), " ")
 	for _, want := range []string{"old-dp", "omitted-dp (kuma-dp 2.11.19)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("examples %v missing %q", f.Examples, want)
@@ -64,7 +64,7 @@ func TestDataplaneCoreDNSDependencyReported(t *testing.T) {
 	if f.Count != 1 {
 		t.Errorf("count = %d, want 1 (only the proxy reporting coredns)", f.Count)
 	}
-	if len(f.Examples) == 0 || !strings.Contains(f.Examples[0], "dns-dp") {
+	if len(f.Examples) == 0 || !strings.Contains(f.Examples[0].Display(), "dns-dp") {
 		t.Errorf("example should name dns-dp, got %+v", f.Examples)
 	}
 }
@@ -97,7 +97,7 @@ func TestDataplaneEmbeddedDNSFeatureMissingReported(t *testing.T) {
 	if f.Count != 2 {
 		t.Errorf("count = %d, want 2 (coredns-dp and both-dp, once each), examples %+v", f.Count, f.Examples)
 	}
-	joined := strings.Join(f.Examples, "\n")
+	joined := strings.Join(displayExamples(f.Examples), "\n")
 	for _, want := range []string{"coredns-dp", "both-dp", "(coredns 1.11.1)"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("examples should contain %q, got %+v", want, f.Examples)

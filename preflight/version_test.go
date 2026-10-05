@@ -64,7 +64,7 @@ func versionFinding(r *collector) (rawFinding, bool) {
 }
 
 func hasExample(f rawFinding, want string) bool {
-	return slices.Contains(f.examples, want)
+	return slices.ContainsFunc(f.examples, func(e ExampleResource) bool { return e.Display() == want })
 }
 
 func TestCheckControlPlaneVersionsConnected(t *testing.T) {
@@ -81,7 +81,7 @@ func TestCheckControlPlaneVersionsConnected(t *testing.T) {
 		if f.severity != blocker {
 			t.Errorf("severity = %v, want blocker", f.severity)
 		}
-		if !hasExample(f, "control plane (2.9.0)") {
+		if !hasExample(f, "2.9.0") {
 			t.Errorf("examples = %v, want to include the connected CP", f.examples)
 		}
 	})
@@ -118,10 +118,10 @@ func TestCheckControlPlaneVersionsGlobalFanout(t *testing.T) {
 	if !ok {
 		t.Fatalf("no %q finding; findings=%v", cpVersionCategory, rep.findings)
 	}
-	if !hasExample(f, "zone zone-b (2.13.5)") {
+	if !hasExample(f, "zone zone-b: 2.13.5") {
 		t.Errorf("examples = %v, want the behind zone-b", f.examples)
 	}
-	if hasExample(f, "zone zone-a (2.14.0)") {
+	if hasExample(f, "zone zone-a: 2.14.0") {
 		t.Errorf("examples = %v, must not flag the current zone-a", f.examples)
 	}
 	if hasExample(f, "control plane (2.14.0)") {
@@ -153,7 +153,7 @@ func TestGlobalVersionFanoutWhenModeUnknown(t *testing.T) {
 	if !ok {
 		t.Fatalf("stale zone silently skipped on a mode-unknown global; findings=%v", rep.findings)
 	}
-	if !hasExample(f, "zone zone-old (2.11.2)") {
+	if !hasExample(f, "zone zone-old: 2.11.2") {
 		t.Errorf("examples = %v, want the stale zone-old", f.examples)
 	}
 }
@@ -270,10 +270,10 @@ func TestSkipAuditedControlPlaneVersion(t *testing.T) {
 		if !found {
 			t.Fatalf("zone blocker missing; findings=%v", rep.findings)
 		}
-		if !hasExample(blockerFinding, "zone zone-b (2.13.5)") {
+		if !hasExample(blockerFinding, "zone zone-b: 2.13.5") {
 			t.Errorf("examples = %v, want zone-b", blockerFinding.examples)
 		}
-		if hasExample(blockerFinding, "control plane (2.9.0)") {
+		if hasExample(blockerFinding, "2.9.0") {
 			t.Errorf("examples = %v, must not include the excluded audited CP", blockerFinding.examples)
 		}
 	})
@@ -301,7 +301,7 @@ func TestSkipAuditedControlPlaneVersion(t *testing.T) {
 		if !ok || f.severity != blocker {
 			t.Fatalf("default behavior must still flag the audited CP; findings=%v", rep.findings)
 		}
-		if !hasExample(f, "control plane (2.9.0)") {
+		if !hasExample(f, "2.9.0") {
 			t.Errorf("examples = %v, want the audited CP", f.examples)
 		}
 	})
@@ -309,7 +309,7 @@ func TestSkipAuditedControlPlaneVersion(t *testing.T) {
 
 func TestFlagIfBehindUnparseableIsGap(t *testing.T) {
 	a := &auditor{rep: &collector{}}
-	a.flagIfBehind("unknown", "control plane", 14, 0, "detail")
+	a.flagIfBehind("unknown", "", 14, 0, "detail")
 	if len(a.rep.findings) != 0 {
 		t.Errorf("unparseable version produced a finding, want a gap only")
 	}

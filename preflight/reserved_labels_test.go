@@ -48,7 +48,7 @@ func TestReservedLabelsOnWrite(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditResponses(t, map[string]string{tc.path: policyBody(t, tc.typ, map[string]any{}, tc.labels)})
 			f, ok := findFinding(m, "blocker", "Reserved labels", tc.title)
-			if ok != (tc.want != nil) || (ok && !slices.Equal(f.Examples, tc.want)) {
+			if ok != (tc.want != nil) || (ok && !slices.Equal(displayExamples(f.Examples), tc.want)) {
 				t.Errorf("finding = %+v (found %v), want examples %v\nfindings: %+v", f, ok, tc.want, m.Findings)
 			}
 		})

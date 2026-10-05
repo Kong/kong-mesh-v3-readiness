@@ -1,5 +1,5 @@
 {
-  "tool_schema": "kuma3-preflight/v5",
+  "tool_schema": "kuma3-preflight/v6",
   "tool": "kuma3-preflight",
   "status": "inconclusive",
   "control_plane": {
@@ -27,7 +27,12 @@
       "detail": "Could not parse this resource; audit it manually before upgrading.",
       "count": 1,
       "example_resources": [
-        "default/bad-log"
+        {
+          "kri": "kri_mal_default___bad-log_",
+          "type": "MeshAccessLog",
+          "mesh": "default",
+          "name": "bad-log"
+        }
       ]
     }
   ],

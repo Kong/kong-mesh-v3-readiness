@@ -15,15 +15,15 @@ func sampleReport() *collector {
 		systemFindings: 2,
 		manual:         []ManualCheck{{Title: "Enable unified naming"}, {Title: "Disable inbound tags"}},
 	}
-	r.addDoc(blocker, "Mesh object settings", "Inline mTLS on Mesh", "Migrate mtls.", docMeshIdentity, "legacy (mtls)")
+	r.addDoc(blocker, "Mesh object settings", "Inline mTLS on Mesh", "Migrate mtls.", docMeshIdentity, qualifiedNote(resourceItem{Type: "Mesh", Mesh: "legacy", Name: "legacy"}, "mtls"))
 	// 12 occurrences > ExampleCap(10): exercises the "+N more" truncation.
 	for range 12 {
-		r.add(blocker, "Policy `from` field", "MeshTimeout uses `from`", "Rewrite from.", "default/t")
+		r.add(blocker, "Policy `from` field", "MeshTimeout uses `from`", "Rewrite from.", qualified(resourceItem{Type: "MeshTimeout", Mesh: "default", Name: "t"}))
 	}
-	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")
-	r.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label", "Add label.", "default/dp-1")
-	r.add(blocker, "Zone proxies", "zoneingresses present", "Migrate to the unified Zone Proxy.", "zi-1")
-	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", "1/2")
+	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", qualified(resourceItem{Type: "Mesh", Mesh: "default", Name: "default"}))
+	r.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label", "Add label.", qualified(resourceItem{Type: "Dataplane", Mesh: "default", Name: "dp-1"}))
+	r.add(blocker, "Zone proxies", "zoneingresses present", "Migrate to the unified Zone Proxy.", qualified(resourceItem{Type: "ZoneIngress", Name: "zi-1"}))
+	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", exampleNote("1/2"))
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
 }
@@ -36,15 +36,15 @@ func TestAddDocBackfillsDocOnMerge(t *testing.T) {
 	const url = "https://developer.konghq.com/mesh/policies/meshtrafficpermission/"
 
 	r := &collector{}
-	r.add(blocker, "C", "t", "d", "ex1") // doc-less first
-	r.addDoc(blocker, "C", "t", "d", url, "ex2")
+	r.add(blocker, "C", "t", "d", exampleNote("ex1"))
+	r.addDoc(blocker, "C", "t", "d", url, exampleNote("ex2"))
 	if got := r.findings[0].doc; got != url {
 		t.Errorf("doc not backfilled on merge: got %q, want %q", got, url)
 	}
 
 	r2 := &collector{}
-	r2.addDoc(blocker, "C", "t", "d", url, "ex1") // doc first
-	r2.add(blocker, "C", "t", "d", "ex2")
+	r2.addDoc(blocker, "C", "t", "d", url, exampleNote("ex1"))
+	r2.add(blocker, "C", "t", "d", exampleNote("ex2"))
 	if got := r2.findings[0].doc; got != url {
 		t.Errorf("real doc cleared by a later doc-less merge: got %q, want %q", got, url)
 	}
@@ -178,9 +178,9 @@ func TestNormalizeModelOldPayload(t *testing.T) {
 		Schema: SchemaVersion, Tool: ToolName, Status: StatusBlockers,
 		Meshes: []string{}, Coverage: []CoverageGap{}, Manual: []ManualCheck{},
 		Findings: []Finding{ // category-sorted, no Group → Data plane interleaves Mesh object
-			{Severity: "blocker", Category: "Dataplane probes", Title: "p", Detail: "d", Count: 1, Examples: []string{"x/p"}},
-			{Severity: "blocker", Category: "Mesh object settings", Title: "m", Detail: "d", Count: 1, Examples: []string{"y (mtls)"}},
-			{Severity: "blocker", Category: "reachableServices", Title: "r", Detail: "d", Count: 1, Examples: []string{"z/r"}},
+			{Severity: "blocker", Category: "Dataplane probes", Title: "p", Detail: "d", Count: 1, Examples: []ExampleResource{{Mesh: "x", Name: "p"}}},
+			{Severity: "blocker", Category: "Mesh object settings", Title: "m", Detail: "d", Count: 1, Examples: []ExampleResource{{Type: "Mesh", Mesh: "y", Name: "y", Note: "mtls"}}},
+			{Severity: "blocker", Category: "reachableServices", Title: "r", Detail: "d", Count: 1, Examples: []ExampleResource{{Mesh: "z", Name: "r"}}},
 		},
 	}
 	normalizeModel(&m)
@@ -287,9 +287,11 @@ func TestHTMLScriptReadsSnakeCaseKeys(t *testing.T) {
 
 // v4 renamed every multi-word field, so a v2/v3 capture no longer decodes: its
 // controlPlane, coverageGaps and manualChecks would all land empty and an
-// inconclusive audit would re-render as clean. ParseReport must refuse it.
+// inconclusive audit would re-render as clean. v5 carried example_resources as
+// bare display strings; v6 made each entry a KRI-carrying object, so a v5
+// capture's examples fail to decode. ParseReport must refuse both.
 func TestParseReportRejectsOlderSchema(t *testing.T) {
-	for _, version := range []string{"kuma3-preflight/v2", "kuma3-preflight/v3", "kuma3-preflight/v4"} {
+	for _, version := range []string{"kuma3-preflight/v2", "kuma3-preflight/v3", "kuma3-preflight/v4", "kuma3-preflight/v5"} {
 		old := `{"schema":"` + version + `","tool":"kuma3-preflight","status":"inconclusive",` +
 			`"controlPlane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
 			`"summary":{"coverageGaps":1},"findings":[],` +
@@ -451,3 +453,32 @@ func TestFailureReport(t *testing.T) {
 type errExample struct{}
 
 func (errExample) Error() string { return "boom" }
+
+// TestExampleResourceDisplay pins the compact text form of every example
+// shape: the renderers' fallback and the classify mode's dedup/example keys.
+func TestExampleResourceDisplay(t *testing.T) {
+	tests := []struct {
+		name string
+		ex   ExampleResource
+		want string
+	}{
+		{"mesh-scoped resource", ExampleResource{Type: "MeshTimeout", Mesh: "default", Name: "t"}, "default/t"},
+		{"zone-synced resource", ExampleResource{Mesh: "default", Name: "dp-1", Zone: "east"}, "default/dp-1 [zone:east]"},
+		{"mesh resource with field", ExampleResource{Type: "Mesh", Mesh: "default", Name: "default", Note: "mtls"}, "default (mtls)"},
+		{"annotated resource", ExampleResource{Mesh: "default", Name: "old-dp", Note: "kuma-dp 2.11.19"}, "default/old-dp (kuma-dp 2.11.19)"},
+		{"system resource", ExampleResource{Mesh: "default", Name: "t", System: true}, "default/t (system — CP-managed, update before 3.0)"},
+		{"zone resource itself", ExampleResource{Type: "Zone", Name: "east"}, "east"},
+		{"cp config setting", ExampleResource{Note: "store.cache.enabled=false"}, "store.cache.enabled=false"},
+		{"per-zone config", ExampleResource{Zone: "east", Note: "store.cache.enabled=false"}, "zone east: store.cache.enabled=false"},
+		{"per-zone version", ExampleResource{Zone: "east", Note: "2.13.5"}, "zone east: 2.13.5"},
+		{"mesh/zone pair", ExampleResource{Mesh: "default", Zone: "east"}, "mesh default, zone east"},
+		{"empty", ExampleResource{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.ex.Display(); got != tt.want {
+				t.Errorf("Display() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

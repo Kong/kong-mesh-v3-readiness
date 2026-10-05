@@ -127,7 +127,7 @@ func TestUnauthenticatedAccessRoleBinding(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("flagged = %v, want %v\nfindings: %+v", got, tc.want, m.Findings)
 			}
-			if got && (len(f.Examples) != 1 || f.Examples[0] != "default (roles: admin, viewer)") {
+			if got && (len(f.Examples) != 1 || f.Examples[0].Display() != "default (roles: admin, viewer)") {
 				t.Errorf("examples = %v, want [default (roles: admin, viewer)]", f.Examples)
 			}
 		})

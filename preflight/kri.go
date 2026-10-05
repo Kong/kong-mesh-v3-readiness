@@ -45,6 +45,15 @@ var shortNames = map[string]string{
 	"AccessRoleBinding":         "arb",
 }
 
+// meshOfItem is the mesh a resource belongs to. A Mesh is its own mesh; the
+// REST API leaves its mesh field empty.
+func meshOfItem(it resourceItem) string {
+	if it.Mesh == "" && it.Type == "Mesh" {
+		return displayName(it)
+	}
+	return it.Mesh
+}
+
 // kriOf builds the canonical KRI of an audited resource: the identifier Kuma
 // 3.0 addresses it by. Zone comes from kuma.io/zone and namespace from
 // k8s.kuma.io/namespace (both empty on Universal / for global-origin
@@ -63,6 +72,6 @@ func kriOf(it resourceItem) string {
 	if name == "" {
 		return ""
 	}
-	return fmt.Sprintf("kri_%s_%s_%s_%s_%s_", short, it.Mesh,
+	return fmt.Sprintf("kri_%s_%s_%s_%s_%s_", short, meshOfItem(it),
 		it.Labels[zoneLabel], it.Labels[kubeNamespaceLabel], name)
 }

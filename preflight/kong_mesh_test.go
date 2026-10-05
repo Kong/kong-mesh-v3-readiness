@@ -180,7 +180,7 @@ func TestRBACRemovedTypes(t *testing.T) {
 			t.Errorf("%q not flagged; findings: %+v", tc.title, m.Findings)
 			continue
 		}
-		if len(f.Examples) != 1 || f.Examples[0] != tc.example {
+		if len(f.Examples) != 1 || f.Examples[0].Display() != tc.example {
 			t.Errorf("%q examples = %v, want [%s]", tc.title, f.Examples, tc.example)
 		}
 	}
@@ -212,8 +212,8 @@ func TestRemovedKindNamesCoversCatalogs(t *testing.T) {
 func TestRBACMeshFilter(t *testing.T) {
 	c := &auditor{meshFilter: "default", rep: &collector{}}
 	rules := []rbacRule{{Types: []string{"TrafficRoute"}, Mesh: "other"}, {Types: []string{"ZoneEgress"}}}
-	c.checkRBACRules("AccessRole", rules, removedKindNames(), "team-a")
-	if len(c.rep.findings) != 1 || !strings.HasSuffix(c.rep.findings[0].examples[0], "(ZoneEgress)") {
+	c.checkRBACRules("AccessRole", rules, removedKindNames(), qualified(resourceItem{Type: "AccessRoleBinding", Mesh: "default", Name: "team-a"}))
+	if len(c.rep.findings) != 1 || !strings.HasSuffix(c.rep.findings[0].examples[0].Display(), "(ZoneEgress)") {
 		t.Fatalf("findings = %+v, want one ZoneEgress types finding", c.rep.findings)
 	}
 }
