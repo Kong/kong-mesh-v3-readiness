@@ -46,6 +46,11 @@ func TestKriOf(t *testing.T) {
 			want: "kri_z____east_",
 		},
 		{
+			name: "mesh resource is stored under NoMesh",
+			item: resourceItem{Type: "Mesh", Name: "default"},
+			want: "kri_m____default_",
+		},
+		{
 			name: "type removed in 3.0 has no KRI",
 			item: resourceItem{Type: "TrafficRoute", Mesh: "default", Name: "route-1"},
 			want: "",

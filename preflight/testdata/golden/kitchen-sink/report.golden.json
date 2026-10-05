@@ -29,7 +29,7 @@
       "count": 1,
       "example_resources": [
         {
-          "note": "2.9.0"
+          "note": "control plane (2.9.0)"
         }
       ]
     },
@@ -411,7 +411,7 @@
       "count": 1,
       "example_resources": [
         {
-          "kri": "kri_m_default___default_",
+          "kri": "kri_m____default_",
           "type": "Mesh",
           "mesh": "default",
           "name": "default",
@@ -429,7 +429,7 @@
       "count": 1,
       "example_resources": [
         {
-          "kri": "kri_m_default___default_",
+          "kri": "kri_m____default_",
           "type": "Mesh",
           "mesh": "default",
           "name": "default"
@@ -1184,7 +1184,7 @@
       "count": 1,
       "example_resources": [
         {
-          "kri": "kri_m_default___default_",
+          "kri": "kri_m____default_",
           "type": "Mesh",
           "mesh": "default",
           "name": "default"

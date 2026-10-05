@@ -81,7 +81,7 @@ func TestCheckControlPlaneVersionsConnected(t *testing.T) {
 		if f.severity != blocker {
 			t.Errorf("severity = %v, want blocker", f.severity)
 		}
-		if !hasExample(f, "2.9.0") {
+		if !hasExample(f, "control plane (2.9.0)") {
 			t.Errorf("examples = %v, want to include the connected CP", f.examples)
 		}
 	})
@@ -273,7 +273,7 @@ func TestSkipAuditedControlPlaneVersion(t *testing.T) {
 		if !hasExample(blockerFinding, "zone zone-b: 2.13.5") {
 			t.Errorf("examples = %v, want zone-b", blockerFinding.examples)
 		}
-		if hasExample(blockerFinding, "2.9.0") {
+		if hasExample(blockerFinding, "control plane (2.9.0)") {
 			t.Errorf("examples = %v, must not include the excluded audited CP", blockerFinding.examples)
 		}
 	})
@@ -301,7 +301,7 @@ func TestSkipAuditedControlPlaneVersion(t *testing.T) {
 		if !ok || f.severity != blocker {
 			t.Fatalf("default behavior must still flag the audited CP; findings=%v", rep.findings)
 		}
-		if !hasExample(f, "2.9.0") {
+		if !hasExample(f, "control plane (2.9.0)") {
 			t.Errorf("examples = %v, want the audited CP", f.examples)
 		}
 	})

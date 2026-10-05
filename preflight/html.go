@@ -446,8 +446,8 @@ const htmlTail = `
   function displayExample(e){
     if(e.name){
       var s = e.name;
-      if(e.mesh && e.mesh !== e.name) s = e.mesh + '/' + s;
-      if(e.zone && e.zone !== e.name) s += ' [zone:' + e.zone + ']';
+      if(e.mesh && e.type !== 'Mesh') s = e.mesh + '/' + s;
+      if(e.zone) s += ' [zone:' + e.zone + ']';
       if(e.note) s += ' (' + e.note + ')';
       if(e.system) s += ' (system — CP-managed, update before 3.0)';
       return s;

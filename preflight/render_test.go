@@ -463,7 +463,9 @@ func TestExampleResourceDisplay(t *testing.T) {
 		want string
 	}{
 		{"mesh-scoped resource", ExampleResource{Type: "MeshTimeout", Mesh: "default", Name: "t"}, "default/t"},
+		{"resource named after its mesh keeps both", ExampleResource{Type: "MeshRetry", Mesh: "default", Name: "default"}, "default/default"},
 		{"zone-synced resource", ExampleResource{Mesh: "default", Name: "dp-1", Zone: "east"}, "default/dp-1 [zone:east]"},
+		{"resource named after its zone keeps both", ExampleResource{Mesh: "default", Name: "east", Zone: "east"}, "default/east [zone:east]"},
 		{"mesh resource with field", ExampleResource{Type: "Mesh", Mesh: "default", Name: "default", Note: "mtls"}, "default (mtls)"},
 		{"annotated resource", ExampleResource{Mesh: "default", Name: "old-dp", Note: "kuma-dp 2.11.19"}, "default/old-dp (kuma-dp 2.11.19)"},
 		{"system resource", ExampleResource{Mesh: "default", Name: "t", System: true}, "default/t (system — CP-managed, update before 3.0)"},

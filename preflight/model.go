@@ -109,14 +109,15 @@ type ExampleResource struct {
 
 // Display renders the compact, human-readable form of an example — the shape
 // text renderers (the classify model, dedup keys) consume: "mesh/name",
-// a zone-qualified control-plane note, or the bare note.
+// a zone-qualified control-plane note, or the bare note. A Mesh is its own
+// mesh, so it renders by name alone, like the pre-KRI reports.
 func (e ExampleResource) Display() string {
 	if e.Name != "" {
 		s := e.Name
-		if e.Mesh != "" && e.Mesh != e.Name {
+		if e.Mesh != "" && e.Type != "Mesh" {
 			s = e.Mesh + "/" + s
 		}
-		if e.Zone != "" && e.Zone != e.Name {
+		if e.Zone != "" {
 			s += " [zone:" + e.Zone + "]"
 		}
 		if e.Note != "" {

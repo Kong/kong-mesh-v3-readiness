@@ -2574,9 +2574,13 @@ func (a *auditor) flagIfBehind(version, zone string, latestMin, latestPatch int,
 		return
 	}
 	if behind(maj, minor, patch, latestMin, latestPatch) {
+		ex := ExampleResource{Zone: zone, Note: version}
+		if zone == "" {
+			ex.Note = "control plane (" + version + ")"
+		}
 		a.rep.addDoc(blocker, cpVersionCategory,
 			fmt.Sprintf("Control plane behind the latest 2.%d patch", UpgradeTargetMinor),
-			detail, docUpgrade, ExampleResource{Zone: zone, Note: version})
+			detail, docUpgrade, ex)
 	}
 }
 

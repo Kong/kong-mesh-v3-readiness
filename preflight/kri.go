@@ -59,6 +59,8 @@ func meshOfItem(it resourceItem) string {
 // k8s.kuma.io/namespace (both empty on Universal / for global-origin
 // resources); the name is the display name, the one that survives a KDS
 // hash-suffix. Section is always empty (the audit flags whole resources).
+// A Mesh is stored under NoMesh, so its mesh segment is empty — anything
+// else makes the KRI unresolvable on a 3.0 CP.
 // Returns "" when the type has no 3.0 short name.
 func kriOf(it resourceItem) string {
 	typ := it.Type
@@ -72,6 +74,6 @@ func kriOf(it resourceItem) string {
 	if name == "" {
 		return ""
 	}
-	return fmt.Sprintf("kri_%s_%s_%s_%s_%s_", short, meshOfItem(it),
+	return fmt.Sprintf("kri_%s_%s_%s_%s_%s_", short, it.Mesh,
 		it.Labels[zoneLabel], it.Labels[kubeNamespaceLabel], name)
 }
