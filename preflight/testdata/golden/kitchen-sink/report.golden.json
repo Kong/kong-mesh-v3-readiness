@@ -735,9 +735,9 @@
       "count": 4,
       "example_resources": [
         "kri_dp_default_east__legacy-dp.kuma-demo_",
+        "kri_dp_default_east__frontend.kuma-demo_",
         "kri_dp_default_west__current-dp.kuma-demo_",
-        "kri_dp_default_east__dp-tproxy-universal_",
-        "kri_dp_default_east__frontend.kuma-demo_"
+        "kri_dp_default_east__dp-tproxy-universal_"
       ]
     },
     {

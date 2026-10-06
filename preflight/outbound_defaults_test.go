@@ -1,6 +1,7 @@
 package preflight
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -259,6 +260,33 @@ func TestOutboundDenyReportsSummaryNotPerProxy(t *testing.T) {
 	}
 	if len(f.Examples) != 3 {
 		t.Errorf("examples = %v, want the three affected proxies", f.Examples)
+	}
+}
+
+// The shared example cap must not crowd one environment out entirely: an
+// estate with a full Universal cap plus flagged Kubernetes proxies still
+// names some Kubernetes proxies.
+func TestOutboundDenyExamplesKeepBothEnvironments(t *testing.T) {
+	var items []map[string]any
+	for i := range 12 {
+		items = append(items, overview(fmt.Sprintf("dp-u%d", i), universalLabels, tproxySpec(nil), nil))
+	}
+	for i := range 3 {
+		items = append(items, overview(fmt.Sprintf("dp-k%d", i), kubernetesLabels, tproxySpec(nil), nil))
+	}
+	m := auditOverviews(t, items...)
+	f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
+	if !ok {
+		t.Fatalf("missing finding %q\nfindings: %+v", titleNoReachableBackends, m.Findings)
+	}
+	if f.Count != 15 {
+		t.Errorf("count = %d, want 15", f.Count)
+	}
+	if len(f.Examples) != ExampleCap {
+		t.Errorf("examples = %d entries, want %d", len(f.Examples), ExampleCap)
+	}
+	if !slices.Contains(f.Examples, "kri_dp_default_default__dp-k0_") {
+		t.Errorf("examples lost the Kubernetes proxies: %v", f.Examples)
 	}
 }
 

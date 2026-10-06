@@ -1548,14 +1548,22 @@ type envDeny struct {
 // denies today. // EXC:FILE011:merged-entry-contract
 func (a *auditor) addOutboundDenyFinding(mode outboundMode, envs [2]envDeny) {
 	denied, total := 0, 0
-	var refs []string
 	for _, e := range envs {
 		denied += e.denied
 		total += e.total
-		refs = append(refs, e.refs...)
 	}
 	if denied == 0 {
 		return
+	}
+	// Interleave the environments' examples so the shared cap cannot crowd // EXC:FILE011:cap-must-not-crowd-minority-env
+	// the minority environment out entirely. // EXC:FILE011:cap-must-not-crowd-minority-env
+	var refs []string
+	for i := range ExampleCap {
+		for _, e := range envs {
+			if i < len(e.refs) {
+				refs = append(refs, e.refs[i])
+			}
+		}
 	}
 	if len(refs) > ExampleCap {
 		refs = refs[:ExampleCap]
