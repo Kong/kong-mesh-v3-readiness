@@ -313,11 +313,11 @@
       "group": "mesh_object",
       "category": "Mesh object settings",
       "title": "Inline mTLS on Mesh",
-      "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust.",
+      "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust. Each legacy backend type maps to a MeshIdentity `provider`: `builtin` -\u003e `type: Bundled`, `provided` -\u003e `type: Bundled` with your CA under `bundled.ca`, `vault`/`acmpca`/`certmanager` -\u003e `type: Extension` with `extension.name` set to the same value (Kong Mesh only). Each example resource names the backends that mesh carries.",
       "doc_url": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
       "count": 1,
       "example_resources": [
-        "kri_m____default_ (mtls)"
+        "kri_m____default_ (mtls: ca-1 builtin -\u003e Bundled)"
       ]
     },
     {
