@@ -577,7 +577,12 @@ func (a *auditor) countSystem(it resourceItem, totalBefore int) {
 
 func (a *auditor) checkMeshSettings(m resourceItem) {
 	var spec meshSpec
-	_ = json.Unmarshal(m.specBytes(), &spec) // Mesh inlines its spec at the top level
+	// EXC:FILE011:records-the-error-while-keeping-the-partial-decode — a wrong-typed Mesh field must not silently disable the checks that read it, so the parse error is recorded like every other resource does and the partially decoded spec still feeds the checks that apply.
+	if err := json.Unmarshal(m.specBytes(), &spec); err != nil {
+		a.rep.parseErrors++
+		a.rep.add(blocker, "Unparseable resources", "Mesh spec could not be parsed",
+			"Could not parse this resource; audit it manually before upgrading.", qualified(m))
+	}
 	ref := func(field string) string { return qualifiedNote(m, field) }
 
 	if spec.Mtls != nil && (spec.Mtls.EnabledBackend != "" || len(spec.Mtls.Backends) > 0) {
@@ -639,6 +644,16 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 		}
 		a.rep.addDoc(blocker, "MeshService mode", "meshServices.mode is not Exclusive",
 			"3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: "+shown+").", docMeshServiceExclusive, qualified(m))
+	}
+	if spec.SkipCreatingInitialPolicies != nil {
+		// EXC:FILE011:the-collector-merges-findings-by-category-and-title-keeping-only-the-first-detail — the per-mesh list lives in the per-resource annotation, not the shared detail, or it would survive only for the first mesh audited.
+		skipped := strings.Join(spec.SkipCreatingInitialPolicies, ", ")
+		if skipped == "" {
+			skipped = "[] (empty list skips nothing)"
+		}
+		a.rep.addDoc(blocker, "Mesh object settings", "skipCreatingInitialPolicies on Mesh",
+			"3.0 removes `mesh.skipCreatingInitialPolicies` (kumahq/kuma#18661): it stops creating default policies for new Meshes altogether, so the field does nothing on the upgraded control plane — it is ignored, the stored Mesh keeps loading and a manifest that still sets it applies without an error, but the first write to the Mesh drops the field. Remove it from every Mesh manifest (GitOps included) before upgrading. Mind the rollback: after that first write, rolling the mesh's control plane back to 2.14 creates the default policies (`mesh-timeout-all-<mesh>`, `mesh-timeout-to-all-<mesh>`, `mesh-circuit-breaker-all-<mesh>`, `mesh-retry-all-<mesh>`) again — including for a mesh whose list deliberately suppressed them. Each example resource names the list that mesh carries.",
+			docUpgrade, refNote(qualified(m), "skipCreatingInitialPolicies: "+skipped))
 	}
 }
 
@@ -3074,6 +3089,10 @@ type meshSpec struct {
 	MeshServices *struct {
 		Mode string `json:"mode"`
 	} `json:"meshServices"`
+	// SkipCreatingInitialPolicies is present-but-nil when the key is absent and
+	// non-nil (empty or populated) when the Mesh carries it: 3.0 removes the
+	// field, so any presence is flagged.
+	SkipCreatingInitialPolicies []string `json:"skipCreatingInitialPolicies"`
 }
 
 type policySpec struct {
@@ -3489,17 +3508,14 @@ grep -rnE 'KUMA_MODE=.?standalone|^\s*mode:\s*standalone' /etc/systemd/system /e
 			"created `mesh-timeout-*`, `mesh-circuit-breaker-all-*` and `mesh-retry-all-*`. " +
 			"Existing meshes keep theirs, and timeouts and circuit breakers keep the same values " +
 			"without them, but a mesh with no MeshRetry does not retry. Apply your own MeshRetry " +
-			"to meshes created after the upgrade, and drop `skipCreatingInitialPolicies` from Mesh " +
-			"manifests.",
+			"to meshes created after the upgrade (meshes still carrying " +
+			"`skipCreatingInitialPolicies` are flagged by the audit).",
 		Command: `# Add -H "Authorization: Bearer $TOKEN" when the API needs a token.
 # (1) "1s" means the CP follows the 2.x default
 curl -s http://<cp-address>:5681/config | jq -r '.xdsServer.dataplaneConfigurationRefreshInterval'
 
 # (3) Kubernetes: 0 or empty means no limit, so every sidecar without the annotation drops to 2 workers
-curl -s http://<cp-address>:5681/config | jq -r '.runtime.kubernetes.injector.sidecarContainer.resources.limits.cpu'
-
-# (4) Meshes still carrying skipCreatingInitialPolicies
-kumactl get meshes -o json | jq -r '.items[] | select(.skipCreatingInitialPolicies) | .name'`,
+curl -s http://<cp-address>:5681/config | jq -r '.runtime.kubernetes.injector.sidecarContainer.resources.limits.cpu'`,
 	},
 	{
 		Title: "Drop removed kuma-dp flags and settings",
