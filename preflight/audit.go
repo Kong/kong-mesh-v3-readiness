@@ -577,7 +577,12 @@ func (a *auditor) countSystem(it resourceItem, totalBefore int) {
 
 func (a *auditor) checkMeshSettings(m resourceItem) {
 	var spec meshSpec
-	_ = json.Unmarshal(m.specBytes(), &spec) // Mesh inlines its spec at the top level
+	// EXC:FILE011:records-the-error-while-keeping-the-partial-decode — a wrong-typed Mesh field must not silently disable the checks that read it, so the parse error is recorded like every other resource does and the partially decoded spec still feeds the checks that apply.
+	if err := json.Unmarshal(m.specBytes(), &spec); err != nil {
+		a.rep.parseErrors++
+		a.rep.add(blocker, "Unparseable resources", "Mesh spec could not be parsed",
+			"Could not parse this resource; audit it manually before upgrading.", qualified(m))
+	}
 	ref := func(field string) string { return qualifiedNote(m, field) }
 
 	if spec.Mtls != nil && (spec.Mtls.EnabledBackend != "" || len(spec.Mtls.Backends) > 0) {
@@ -639,6 +644,16 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 		}
 		a.rep.addDoc(blocker, "MeshService mode", "meshServices.mode is not Exclusive",
 			"3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: "+shown+").", docMeshServiceExclusive, qualified(m))
+	}
+	if spec.SkipCreatingInitialPolicies != nil {
+		// EXC:FILE011:the-collector-merges-findings-by-category-and-title-keeping-only-the-first-detail — the per-mesh list lives in the per-resource annotation, not the shared detail, or it would survive only for the first mesh audited.
+		skipped := strings.Join(spec.SkipCreatingInitialPolicies, ", ")
+		if skipped == "" {
+			skipped = "[] (empty list skips nothing)"
+		}
+		a.rep.addDoc(blocker, "Mesh object settings", "skipCreatingInitialPolicies on Mesh",
+			"3.0 removes `mesh.skipCreatingInitialPolicies` (kumahq/kuma#18661): it stops creating default policies for new Meshes altogether, so the field does nothing on the upgraded control plane — it is ignored, the stored Mesh keeps loading and a manifest that still sets it applies without an error, but the first write to the Mesh drops the field. Remove it from every Mesh manifest (GitOps included) before upgrading. Mind the rollback: after that first write, rolling the mesh's control plane back to 2.14 creates the default policies (`mesh-timeout-all-<mesh>`, `mesh-timeout-to-all-<mesh>`, `mesh-circuit-breaker-all-<mesh>`, `mesh-retry-all-<mesh>`) again — including for a mesh whose list deliberately suppressed them. Each example resource names the list that mesh carries.",
+			docUpgrade, refNote(qualified(m), "skipCreatingInitialPolicies: "+skipped))
 	}
 }
 
@@ -1465,11 +1480,13 @@ func (o dpOverview) transparentProxy(labels map[string]string) bool {
 	return tp.RedirectPortInbound != 0 || tp.RedirectPortOutbound != 0
 }
 
-// checkOutboundDefaults flags the proxies 3.0 leaves with no outbounds at all.
-// Absence-triggered — the proxy that configures nothing is the one that breaks —
-// so it reports one "N of M" summary per environment, each with that
-// environment's fix. Reads /dataplanes+insights for kuma-dp's own transparent-proxy
-// config, which /dataplanes cannot show.
+// checkOutboundDefaults reports the proxies 3.0 leaves with no outbounds at // EXC:FILE011:one-decision-two-remediations
+// all. Absence-triggered — the proxy that configures nothing is the one that // EXC:FILE011:one-decision-two-remediations
+// breaks — so the report carries one "N of M" summary per governing // EXC:FILE011:one-decision-two-remediations
+// outboundMode, with a per-environment breakdown in the detail and both // EXC:FILE011:one-decision-two-remediations
+// environments' fixes: the decision is one, only where the field is set // EXC:FILE011:one-decision-two-remediations
+// differs. Reads /dataplanes+insights for kuma-dp's own transparent-proxy // EXC:FILE011:one-decision-two-remediations
+// config, which /dataplanes cannot show. // EXC:FILE011:one-decision-two-remediations
 func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 	items, observed := a.listCollObserved(ctx, a.scopedPath("dataplanes+insights"))
 	if !observed {
@@ -1509,40 +1526,94 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 			refs[env][mode] = append(refs[env][mode], qualified(it))
 		}
 	}
+	// One entry per outboundMode carries both environments: the decision is // EXC:FILE011:one-decision-two-remediations
+	// one, only where the field is set differs. // EXC:FILE011:one-decision-two-remediations
 	for _, mode := range []outboundMode{outboundUnset, outboundAllowed, outboundRestricted} {
-		a.addOutboundDenyFinding("Universal Dataplanes", "Universal",
-			"Add `networking.transparentProxying.reachableBackends.refs` to each Dataplane, selecting by `labels` (not `name`/`namespace`, which 3.0 drops) the MeshServices the workload actually calls",
-			mode, denied[0][mode], total[0], refs[0][mode])
-		a.addOutboundDenyFinding("Kubernetes dataplanes", "Kubernetes",
-			"Add the `kuma.io/reachable-backends` annotation to each Pod (the control plane copies it onto the Dataplane), selecting by `labels` (not `name`/`namespace`, which 3.0 drops) the MeshServices the workload actually calls",
-			mode, denied[1][mode], total[1], refs[1][mode])
+		a.addOutboundDenyFinding(mode, [2]envDeny{
+			{
+				subject: "Universal Dataplanes",
+				fix:     "On Universal, add `networking.transparentProxying.reachableBackends.refs` to each Dataplane, selecting by `labels` (not `name`/`namespace`, which 3.0 drops) the MeshServices the workload actually calls",
+				denied:  denied[0][mode], total: total[0], refs: refs[0][mode],
+			},
+			{
+				subject: "Kubernetes dataplanes",
+				fix:     "On Kubernetes, add the `kuma.io/reachable-backends` annotation to each Pod (the control plane copies it onto the Dataplane), selecting by `labels` (not `name`/`namespace`, which 3.0 drops) the MeshServices the workload actually calls",
+				denied:  denied[1][mode], total: total[1], refs: refs[1][mode],
+			},
+		})
 	}
 	return nil
 }
 
-// addOutboundDenyFinding reports the proxies without reachableBackends governed
-// by control planes in one outboundMode. Only an unset switch breaks on upgrade:
-// a pinned `false` keeps allow-all on 3.0, and `true` already denies today.
-func (a *auditor) addOutboundDenyFinding(subject, env, fix string, mode outboundMode, denied, total int, refs []string) {
+// envDeny is one environment's slice of the proxies without reachableBackends: // EXC:FILE011:envDeny-shape
+// its N-of-M tally, examples and the fix naming where the field is set. // EXC:FILE011:envDeny-shape
+type envDeny struct {
+	subject string
+	fix     string
+	denied  int
+	total   int
+	refs    []string
+}
+
+// addOutboundDenyFinding reports the proxies without reachableBackends governed // EXC:FILE011:merged-entry-contract
+// by control planes in one outboundMode as one entry, with a per-environment // EXC:FILE011:merged-entry-contract
+// breakdown in the detail and each present environment's fix; an environment // EXC:FILE011:merged-entry-contract
+// absent from the estate gets no line. Only an unset switch breaks on // EXC:FILE011:merged-entry-contract
+// upgrade: a pinned `false` keeps allow-all on 3.0, and `true` already // EXC:FILE011:merged-entry-contract
+// denies today. // EXC:FILE011:merged-entry-contract
+func (a *auditor) addOutboundDenyFinding(mode outboundMode, envs [2]envDeny) {
+	denied, total := 0, 0
+	for _, e := range envs {
+		denied += e.denied
+		total += e.total
+	}
+	if denied == 0 {
+		return
+	}
+	// Interleave the environments' examples so the shared cap cannot crowd // EXC:FILE011:cap-must-not-crowd-minority-env
+	// the minority environment out entirely. // EXC:FILE011:cap-must-not-crowd-minority-env
+	var refs []string
+	for i := range ExampleCap {
+		for _, e := range envs {
+			if i < len(e.refs) {
+				refs = append(refs, e.refs[i])
+			}
+		}
+	}
+	if len(refs) > ExampleCap {
+		refs = refs[:ExampleCap]
+	}
+	var detail strings.Builder
+	fmt.Fprintf(&detail, "%d of %d transparent-proxy data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`", denied, total)
+	for _, e := range envs {
+		if e.total > 0 {
+			fmt.Fprintf(&detail, "; %s: %d of %d", e.subject, e.denied, e.total)
+		}
+	}
 	sev := info
-	var impact string
 	switch mode {
 	case outboundUnset:
 		sev = blocker
-		impact = "In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. " +
-			fix + ". " + restrictOutboundRemediation
+		detail.WriteString(". In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. ")
 	case outboundAllowed:
-		impact = "`defaults.restrictOutbound` is explicitly `false` here, which 3.0 honors, so these proxies keep reaching every destination after the upgrade as long as the 3.0 control plane keeps that setting. " +
-			"Setting `reachableBackends` is still recommended — it lists exactly what the workload may reach, improving security, and keeps its proxy configuration small, improving control plane and proxy performance — and it is required before switching to `true`. " + fix + "."
+		detail.WriteString(". `defaults.restrictOutbound` is explicitly `false` here, which 3.0 honors, so these proxies keep reaching every destination after the upgrade as long as the 3.0 control plane keeps that setting. " +
+			"Setting `reachableBackends` is still recommended: it pins down what the workload may reach, which is safer and keeps proxy config small, and it is required before switching to `true`. ")
 	case outboundRestricted:
-		// The CP already denies what 3.0 will, so the upgrade changes nothing for
-		// these proxies; a proxy that calls nothing in the mesh is correct as is.
-		impact = "`defaults.restrictOutbound` is already `true` here, so the upgrade does not change these proxies: they resolve no in-mesh outbound clusters today. That is correct for a workload that calls nothing in the mesh. For any other, setting `reachableBackends` is recommended — it lists exactly what the workload may reach, improving security, and keeps its proxy configuration small, improving control plane and proxy performance. " + fix + "."
+		// The CP already denies what 3.0 will, so the upgrade changes nothing // EXC:FILE011:present-tense-framing
+		// for these proxies; a proxy that calls nothing in the mesh is correct // EXC:FILE011:present-tense-framing
+		// as is. // EXC:FILE011:present-tense-framing
+		detail.WriteString(". `defaults.restrictOutbound` is already `true` here, so the upgrade does not change these proxies: they resolve no in-mesh outbound clusters today. That is correct for a workload that calls nothing in the mesh. For any other, setting `reachableBackends` still pins down what the workload may reach, which is safer and keeps proxy config small. ")
 	}
-	a.rep.addSummary(sev, "Outbound defaults", subject+" have no reachableBackends",
-		fmt.Sprintf("%d of %d transparent-proxy %s data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`. %s",
-			denied, total, env, impact),
-		docReachableBackends, denied, refs)
+	for _, e := range envs {
+		if e.denied > 0 {
+			detail.WriteString(e.fix + ". ")
+		}
+	}
+	if mode == outboundUnset {
+		detail.WriteString(restrictOutboundRemediation)
+	}
+	a.rep.addSummary(sev, "Outbound defaults", "Transparent proxies have no reachableBackends",
+		strings.TrimRight(detail.String(), " "), docReachableBackends, denied, refs)
 }
 
 // checkPassthroughDefault flags transparent proxies that lose external egress
@@ -3018,6 +3089,10 @@ type meshSpec struct {
 	MeshServices *struct {
 		Mode string `json:"mode"`
 	} `json:"meshServices"`
+	// SkipCreatingInitialPolicies is present-but-nil when the key is absent and
+	// non-nil (empty or populated) when the Mesh carries it: 3.0 removes the
+	// field, so any presence is flagged.
+	SkipCreatingInitialPolicies []string `json:"skipCreatingInitialPolicies"`
 }
 
 type policySpec struct {
@@ -3433,17 +3508,14 @@ grep -rnE 'KUMA_MODE=.?standalone|^\s*mode:\s*standalone' /etc/systemd/system /e
 			"created `mesh-timeout-*`, `mesh-circuit-breaker-all-*` and `mesh-retry-all-*`. " +
 			"Existing meshes keep theirs, and timeouts and circuit breakers keep the same values " +
 			"without them, but a mesh with no MeshRetry does not retry. Apply your own MeshRetry " +
-			"to meshes created after the upgrade, and drop `skipCreatingInitialPolicies` from Mesh " +
-			"manifests.",
+			"to meshes created after the upgrade (meshes still carrying " +
+			"`skipCreatingInitialPolicies` are flagged by the audit).",
 		Command: `# Add -H "Authorization: Bearer $TOKEN" when the API needs a token.
 # (1) "1s" means the CP follows the 2.x default
 curl -s http://<cp-address>:5681/config | jq -r '.xdsServer.dataplaneConfigurationRefreshInterval'
 
 # (3) Kubernetes: 0 or empty means no limit, so every sidecar without the annotation drops to 2 workers
-curl -s http://<cp-address>:5681/config | jq -r '.runtime.kubernetes.injector.sidecarContainer.resources.limits.cpu'
-
-# (4) Meshes still carrying skipCreatingInitialPolicies
-kumactl get meshes -o json | jq -r '.items[] | select(.skipCreatingInitialPolicies) | .name'`,
+curl -s http://<cp-address>:5681/config | jq -r '.runtime.kubernetes.injector.sidecarContainer.resources.limits.cpu'`,
 	},
 	{
 		Title: "Drop removed kuma-dp flags and settings",
