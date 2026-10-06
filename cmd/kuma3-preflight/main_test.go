@@ -253,6 +253,39 @@ func TestRunBlockersReportExitsZero(t *testing.T) {
 	}
 }
 
+func TestRunFromJSONFailedReportExitsTwo(t *testing.T) {
+	failed := `{
+	  "tool_schema": "kuma3-preflight/v6",
+	  "tool": "kuma3-preflight",
+	  "status": "failed",
+	  "control_plane": {"address": "http://localhost:5681"},
+	  "summary": {"findings": 0, "coverage_gaps": 0, "manual_checks": 0},
+	  "findings": [],
+	  "coverage_gaps": [],
+	  "manual_checks": []
+	}`
+	path := filepath.Join(t.TempDir(), "failed.json")
+	if err := os.WriteFile(path, []byte(failed), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	oldArgs := os.Args
+	oldFlags := flag.CommandLine
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlags
+	})
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.SetOutput(os.Stderr)
+	out := filepath.Join(t.TempDir(), "report.html")
+	os.Args = []string{"kuma3-preflight", "--from-json", path, "--format", "html", "--output", out}
+
+	if got := run(); got != 2 {
+		t.Fatalf("run() exit = %d, want 2", got)
+	}
+}
+
 func TestValidAddress(t *testing.T) {
 	if err := validAddress("http://localhost:5681"); err != nil {
 		t.Errorf("valid address rejected: %v", err)

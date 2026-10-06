@@ -13,8 +13,10 @@
   shapes only, never audit/render logic.
 - **Exit codes report execution, findings live in the report** (derived in
   `cmd/kuma3-preflight/main.go`'s `run`/`exitForStatus`): `0` report produced
-  (clean, blockers, or inconclusive) · `2` operational error. A run that produced a report
-  always exits `0`; gate readiness on the report's `status` field, not on `$?`. Keep
+  (clean, blockers, or inconclusive) · `2` operational error — including an audit abort
+  (which first stamps the destination with a FAILED report) and a stored FAILED report
+  re-rendered via `--from-json`. Findings and coverage gaps never change the exit code;
+  gate readiness on the report's `status` field, not on `$?`. Keep
   `exitForStatus`, the internal `collector.status()` (`preflight/model.go`), and
   `preflight.Status*` constants in sync.
 - **Never emit a misleading clean report.** A 404 on a collection is a *coverage gap*
