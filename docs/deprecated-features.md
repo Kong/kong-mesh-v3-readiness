@@ -60,6 +60,7 @@ All have a `deprecated.go` under `pkg/plugins/policies/<name>/api/v1alpha1/`:
 - `Mesh.spec.tracing` → **MeshTrace**
 - `Mesh.spec.logging` → **MeshAccessLog**
 - `Mesh.spec.mtls` → **MeshIdentity** + **MeshTrust** (see core table)
+  - backend `builtin` → `provider.type: Bundled`, `provided` → `Bundled` with `bundled.ca`, `vault`/`acmpca`/`certmanager` → `Extension` with the same `extension.name` (Kong Mesh)
 - `Mesh.spec.routing.localityAwareLoadBalancing` → **MeshLoadBalancingStrategy** (see core table)
 - Passthrough setting (`Mesh.spec.networking.outbound` passthrough) → **MeshPassthrough**
 - `Mesh.spec.routing.zoneEgress` boolean (`mesh.proto:289`) → dropped

@@ -36,6 +36,18 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			name:     "inline mTLS",
 			mesh:     map[string]any{"mtls": map[string]any{"enabledBackend": "ca-1"}},
 			severity: "blocker", category: "Mesh object settings", title: "Inline mTLS on Mesh",
+			exampleContains: "(mtls)",
+		},
+		{
+			name: "inline mTLS backends name their MeshIdentity provider",
+			mesh: map[string]any{"mtls": map[string]any{"enabledBackend": "ca-1", "backends": []any{
+				map[string]any{"name": "ca-1", "type": "vault"},
+				map[string]any{"name": "ca-2", "type": "provided"},
+				map[string]any{"name": "ca-3", "type": "custom"},
+			}}},
+			severity: "blocker", category: "Mesh object settings", title: "Inline mTLS on Mesh",
+			detailContains:  "`extension.name`",
+			exampleContains: "(mtls: ca-1 vault -> Extension vault, ca-2 provided -> Bundled with bundled.ca, ca-3 custom)",
 		},
 		{
 			name:     "outbound passthrough",

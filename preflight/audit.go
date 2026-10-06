@@ -584,7 +584,12 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 
 	if spec.Mtls != nil && (spec.Mtls.EnabledBackend != "" || len(spec.Mtls.Backends) > 0) {
 		a.rep.addDoc(blocker, "Mesh object settings", "Inline mTLS on Mesh",
-			"Migrate `mesh.mtls` to MeshIdentity + MeshTrust.", docMeshIdentity, ref("mtls"))
+			"Migrate `mesh.mtls` to MeshIdentity + MeshTrust. Each legacy backend type maps to a "+
+				"MeshIdentity `provider`: `builtin` -> `type: Bundled`, `provided` -> `type: Bundled` "+
+				"with your CA under `bundled.ca`, `vault`/`acmpca`/`certmanager` -> `type: Extension` "+
+				"with `extension.name` set to the same value (Kong Mesh only). Each example resource "+
+				"names the backends that mesh carries.",
+			docMeshIdentity, ref(mtlsNote(spec.Mtls.Backends)))
 	}
 
 	if spec.Networking != nil && spec.Networking.Outbound != nil && spec.Networking.Outbound.Passthrough != nil {
@@ -3047,6 +3052,41 @@ func qualifiedNote(it resourceItem, note string) string {
 // types a rule names).
 func refNote(ref, note string) string {
 	return ref + " (" + note + ")"
+}
+
+// mtlsProviders maps a 2.x `mesh.mtls` backend type to the MeshIdentity
+// provider that replaces it on 3.0.
+var mtlsProviders = map[string]string{
+	"builtin":     "Bundled",
+	"provided":    "Bundled with bundled.ca",
+	"vault":       "Extension vault",
+	"acmpca":      "Extension acmpca",
+	"certmanager": "Extension certmanager",
+}
+
+// mtlsNote is the `mtls` field annotation naming each backend and the
+// MeshIdentity provider it maps to. A backend that does not decode or has an
+// unknown type is listed without a mapping.
+func mtlsNote(backends []json.RawMessage) string {
+	parts := make([]string, 0, len(backends))
+	for _, raw := range backends {
+		var b struct {
+			Name string `json:"name"`
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(raw, &b) != nil {
+			continue
+		}
+		part := b.Name + " " + b.Type
+		if p, ok := mtlsProviders[b.Type]; ok {
+			part += " -> " + p
+		}
+		parts = append(parts, strings.TrimSpace(part))
+	}
+	if len(parts) == 0 {
+		return "mtls"
+	}
+	return "mtls: " + strings.Join(parts, ", ")
 }
 
 func hasJSON(raw json.RawMessage) bool {
