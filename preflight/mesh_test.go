@@ -82,6 +82,21 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			severity: "blocker", category: "MeshService mode", title: "meshServices.mode is not Exclusive",
 		},
 		{
+			name:     "skipCreatingInitialPolicies with policy types",
+			mesh:     map[string]any{"skipCreatingInitialPolicies": []any{"MeshRetry", "MeshTimeout"}},
+			severity: "blocker", category: "Mesh object settings", title: "skipCreatingInitialPolicies on Mesh",
+		},
+		{
+			name:     "skipCreatingInitialPolicies wildcard",
+			mesh:     map[string]any{"skipCreatingInitialPolicies": []any{"*"}},
+			severity: "blocker", category: "Mesh object settings", title: "skipCreatingInitialPolicies on Mesh",
+		},
+		{
+			name:     "skipCreatingInitialPolicies empty list",
+			mesh:     map[string]any{"skipCreatingInitialPolicies": []any{}},
+			severity: "blocker", category: "Mesh object settings", title: "skipCreatingInitialPolicies on Mesh",
+		},
+		{
 			name:     "non-RFC-1035 mesh name",
 			mesh:     map[string]any{"name": "My_Mesh", "meshServices": map[string]any{"mode": "Exclusive"}},
 			severity: "blocker", category: "Non-RFC-1035 names", title: "Mesh name is not a valid RFC-1035 DNS label",
