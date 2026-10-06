@@ -44,10 +44,12 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 				map[string]any{"name": "ca-1", "type": "vault"},
 				map[string]any{"name": "ca-2", "type": "provided"},
 				map[string]any{"name": "ca-3", "type": "custom"},
+				map[string]any{"name": "ca-4", "type": "acmpca"},
+				map[string]any{"name": "ca-5", "type": "certmanager"},
 			}}},
 			severity: "blocker", category: "Mesh object settings", title: "Inline mTLS on Mesh",
 			detailContains:  "`extension.name`",
-			exampleContains: "(mtls: ca-1 vault -> Extension vault, ca-2 provided -> Bundled with bundled.ca, ca-3 custom)",
+			exampleContains: "(mtls: ca-1 vault -> Extension vault, ca-2 provided -> Bundled with bundled.ca, ca-3 custom, ca-4 acmpca -> Extension acmpca, ca-5 certmanager -> Extension certmanager)",
 		},
 		{
 			name:     "outbound passthrough",

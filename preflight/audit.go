@@ -3065,8 +3065,8 @@ var mtlsProviders = map[string]string{
 }
 
 // mtlsNote is the `mtls` field annotation naming each backend and the
-// MeshIdentity provider it maps to. A backend that does not decode or has an
-// unknown type is listed without a mapping.
+// MeshIdentity provider it maps to. An undecodable backend is omitted; a backend
+// with an unknown type is listed without a mapping.
 func mtlsNote(backends []json.RawMessage) string {
 	parts := make([]string, 0, len(backends))
 	for _, raw := range backends {
