@@ -969,7 +969,7 @@
     {
       "title": "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
       "detail": "On Kubernetes a Pod, Namespace, Service or Gateway API HTTPRoute is bound to a non-default mesh through `kuma.io/mesh`, which can be set as either an annotation or a label. Kuma 2.x still reads the annotation but logs a deprecation warning; 3.0 honors only the label, so an annotated Service generates its MeshService in the wrong mesh and an annotated HTTPRoute is converted into the wrong mesh. The control-plane API exposes only the resolved mesh name, not which metadata field set it, so the tool cannot detect this for you. You have to inspect the cluster objects directly. Move every `kuma.io/mesh` annotation to a label with the same value. The command below lists offenders (the HTTPRoute query is skipped when the Gateway API CRDs are not installed); empty output means there is nothing left to fix.",
-      "command": "{ kubectl get ns,pods,services -A -o json; kubectl get httproutes.gateway.networking.k8s.io -A -o json 2\u003e/dev/null; } | jq -r '.items[] | select(.metadata.annotations[\"kuma.io/mesh\"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != \"\")) | join(\"/\")'"
+      "command": "{ kubectl get ns,pods,services -A -o json; if kubectl api-resources --api-group=gateway.networking.k8s.io -o name | grep -Fxq 'httproutes.gateway.networking.k8s.io'; then kubectl get httproutes.gateway.networking.k8s.io -A -o json; fi; } | jq -r '.items[] | select(.metadata.annotations[\"kuma.io/mesh\"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != \"\")) | join(\"/\")'"
     },
     {
       "title": "Drop the `kuma.io/tags` Pod annotation",
