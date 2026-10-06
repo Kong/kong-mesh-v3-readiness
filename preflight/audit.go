@@ -1582,12 +1582,12 @@ func (a *auditor) addOutboundDenyFinding(mode outboundMode, envs [2]envDeny) {
 		detail.WriteString(". In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. ")
 	case outboundAllowed:
 		detail.WriteString(". `defaults.restrictOutbound` is explicitly `false` here, which 3.0 honors, so these proxies keep reaching every destination after the upgrade as long as the 3.0 control plane keeps that setting. " +
-			"Setting `reachableBackends` is still recommended — it lists exactly what the workload may reach, improving security, and keeps its proxy configuration small, improving control plane and proxy performance — and it is required before switching to `true`. ")
+			"Setting `reachableBackends` is still recommended: it pins down what the workload may reach, which is safer and keeps proxy config small, and it is required before switching to `true`. ")
 	case outboundRestricted:
 		// The CP already denies what 3.0 will, so the upgrade changes nothing // EXC:FILE011:present-tense-framing
 		// for these proxies; a proxy that calls nothing in the mesh is correct // EXC:FILE011:present-tense-framing
 		// as is. // EXC:FILE011:present-tense-framing
-		detail.WriteString(". `defaults.restrictOutbound` is already `true` here, so the upgrade does not change these proxies: they resolve no in-mesh outbound clusters today. That is correct for a workload that calls nothing in the mesh. For any other, setting `reachableBackends` is recommended — it lists exactly what the workload may reach, improving security, and keeps its proxy configuration small, improving control plane and proxy performance. ")
+		detail.WriteString(". `defaults.restrictOutbound` is already `true` here, so the upgrade does not change these proxies: they resolve no in-mesh outbound clusters today. That is correct for a workload that calls nothing in the mesh. For any other, setting `reachableBackends` still pins down what the workload may reach, which is safer and keeps proxy config small. ")
 	}
 	for _, e := range envs {
 		if e.denied > 0 {
