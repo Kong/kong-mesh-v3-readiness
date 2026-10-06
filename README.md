@@ -29,15 +29,18 @@ kong-mesh-v3-preflight --address http://localhost:5681 --output report.html
 kubectl -n kuma-system port-forward svc/kuma-control-plane 5681:5681 &
 kong-mesh-v3-preflight --token "$KUMA_TOKEN" --output report.html
 
-# 3. CI: capture JSON and gate on the exit code, render HTML offline later
+# 3. CI: capture JSON and gate on the report's `status` field, render HTML offline later
 kong-mesh-v3-preflight --address http://localhost:5681 --format json --output report.json
 kong-mesh-v3-preflight --from-json report.json --format html --output report.html
 ```
 
-Exit codes: `0` clean · `1` blockers found · `2` operational error · `3` inconclusive.
+Exit codes: `0` report produced · `2` operational error. Findings live in the report, not
+the exit code — a run that produced a report (clean, blockers, or inconclusive) exits `0`;
+gate readiness on the report's `status` field (`clean` / `blockers` / `inconclusive`),
+not on `$?`.
 
 `--token` is optional, but Kong Mesh gates `GET /config` behind RBAC — without it that
-endpoint is skipped (the run is inconclusive, exit 3), so pass a token to audit control-plane
+endpoint is skipped (the run is inconclusive), so pass a token to audit control-plane
 settings. See the example report gallery in [`examples/`](examples/).
 
 ## Use it as a Go library

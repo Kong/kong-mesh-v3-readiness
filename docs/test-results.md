@@ -1,5 +1,11 @@
 # Manual Test Results — `kong-mesh-v3-preflight`
 
+> **Historical record.** These runs executed the exit-code contract described below
+> (`0` clean · `1` blockers · `2` operational error · `3` inconclusive). The contract
+> changed in Kong/kong-mesh-v3-readiness#82: the CLI now exits `0` whenever a report was
+> produced and `2` only on an execution error — findings live in the report's `status`
+> field (see README.md). Exit codes cited in the rows reflect the old binary.
+
 Execution of `docs/test-plan.md`. Driven by a stdlib Python
 stub of the CP REST API (scenario-selected handlers) plus a few no-server cases.
 Binary: `go build -o /tmp/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight` (clean build).
