@@ -25,6 +25,8 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 		severity string
 		category string
 		title    string
+		// EXC:FILE011:a-parse-error-makes-the-run-inconclusive — the status override covers the wrong-typed Mesh field case, which records a blocker yet reports status inconclusive.
+		status string
 	}{
 		{
 			name:     "inline mTLS",
@@ -97,6 +99,12 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			severity: "blocker", category: "Mesh object settings", title: "skipCreatingInitialPolicies on Mesh",
 		},
 		{
+			name:     "skipCreatingInitialPolicies wrong type",
+			mesh:     map[string]any{"skipCreatingInitialPolicies": "*"},
+			severity: "blocker", category: "Unparseable resources", title: "Mesh spec could not be parsed",
+			status: StatusInconclusive,
+		},
+		{
 			name:     "non-RFC-1035 mesh name",
 			mesh:     map[string]any{"name": "My_Mesh", "meshServices": map[string]any{"mode": "Exclusive"}},
 			severity: "blocker", category: "Non-RFC-1035 names", title: "Mesh name is not a valid RFC-1035 DNS label",
@@ -112,8 +120,11 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			if f.Count < 1 {
 				t.Errorf("finding %q count = %d, want >= 1", tc.title, f.Count)
 			}
-			if tc.severity == "blocker" && m.Status != StatusBlockers {
+			if tc.severity == "blocker" && m.Status != StatusBlockers && tc.status == "" {
 				t.Errorf("status = %q, want %q", m.Status, StatusBlockers)
+			}
+			if tc.status != "" && m.Status != tc.status {
+				t.Errorf("status = %q, want %q", m.Status, tc.status)
 			}
 		})
 	}

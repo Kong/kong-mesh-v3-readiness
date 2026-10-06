@@ -577,7 +577,12 @@ func (a *auditor) countSystem(it resourceItem, totalBefore int) {
 
 func (a *auditor) checkMeshSettings(m resourceItem) {
 	var spec meshSpec
-	_ = json.Unmarshal(m.specBytes(), &spec) // Mesh inlines its spec at the top level
+	// EXC:FILE011:records-the-error-while-keeping-the-partial-decode — a wrong-typed Mesh field must not silently disable the checks that read it, so the parse error is recorded like every other resource does and the partially decoded spec still feeds the checks that apply.
+	if err := json.Unmarshal(m.specBytes(), &spec); err != nil {
+		a.rep.parseErrors++
+		a.rep.add(blocker, "Unparseable resources", "Mesh spec could not be parsed",
+			"Could not parse this resource; audit it manually before upgrading.", qualified(m))
+	}
 	ref := func(field string) string { return qualifiedNote(m, field) }
 
 	if spec.Mtls != nil && (spec.Mtls.EnabledBackend != "" || len(spec.Mtls.Backends) > 0) {
