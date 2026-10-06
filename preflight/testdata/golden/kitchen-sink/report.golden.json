@@ -325,11 +325,11 @@
       "group": "mesh_object",
       "category": "Mesh object settings",
       "title": "skipCreatingInitialPolicies on Mesh",
-      "detail": "3.0 removes `mesh.skipCreatingInitialPolicies` (kumahq/kuma#18661): it stops creating default policies for new Meshes altogether, so the field does nothing on the upgraded control plane — it is ignored, the stored Mesh keeps loading and a manifest that still sets it applies without an error, but the first write to the Mesh drops the field. Remove it from every Mesh manifest (GitOps included) before upgrading. Mind the rollback: after that first write, rolling the mesh's control plane back to 2.14 creates the default policies (`mesh-timeout-all-\u003cmesh\u003e`, `mesh-circuit-breaker-all-\u003cmesh\u003e`, `mesh-retry-all-\u003cmesh\u003e`) again — including for a mesh whose list deliberately suppressed them (current value: MeshRetry).",
+      "detail": "3.0 removes `mesh.skipCreatingInitialPolicies` (kumahq/kuma#18661): it stops creating default policies for new Meshes altogether, so the field does nothing on the upgraded control plane — it is ignored, the stored Mesh keeps loading and a manifest that still sets it applies without an error, but the first write to the Mesh drops the field. Remove it from every Mesh manifest (GitOps included) before upgrading. Mind the rollback: after that first write, rolling the mesh's control plane back to 2.14 creates the default policies (`mesh-timeout-all-\u003cmesh\u003e`, `mesh-timeout-to-all-\u003cmesh\u003e`, `mesh-circuit-breaker-all-\u003cmesh\u003e`, `mesh-retry-all-\u003cmesh\u003e`) again — including for a mesh whose list deliberately suppressed them. Each example resource names the list that mesh carries.",
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
       "example_resources": [
-        "kri_m____default_ (skipCreatingInitialPolicies)"
+        "kri_m____default_ (skipCreatingInitialPolicies: MeshRetry)"
       ]
     },
     {

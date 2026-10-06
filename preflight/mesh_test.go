@@ -27,6 +27,10 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 		title    string
 		// EXC:FILE011:a-parse-error-makes-the-run-inconclusive — the status override covers the wrong-typed Mesh field case, which records a blocker yet reports status inconclusive.
 		status string
+		// EXC:FILE011:the-collector-merges-findings-and-keeps-the-first-detail — detailContains asserts the shared detail text a case depends on.
+		detailContains string
+		// EXC:FILE011:per-resource-values-live-in-the-example-annotation — exampleContains asserts the annotation a case's mesh carries.
+		exampleContains string
 	}{
 		{
 			name:     "inline mTLS",
@@ -97,6 +101,8 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			name:     "skipCreatingInitialPolicies empty list",
 			mesh:     map[string]any{"skipCreatingInitialPolicies": []any{}},
 			severity: "blocker", category: "Mesh object settings", title: "skipCreatingInitialPolicies on Mesh",
+			detailContains:  "",
+			exampleContains: "skipCreatingInitialPolicies: [] (empty list skips nothing)",
 		},
 		{
 			name:     "skipCreatingInitialPolicies wrong type",
@@ -122,6 +128,21 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			}
 			if tc.severity == "blocker" && m.Status != StatusBlockers && tc.status == "" {
 				t.Errorf("status = %q, want %q", m.Status, StatusBlockers)
+			}
+			if tc.detailContains != "" && !strings.Contains(f.Detail, tc.detailContains) {
+				t.Errorf("finding %q detail = %q, want it to contain %q", f.Title, f.Detail, tc.detailContains)
+			}
+			if tc.exampleContains != "" {
+				found := false
+				for _, ex := range f.Examples {
+					if strings.Contains(ex, tc.exampleContains) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("finding %q examples %v, want one containing %q", f.Title, f.Examples, tc.exampleContains)
+				}
 			}
 			if tc.status != "" && m.Status != tc.status {
 				t.Errorf("status = %q, want %q", m.Status, tc.status)
@@ -167,5 +188,43 @@ func TestResourceNameUsesDisplayName(t *testing.T) {
 		if strings.Contains(ex, "fraud") || strings.Contains(ex, "api.shop") {
 			t.Errorf("valid logical name flagged: %s", ex)
 		}
+	}
+}
+
+// TestSkipCreatingInitialPoliciesPerMeshList guards the finding against the
+// collector's detail merging: two meshes carrying different lists must each
+// name their own list in their example annotation, not share the first one.
+func TestSkipCreatingInitialPoliciesPerMeshList(t *testing.T) {
+	m := auditResponses(t, map[string]string{"/meshes": listBody(t,
+		map[string]any{"name": "with-retry", "meshServices": map[string]any{"mode": "Exclusive"}, "skipCreatingInitialPolicies": []any{"MeshRetry"}},
+		map[string]any{"name": "skip-all", "meshServices": map[string]any{"mode": "Exclusive"}, "skipCreatingInitialPolicies": []any{"*"}},
+	)})
+	f, ok := findFinding(m, "blocker", "Mesh object settings", "skipCreatingInitialPolicies on Mesh")
+	if !ok {
+		t.Fatalf("JSON report missing skipCreatingInitialPolicies finding\nfindings: %+v", m.Findings)
+	}
+	if f.Count != 2 {
+		t.Errorf("count = %d, want 2\nexamples: %v", f.Count, f.Examples)
+	}
+	for _, want := range []string{"with-retry", "skip-all"} {
+		wantAnnotation := " (skipCreatingInitialPolicies: "
+		if want == "with-retry" {
+			wantAnnotation += "MeshRetry)"
+		} else {
+			wantAnnotation += "*)"
+		}
+		matched := false
+		for _, ex := range f.Examples {
+			if strings.HasPrefix(ex, want) && strings.Contains(ex, wantAnnotation) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Errorf("examples %v missing %q with annotation %q", f.Examples, want, wantAnnotation)
+		}
+	}
+	if strings.Contains(f.Detail, "MeshRetry") || strings.Contains(f.Detail, "skip-all") {
+		t.Errorf("detail carries a per-mesh value: %q", f.Detail)
 	}
 }

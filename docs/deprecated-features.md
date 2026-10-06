@@ -65,7 +65,7 @@ All have a `deprecated.go` under `pkg/plugins/policies/<name>/api/v1alpha1/`:
 - `Mesh.spec.routing.zoneEgress` boolean (`mesh.proto:289`) → dropped
 - `Mesh.spec.routing.defaultForbidMeshExternalServiceAccess` (`mesh.proto:293`) → dropped
 - Mesh membership / `Mesh.spec.constraints.dataplaneProxy` (`mesh.proto:62-92`) → dropped
-- `Mesh.spec.skipCreatingInitialPolicies` (`mesh.proto:8`) → dropped (kumahq/kuma#18661): 3.0 creates no default policies for new Meshes at all, ignores the field, and the first write to the Mesh drops it. Drop it from Mesh manifests before upgrading; rolling back to 2.14 after that recreates the mesh's default policies (`mesh-timeout-all-*`, `mesh-circuit-breaker-all-*`, `mesh-retry-all-*`), including for a mesh whose list deliberately suppressed them
+- `Mesh.spec.skipCreatingInitialPolicies` (`mesh.proto:8`) → dropped (kumahq/kuma#18661): 3.0 creates no default policies for new Meshes at all, ignores the field, and the first write to the Mesh drops it. Drop it from Mesh manifests before upgrading; rolling back to 2.14 after that recreates the mesh's default policies (`mesh-timeout-all-*`, `mesh-timeout-to-all-*`, `mesh-circuit-breaker-all-*`, `mesh-retry-all-*`), including for a mesh whose list deliberately suppressed them
 
 ## targetRef kind deprecations
 

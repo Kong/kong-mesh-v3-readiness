@@ -646,13 +646,14 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 			"3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: "+shown+").", docMeshServiceExclusive, qualified(m))
 	}
 	if spec.SkipCreatingInitialPolicies != nil {
+		// EXC:FILE011:the-collector-merges-findings-by-category-and-title-keeping-only-the-first-detail — the per-mesh list lives in the per-resource annotation, not the shared detail, or it would survive only for the first mesh audited.
 		skipped := strings.Join(spec.SkipCreatingInitialPolicies, ", ")
 		if skipped == "" {
-			skipped = "* (empty list)"
+			skipped = "[] (empty list skips nothing)"
 		}
 		a.rep.addDoc(blocker, "Mesh object settings", "skipCreatingInitialPolicies on Mesh",
-			"3.0 removes `mesh.skipCreatingInitialPolicies` (kumahq/kuma#18661): it stops creating default policies for new Meshes altogether, so the field does nothing on the upgraded control plane — it is ignored, the stored Mesh keeps loading and a manifest that still sets it applies without an error, but the first write to the Mesh drops the field. Remove it from every Mesh manifest (GitOps included) before upgrading. Mind the rollback: after that first write, rolling the mesh's control plane back to 2.14 creates the default policies (`mesh-timeout-all-<mesh>`, `mesh-circuit-breaker-all-<mesh>`, `mesh-retry-all-<mesh>`) again — including for a mesh whose list deliberately suppressed them (current value: "+skipped+").",
-			docUpgrade, ref("skipCreatingInitialPolicies"))
+			"3.0 removes `mesh.skipCreatingInitialPolicies` (kumahq/kuma#18661): it stops creating default policies for new Meshes altogether, so the field does nothing on the upgraded control plane — it is ignored, the stored Mesh keeps loading and a manifest that still sets it applies without an error, but the first write to the Mesh drops the field. Remove it from every Mesh manifest (GitOps included) before upgrading. Mind the rollback: after that first write, rolling the mesh's control plane back to 2.14 creates the default policies (`mesh-timeout-all-<mesh>`, `mesh-timeout-to-all-<mesh>`, `mesh-circuit-breaker-all-<mesh>`, `mesh-retry-all-<mesh>`) again — including for a mesh whose list deliberately suppressed them. Each example resource names the list that mesh carries.",
+			docUpgrade, refNote(qualified(m), "skipCreatingInitialPolicies: "+skipped))
 	}
 }
 
