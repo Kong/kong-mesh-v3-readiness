@@ -289,8 +289,8 @@ func TestHTMLScriptReadsSnakeCaseKeys(t *testing.T) {
 // controlPlane, coverageGaps and manualChecks would all land empty and an
 // inconclusive audit would re-render as clean. ParseReport must refuse it.
 func TestParseReportRejectsOlderSchema(t *testing.T) {
-	for _, version := range []string{"kuma3-preflight/v2", "kuma3-preflight/v3", "kuma3-preflight/v4"} {
-		old := `{"schema":"` + version + `","tool":"kuma3-preflight","status":"inconclusive",` +
+	for _, version := range []string{"kong-mesh-v3-preflight/v2", "kong-mesh-v3-preflight/v3", "kong-mesh-v3-preflight/v4"} {
+		old := `{"schema":"` + version + `","tool":"kong-mesh-v3-preflight","status":"inconclusive",` +
 			`"controlPlane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
 			`"summary":{"coverageGaps":1},"findings":[],` +
 			`"coverageGaps":[{"path":"/meshes/default/meshpassthroughs","reason":"404"}],` +
@@ -304,7 +304,7 @@ func TestParseReportRejectsOlderSchema(t *testing.T) {
 		}
 	}
 	// EXC:FILE011:a real v5 capture declares tool_schema and display-string examples; it must be refused with the re-run message, not silently re-rendered
-	capture := `{"tool_schema":"kuma3-preflight/v5","tool":"kuma3-preflight","status":"blockers",` +
+	capture := `{"tool_schema":"kong-mesh-v3-preflight/v5","tool":"kong-mesh-v3-preflight","status":"blockers",` +
 		`"control_plane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
 		`"findings":[{"severity":"blocker","group":"policies","category":"Policy from field",` +
 		`"title":"MeshTimeout uses from","detail":"d","count":1,` +
@@ -315,6 +315,17 @@ func TestParseReportRejectsOlderSchema(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not supported by this build") || !strings.Contains(err.Error(), "re-run the audit") {
 		t.Errorf("v5 capture should fail with the re-run message, got: %v", err)
+	}
+	// EXC:FILE011:documents-a-non-obvious-invariant — a pre-rename kuma3-preflight/v6 capture is structurally current yet must be refused, so old snapshots are never silently re-rendered under the new name
+	preRename := `{"tool_schema":"kuma3-preflight/v6","tool":"kuma3-preflight","status":"clean",` +
+		`"control_plane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
+		`"findings":[],"coverage_gaps":[],"manual_checks":[]}`
+	_, err = ParseReport([]byte(preRename))
+	if err == nil {
+		t.Fatal("pre-rename kuma3-preflight/v6 capture was accepted; want rejection")
+	}
+	if !strings.Contains(err.Error(), "kuma3-preflight/v6") || !strings.Contains(err.Error(), "does not look like a kong-mesh-v3-preflight JSON report") {
+		t.Errorf("error should name the found schema and the expected tool identity, got: %v", err)
 	}
 }
 

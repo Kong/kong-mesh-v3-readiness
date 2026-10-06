@@ -327,7 +327,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 </head>
 <body>
 <div class="layout" id="app"></div>
-<noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
+<noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kong-mesh-v3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
 <script id="report-data" type="application/json">
 `
 
@@ -492,14 +492,14 @@ const htmlTail = `
   }
 
   // ---- theme (persisted) ----
-  var savedTheme = localStorage.getItem('kuma3pf-theme');
+  var savedTheme = localStorage.getItem('kmv3pf-theme');
   if(savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
   function themeBtn(){
     function label(){ return document.documentElement.getAttribute('data-theme') === 'light' ? 'Dark' : 'Light'; }
     return el('button', {class:'btn icon', title:'Toggle light/dark theme', onclick:function(){
       var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', cur);
-      localStorage.setItem('kuma3pf-theme', cur);
+      localStorage.setItem('kmv3pf-theme', cur);
       this.textContent = label();
     }}, label());
   }
@@ -1007,7 +1007,7 @@ const htmlTail = `
     var items = data.manual_checks || [];
     if(!items.length) return null;
     var sig = [cp.product, cp.version, (data.meshes||[]).join('|'), items.length].join('::');
-    var key = 'kuma3pf:manual:' + sig;
+    var key = 'kmv3pf:manual:' + sig;
     var saved;
     try { saved = JSON.parse(localStorage.getItem(key)) || []; } catch(e){ saved = []; }
     var sec = el('section', {class:'grp', id:'sec-manual'});

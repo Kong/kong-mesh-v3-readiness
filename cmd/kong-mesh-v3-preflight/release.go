@@ -29,7 +29,7 @@ const maxReleasePages = 20
 // are size-capped. A best-effort call: the caller treats any error as "unknown
 // latest" (a coverage gap), never a hard failure. This is a CLI-only concern (checking
 // the latest upstream release) — it must not become a network call inside the
-// preflight library, so it stays in cmd/kuma3-preflight.
+// preflight library, so it stays in cmd/kong-mesh-v3-preflight.
 func fetchLatestPatch(ctx context.Context, hc *http.Client) (string, error) {
 	best := -1
 	next := githubReleasesURL

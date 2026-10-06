@@ -1,10 +1,10 @@
-# Manual Test Plan — `kuma3-preflight`
+# Manual Test Plan — `kong-mesh-v3-preflight`
 
 Produced via the three-persona method (Bach / Kaner / Hendrickson), drafted in parallel and merged. Manual verification only — these are run by a human (or a thin stub-server harness), not automated here.
 
 ## Scope
 
-`cmd/kuma3-preflight` (`main.go`, `client.go`, `audit.go`, `report.go`) — a stdlib-only Go CLI that audits a running Kuma control plane over its REST API (default `http://localhost:5681`) and emits a JSON or self-contained HTML pre-upgrade report for Kuma 3.0 (default HTML; Markdown is `--classify`-only). Exit codes: `0` report produced (any status — findings live in the report) · `2` operational error. Flags: `--address`, `--token`, `--mesh`, `--output`, `--timeout`.
+`cmd/kong-mesh-v3-preflight` (`main.go`, `client.go`, `audit.go`, `report.go`) — a stdlib-only Go CLI that audits a running Kuma control plane over its REST API (default `http://localhost:5681`) and emits a JSON or self-contained HTML pre-upgrade report for Kuma 3.0 (default HTML; Markdown is `--classify`-only). Exit codes: `0` report produced (any status — findings live in the report) · `2` operational error. Flags: `--address`, `--token`, `--mesh`, `--output`, `--timeout`.
 
 Most cases use a **local stub HTTP server** that mimics the CP REST API (the cheapest way to drive edge responses); a few want a real Kuma 2.x CP.
 
@@ -12,7 +12,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 
 ## Pre-conditions
 
-- Built binary: `go build -o /tmp/kuma3-preflight ./cmd/kuma3-preflight`
+- Built binary: `go build -o /tmp/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight`
 - A scriptable stub HTTP server (any language) able to: serve `GET /`, `GET /meshes`, the legacy/new collection paths, `/dataplanes`, `/zoneingresses`, `/zoneegresses`; control status codes, bodies, delays, `next` cursors, content-type — and serialize spec per the fidelity note above (inline for core/legacy/Dataplane, nested `spec` for new policies).
 - For compatibility / serialization cases (TC-15, TC-23): a real Kuma 2.x CP (k3d setup: `docs/test-setup.md`).
 - The 3.0 migration source of truth: `docs/deprecated-features.md`.
@@ -24,7 +24,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-1: Wrong endpoint returns HTTP 200 with a non-Kuma body → false green
 **Setup:** Stub where `GET /` returns `200` with an HTML login page (or `{}`). All collections empty.
 **Steps:**
-1. Run `kuma3-preflight --address http://127.0.0.1:<port>`.
+1. Run `kong-mesh-v3-preflight --address http://127.0.0.1:<port>`.
 2. Inspect header, findings, exit code.
 **Expected:** Pointing at a non-CP/wrong path is an operational error (exit 2): "could not identify a Kuma control plane".
 **Oracle:** FAIL if it prints `Control plane: Kuma` (the default when `product` is empty), "Meshes scanned: all", 0 findings, ✅, exit 0. A preflight that green-lights a non-CP is worse than useless.
@@ -42,7 +42,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-3: Token never leaks to stderr/report/file
 **Setup:** (a) `--token SUPERSECRET` against a CP whose `GET /` returns `401` with body `{"error":"token SUPERSECRET rejected"}`; (b) a TLS handshake failure with token set.
 **Steps:**
-1. Run, capturing combined output: `kuma3-preflight ... --token SUPERSECRET 2>&1 | grep SUPERSECRET`.
+1. Run, capturing combined output: `kong-mesh-v3-preflight ... --token SUPERSECRET 2>&1 | grep SUPERSECRET`.
 2. Repeat writing to `--output r.md`; grep the file.
 **Expected:** Token appears nowhere — not stderr, not the report, not error strings.
 **Oracle:** `grep` must return empty. Note the real risk: `getJSON` echoes up to 512 bytes of the **response body** into the error; a CP that reflects the token in its 401 body would surface it. FAIL if the token (from header) ever shows, or a reflected-token body is printed unredacted.
@@ -225,8 +225,8 @@ Run these first — they confirm the tool works at all before the edge-case TCs.
 
 | # | Action | Expected |
 |---|--------|----------|
-| B-1 | `go build -o /tmp/kuma3-preflight ./cmd/kuma3-preflight` | Builds clean, no errors. |
-| B-2 | `kuma3-preflight --help` (or `-h`) | Usage lists `--address --token --mesh --output --timeout` with defaults; exit 0. |
+| B-1 | `go build -o /tmp/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight` | Builds clean, no errors. |
+| B-2 | `kong-mesh-v3-preflight --help` (or `-h`) | Usage lists `--address --token --mesh --output --timeout` with defaults; exit 0. |
 | B-3 | Port-forward CP, run with no flags (default `:5681`) | Connects, prints a report with the CP product/version header; exit 0 (report produced) or exit 2 on error. |
 | B-4 | Run against a **clean** Exclusive mesh only (`--mesh clean`) | No `meshServices.mode` warning, no operator-authored blockers; `Meshes scanned: clean`. Note: the CP auto-creates `mesh-timeout-all-clean` defaults using `from`, so expect 2 system-marked blockers in the report (see TC-24). A true `✅`/`clean` requires a mesh with no CP-managed defaults. |
 | B-5 | Create one `TrafficPermission`, re-run | Exactly one `TrafficPermission (removed in 3.0)` blocker in the report. |
@@ -246,7 +246,7 @@ Run these first — they confirm the tool works at all before the edge-case TCs.
 
 #### TC-27: Full expected-findings verification on a running cluster
 **Setup:** Provision the documented fixture cluster (`docs/test-setup.md`): on `default` — the 9 legacy resources, a `from` MeshTrafficPermission, a bad-targetRef MeshHTTPRoute, an injected Dataplane with `reachableServices`; Mesh `legacy` with all inline settings; Mesh `clean` in `meshServices.mode: Exclusive`. Note the CP also auto-creates `policy-role: system` defaults.
-**Steps:** Run `kuma3-preflight --output actual.md`; compare every finding against the expected set below (no missing, no extra, correct severity, correct mesh attribution). Re-run `--mesh legacy`, `--mesh clean`, `--mesh default` and confirm scoping isolates the right findings.
+**Steps:** Run `kong-mesh-v3-preflight --output actual.md`; compare every finding against the expected set below (no missing, no extra, correct severity, correct mesh attribution). Re-run `--mesh legacy`, `--mesh clean`, `--mesh default` and confirm scoping isolates the right findings.
 **Expected (golden finding-set):**
 - **Blockers** — each legacy resource on `default` (one per kind created); all 9 `legacy` Mesh-object settings (mTLS, metrics, tracing, logging, constraints, localityAwareLoadBalancing, routing.zoneEgress, defaultForbidMeshExternalServiceAccess, passthrough); the `from` MTP; the top-level `targetRef.kind=MeshService` MeshHTTPRoute; the Dataplane `reachableServices`; ZoneIngress/ZoneEgress if present; plus the CP system defaults' `from` (marked `(system …)`).
 - **Warnings** — `meshServices.mode is not Exclusive` for `default` and `legacy` (NOT `clean`); `to[].targetRef.kind=Mesh` and `proxyTypes` where present (incl. system defaults).

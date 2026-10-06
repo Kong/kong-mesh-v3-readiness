@@ -26,21 +26,21 @@ const repoModulePath = "github.com/Kong/kong-mesh-v3-readiness"
 
 const header = `openapi: 3.1.0
 info:
-  title: kuma3-preflight report schema
+  title: kong-mesh-v3-preflight report schema
   version: "1.0.0"
   description: |
-    Schema for the JSON documents emitted by the ` + "`kuma3-preflight`" + ` CLI
-    (` + "`github.com/Kong/kong-mesh-v3-readiness`" + `, ` + "`cmd/kuma3-preflight`" + `).
+    Schema for the JSON documents emitted by the ` + "`kong-mesh-v3-preflight`" + ` CLI
+    (` + "`github.com/Kong/kong-mesh-v3-readiness`" + `, ` + "`cmd/kong-mesh-v3-preflight`" + `).
 
-    ` + "`kuma3-preflight`" + ` is a CLI, not an HTTP service — this document has no ` + "`paths`" + `.
+    ` + "`kong-mesh-v3-preflight`" + ` is a CLI, not an HTTP service — this document has no ` + "`paths`" + `.
     It exists only so the two JSON contracts below can be browsed/validated with
     standard OpenAPI/JSON-Schema tooling (Redoc, openapi-generator, ajv). Point such
     tooling at a real file — ` + "`--output report.json`" + `, or ` + "`--classify ... --format json" + `
     --output classification.json` + "`" + ` — and validate it against the matching schema.
 
     Two independent, versioned contracts are shipped:
-    - ` + "`Report`" + ` — the CP-audit report (default command; ` + "`schema` = `kuma3-preflight/vN`" + `).
-    - ` + "`Classification`" + ` — the ` + "`--classify`" + ` output (` + "`schema` = `kuma3-preflight-classification/v1`" + `).
+    - ` + "`Report`" + ` — the CP-audit report (default command; ` + "`schema` = `kong-mesh-v3-preflight/vN`" + `).
+    - ` + "`Classification`" + ` — the ` + "`--classify`" + ` output (` + "`schema` = `kong-mesh-v3-preflight-classification/v1`" + `).
     Each is a stable contract: ` + "`--from-json`" + ` reloads ` + "`Report`" + ` verbatim, so JSON,
     HTML (and, for classification, Markdown) render from the exact same object.
 

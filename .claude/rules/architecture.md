@@ -2,7 +2,7 @@
 
 - **One model, N renderers.** Everything renders from a single model — the CP audit from
   `preflight.Report` (`preflight/model.go`) into JSON (`RenderJSON`) + HTML (`RenderHTML`);
-  `--classify` from `classificationModel` (`cmd/kuma3-preflight/classify_model.go`; aliases
+  `--classify` from `classificationModel` (`cmd/kong-mesh-v3-preflight/classify_model.go`; aliases
   `reportmodel.Classification`) into Markdown + JSON + HTML. Within each, the formats must
   never disagree (Markdown is classify-only — a CP audit emits JSON or HTML, default HTML).
   `preflight.ParseReport` reloads a `Report` and re-renders (the CLI's `--from-json` uses it),
@@ -12,7 +12,7 @@
   `tools/openapigen` can reflect both contracts into `docs/openapi.yaml`; it holds struct
   shapes only, never audit/render logic.
 - **Exit codes report execution, findings live in the report** (derived in
-  `cmd/kuma3-preflight/main.go`'s `run`/`exitForStatus`): `0` report produced
+  `cmd/kong-mesh-v3-preflight/main.go`'s `run`/`exitForStatus`): `0` report produced
   (clean, blockers, or inconclusive) · `2` operational error — including an audit abort
   (which first stamps the destination with a FAILED report) and a stored FAILED report
   re-rendered via `--from-json`. Findings and coverage gaps never change the exit code;
@@ -32,7 +32,7 @@
 - **Security in `preflight/client.go`:** never echo response bodies into errors (may reflect
   the bearer token); cap bodies at `maxBodyBytes`; backstop pagination (`maxPages` +
   visited-cursor loop guard); percent-escape the untrusted mesh-filter value in paths.
-- **File writes are atomic** (`cmd/kuma3-preflight/main.go`'s `writeReport`: temp file +
+- **File writes are atomic** (`cmd/kong-mesh-v3-preflight/main.go`'s `writeReport`: temp file +
   rename) and refuse to follow a symlink at the destination. Keep both properties.
 - **Deterministic output:** findings/coverage are sorted in `toModel`
   (`preflight/model.go`) before rendering. No map-iteration order or timestamps in the
@@ -40,7 +40,7 @@
 - **The `preflight` package makes no network calls beyond the audited control plane** and
   never prints, logs, or calls `os.Exit` — it is imported by other Go programs, not just the
   CLI. The GitHub latest-patch lookup (`fetchLatestPatch` et al.) is a CLI-only concern in
-  `cmd/kuma3-preflight/release.go`; `preflight.Audit` takes the already-resolved patch via
+  `cmd/kong-mesh-v3-preflight/release.go`; `preflight.Audit` takes the already-resolved patch via
   `Options.LatestPatch` and degrades gracefully (a coverage gap) when it's empty.
 
 ## Output data model
@@ -86,4 +86,4 @@ and add a test in `preflight/render_test.go`.
 - Logging or error-wrapping a raw HTTP response body — it can contain the bearer token.
 - Non-deterministic output (map ranges, unsorted slices) in the rendered report.
 - Adding a network call (or a `flag.*`/`os.Exit`/`fmt.Print*`) inside `preflight/` — that's a
-  CLI-only concern and belongs in `cmd/kuma3-preflight/`.
+  CLI-only concern and belongs in `cmd/kong-mesh-v3-preflight/`.

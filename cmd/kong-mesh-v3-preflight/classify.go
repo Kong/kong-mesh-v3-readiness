@@ -30,7 +30,7 @@ const (
 	categoryRemovedResources = "Removed resources"
 )
 
-const classificationSchema = "kuma3-preflight-classification/v1"
+const classificationSchema = "kong-mesh-v3-preflight-classification/v1"
 
 // Per-feature recommendation labels.
 const (

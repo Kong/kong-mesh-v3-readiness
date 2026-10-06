@@ -1,6 +1,6 @@
 # Classifying Kuma e2e tests by Kuma-3.0 deprecated-feature usage
 
-Goal: point `kuma3-preflight`'s deprecation catalog at the **Kuma e2e suite** to see which
+Goal: point `kong-mesh-v3-preflight`'s deprecation catalog at the **Kuma e2e suite** to see which
 tests exercise features removed/deprecated in Kuma 3.0, so they can be **removed/replaced**
 (the test's subject is a removed resource) or **rewritten** (a removed thing is only
 scaffolding for an unrelated test).
@@ -9,15 +9,15 @@ Two complementary signals, combined by `--classify`:
 
 - **Static** — scan the e2e Go/YAML sources. Fast, deterministic, per-feature attribution,
   no e2e run. Catches inline YAML and the known framework helpers/builders.
-- **Dynamic** — run `kuma3-preflight` against the live shared CP after each spec during an
+- **Dynamic** — run `kong-mesh-v3-preflight` against the live shared CP after each spec during an
   e2e run, tagged by spec name. Catches resources built programmatically that a source grep
   misses. Requires the opt-in capture hook (below) and an actual e2e run.
 
 ## 1. Static only (no e2e run)
 
 ```bash
-go build -o bin/kuma3-preflight ./cmd/kuma3-preflight
-./bin/kuma3-preflight --classify \
+go build -o bin/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight
+./bin/kong-mesh-v3-preflight --classify \
   --source-dir ~/kong/kuma/test/e2e_env/universal \
   --format markdown --output classification.md
 ```
@@ -40,15 +40,19 @@ Run the universal suite (it already runs `--procs 1`, so snapshots are serial/cl
 
 ```bash
 # 1. Build the tool in this repo
-go build -o "$PWD/bin/kuma3-preflight" ./cmd/kuma3-preflight
+go build -o "$PWD/bin/kong-mesh-v3-preflight" ./cmd/kong-mesh-v3-preflight
 
 # 2. Run the Kuma universal e2e suite with capture enabled
 cd ~/kong/kuma
-KUMA3_PREFLIGHT_BIN="/abs/path/to/v3-readiness/bin/kuma3-preflight" \
+KUMA3_PREFLIGHT_BIN="/abs/path/to/v3-readiness/bin/kong-mesh-v3-preflight" \
 KUMA3_PREFLIGHT_DIR="$PWD/preflight-out" \
   make test/e2e-universal
 # (smoke a subset with e.g. GINKGO_E2E_TEST_FLAGS="--focus=TrafficRoute")
 ```
+
+The `KUMA3_PREFLIGHT_*` variable names are the kuma harness's contract, not the
+tool's branding — they keep the pre-rename spelling until that repo renames
+them, while the values point at the renamed binary, so capture works unchanged.
 
 Each spec writes `preflight-out/<NNNN>-<spec-slug>.json` (sequence-numbered so lexical order
 matches execution order). Capture never fails a test: the snapshot is written and the exit
@@ -57,7 +61,7 @@ code is `0` whenever a report was produced — only an execution error exits `2`
 ## 3. Merge static + dynamic into one report
 
 ```bash
-./bin/kuma3-preflight --classify \
+./bin/kong-mesh-v3-preflight --classify \
   --source-dir ~/kong/kuma/test/e2e_env/universal \
   --reports-dir ~/kong/kuma/preflight-out \
   --format html --output classification.html

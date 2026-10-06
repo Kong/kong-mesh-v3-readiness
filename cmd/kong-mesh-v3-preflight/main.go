@@ -1,4 +1,4 @@
-// Command kuma3-preflight audits a running Kuma zone (or global) control plane
+// Command kong-mesh-v3-preflight audits a running Kuma zone (or global) control plane
 // over its REST API and reports which resources and settings must change before
 // upgrading to Kuma 3.0. See docs/deprecated-features.md for the source
 // of truth behind every check. The audit engine itself lives in the importable
@@ -262,7 +262,7 @@ func writeReport(path, content string) error {
 		return fmt.Errorf("refusing to write %s: destination is a symlink", path)
 	}
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".kuma3-preflight-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".kong-mesh-v3-preflight-*.tmp")
 	if err != nil {
 		return err
 	}

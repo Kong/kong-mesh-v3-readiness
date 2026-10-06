@@ -104,7 +104,7 @@ func TestRunCollectionReadFailureExitsZero(t *testing.T) {
 	flag.CommandLine.SetOutput(os.Stderr)
 	out := filepath.Join(t.TempDir(), "report.json")
 	os.Args = []string{
-		"kuma3-preflight",
+		"kong-mesh-v3-preflight",
 		"--address", srv.URL,
 		"--format", "json",
 		"--output", out,
@@ -126,7 +126,7 @@ func TestRunMaxResourceReadsValidation(t *testing.T) {
 
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	flag.CommandLine.SetOutput(os.Stderr)
-	os.Args = []string{"kuma3-preflight", "--max-resource-reads", "-1"}
+	os.Args = []string{"kong-mesh-v3-preflight", "--max-resource-reads", "-1"}
 
 	if got := run(); got != 2 {
 		t.Fatalf("run() exit = %d, want 2", got)
@@ -157,7 +157,7 @@ func TestRunMaxResourceReadsWiring(t *testing.T) {
 	flag.CommandLine.SetOutput(os.Stderr)
 	out := filepath.Join(t.TempDir(), "report.json")
 	os.Args = []string{
-		"kuma3-preflight",
+		"kong-mesh-v3-preflight",
 		"--address", srv.URL,
 		"--format", "json",
 		"--output", out,
@@ -196,7 +196,7 @@ func TestRunDefaultResourceReadLimitKeepsSmallAuditClean(t *testing.T) {
 	flag.CommandLine.SetOutput(os.Stderr)
 	out := filepath.Join(t.TempDir(), "report.json")
 	os.Args = []string{
-		"kuma3-preflight",
+		"kong-mesh-v3-preflight",
 		"--address", srv.URL,
 		"--format", "json",
 		"--output", out,
@@ -234,7 +234,7 @@ func TestRunBlockersReportExitsZero(t *testing.T) {
 	flag.CommandLine.SetOutput(os.Stderr)
 	out := filepath.Join(t.TempDir(), "report.json")
 	os.Args = []string{
-		"kuma3-preflight",
+		"kong-mesh-v3-preflight",
 		"--address", srv.URL,
 		"--format", "json",
 		"--output", out,
@@ -255,8 +255,8 @@ func TestRunBlockersReportExitsZero(t *testing.T) {
 
 func TestRunFromJSONFailedReportExitsTwo(t *testing.T) {
 	failed := `{
-	  "tool_schema": "kuma3-preflight/v6",
-	  "tool": "kuma3-preflight",
+	  "tool_schema": "kong-mesh-v3-preflight/v6",
+	  "tool": "kong-mesh-v3-preflight",
 	  "status": "failed",
 	  "control_plane": {"address": "http://localhost:5681"},
 	  "summary": {"findings": 0, "coverage_gaps": 0, "manual_checks": 0},
@@ -279,7 +279,7 @@ func TestRunFromJSONFailedReportExitsTwo(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	flag.CommandLine.SetOutput(os.Stderr)
 	out := filepath.Join(t.TempDir(), "report.html")
-	os.Args = []string{"kuma3-preflight", "--from-json", path, "--format", "html", "--output", out}
+	os.Args = []string{"kong-mesh-v3-preflight", "--from-json", path, "--format", "html", "--output", out}
 
 	if got := run(); got != 2 {
 		t.Fatalf("run() exit = %d, want 2", got)

@@ -1,6 +1,6 @@
 {
-  "tool_schema": "kuma3-preflight/v6",
-  "tool": "kuma3-preflight",
+  "tool_schema": "kong-mesh-v3-preflight/v6",
+  "tool": "kong-mesh-v3-preflight",
   "status": "clean",
   "control_plane": {
     "product": "Kuma",
