@@ -417,6 +417,13 @@ func TestBuildManualChecksK8sGating(t *testing.T) {
 			t.Errorf("k8s card %q command should be a kubectl one-liner; got %q", card.Title, card.Command)
 		}
 	}
+	// 2.14 reads the kuma.io/mesh annotation on Services and HTTPRoutes too, not
+	// just Pods and Namespaces.
+	for _, kind := range []string{"ns,pods,services", "httproutes.gateway.networking.k8s.io"} {
+		if !strings.Contains(added[0].Command, kind) {
+			t.Errorf("kuma.io/mesh card command should list %q; got %q", kind, added[0].Command)
+		}
+	}
 }
 
 // The Kong Mesh cards (static kuma-dp OPA config) concern enterprise-only data
