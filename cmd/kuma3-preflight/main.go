@@ -244,8 +244,8 @@ func loadModel(path string) (preflight.Report, error) {
 // emit writes content to stdout, or to a file when out is set.
 func emit(out, content string) error {
 	if out == "" {
-		fmt.Print(content)
-		return nil
+		_, err := fmt.Print(content)
+		return err
 	}
 	if err := writeReport(out, content); err != nil {
 		return err

@@ -36,8 +36,9 @@ for json in "$JSON_DIR"/*.json; do
   out="$HTML_DIR/$name.html"
   rm -f "$out"
   # The CLI's exit code reports execution, not the report status: 0 whenever a
-  # report was produced (clean, blockers, inconclusive), 2 on an operational
-  # error. Findings live in the report, so success == exit 0 and file written;
+  # report was produced (clean, blockers, inconclusive), 2 only for a FAILED
+  # report (an execution error captured in the fixture). Findings live in the
+  # report, so a rendered fixture is a success == file written and exit 0 or 2;
   # anything else is a real CLI error.
   # Capture the CLI's output and only surface it on failure, so a normal run
   # stays quiet but a broken fixture still shows the CLI's own diagnostics.
@@ -45,7 +46,7 @@ for json in "$JSON_DIR"/*.json; do
   render_output="$("$BIN" --from-json "$json" --format html --output "$out" 2>&1)"
   rc=$?
   set -e
-  if [[ ! -s "$out" || "$rc" -ne 0 ]]; then
+  if [[ ! -s "$out" || ( "$rc" -ne 0 && "$rc" -ne 2 ) ]]; then
     echo "error: failed to render $json (exit $rc)" >&2
     [[ -n "$render_output" ]] && echo "$render_output" >&2
     exit 1
