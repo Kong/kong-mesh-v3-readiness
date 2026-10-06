@@ -44,11 +44,15 @@ go build -o "$PWD/bin/kong-mesh-v3-preflight" ./cmd/kong-mesh-v3-preflight
 
 # 2. Run the Kuma universal e2e suite with capture enabled
 cd ~/kong/kuma
-KONG_MESH_V3_PREFLIGHT_BIN="/abs/path/to/v3-readiness/bin/kong-mesh-v3-preflight" \
-KONG_MESH_V3_PREFLIGHT_DIR="$PWD/preflight-out" \
+KUMA3_PREFLIGHT_BIN="/abs/path/to/v3-readiness/bin/kong-mesh-v3-preflight" \
+KUMA3_PREFLIGHT_DIR="$PWD/preflight-out" \
   make test/e2e-universal
 # (smoke a subset with e.g. GINKGO_E2E_TEST_FLAGS="--focus=TrafficRoute")
 ```
+
+The `KUMA3_PREFLIGHT_*` variable names are the kuma harness's contract, not the
+tool's branding — they keep the pre-rename spelling until that repo renames
+them, while the values point at the renamed binary, so capture works unchanged.
 
 Each spec writes `preflight-out/<NNNN>-<spec-slug>.json` (sequence-numbered so lexical order
 matches execution order). Capture never fails a test: exit 1 (blockers) / 3 (inconclusive)

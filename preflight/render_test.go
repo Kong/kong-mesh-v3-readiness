@@ -316,6 +316,17 @@ func TestParseReportRejectsOlderSchema(t *testing.T) {
 	if !strings.Contains(err.Error(), "not supported by this build") || !strings.Contains(err.Error(), "re-run the audit") {
 		t.Errorf("v5 capture should fail with the re-run message, got: %v", err)
 	}
+	// EXC:FILE011:documents-a-non-obvious-invariant — a pre-rename kuma3-preflight/v6 capture is structurally current yet must be refused, so old snapshots are never silently re-rendered under the new name
+	preRename := `{"tool_schema":"kuma3-preflight/v6","tool":"kuma3-preflight","status":"clean",` +
+		`"control_plane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
+		`"findings":[],"coverage_gaps":[],"manual_checks":[]}`
+	_, err = ParseReport([]byte(preRename))
+	if err == nil {
+		t.Fatal("pre-rename kuma3-preflight/v6 capture was accepted; want rejection")
+	}
+	if !strings.Contains(err.Error(), "kuma3-preflight/v6") || !strings.Contains(err.Error(), "does not look like a kong-mesh-v3-preflight JSON report") {
+		t.Errorf("error should name the found schema and the expected tool identity, got: %v", err)
+	}
 }
 
 func TestRenderHTMLIsSelfContainedAndSafe(t *testing.T) {
