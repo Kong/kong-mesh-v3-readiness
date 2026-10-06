@@ -10,9 +10,8 @@ import (
 const (
 	categoryOutboundDefaults = "Outbound defaults"
 
-	titleUniversalDeny     = "Universal Dataplanes have no reachableBackends"
-	titleKubernetesDeny    = "Kubernetes dataplanes have no reachableBackends"
-	titleNoMeshPassthrough = "Transparent proxies selected by no MeshPassthrough"
+	titleNoReachableBackends = "Transparent proxies have no reachableBackends"
+	titleNoMeshPassthrough   = "Transparent proxies selected by no MeshPassthrough"
 )
 
 // overview builds one /dataplanes+insights item: a DataplaneOverview nests the
@@ -64,52 +63,46 @@ var (
 	kubernetesLabels = map[string]any{"kuma.io/env": "kubernetes"}
 )
 
-// Kubernetes and Universal are separate findings because the remediation differs.
+// Both environments land in one entry: the decision is one, the remediation
+// differs only in where the field is set.
 func TestOutboundDenyFlagsProxiesWithNoReachableBackends(t *testing.T) {
 	cases := []struct {
-		name  string
-		item  map[string]any
-		title string
+		name string
+		item map[string]any
 	}{
 		{
-			name:  "universal, redirect ports on the spec",
-			item:  overview("dp-1", universalLabels, tproxySpec(nil), nil),
-			title: titleUniversalDeny,
+			name: "universal, redirect ports on the spec",
+			item: overview("dp-1", universalLabels, tproxySpec(nil), nil),
 		},
 		{
-			name:  "kubernetes, redirect ports on the spec",
-			item:  overview("dp-1", kubernetesLabels, tproxySpec(nil), nil),
-			title: titleKubernetesDeny,
+			name: "kubernetes, redirect ports on the spec",
+			item: overview("dp-1", kubernetesLabels, tproxySpec(nil), nil),
 		},
 		{
 			name: "transparent proxy reported only through kuma-dp metadata",
 			item: overview("dp-1", universalLabels, map[string]any{}, map[string]any{
 				"transparentProxy": map[string]any{"redirect": map[string]any{"outbound": map[string]any{"enabled": true}}},
 			}),
-			title: titleUniversalDeny,
 		},
 		{
-			name:  "kubernetes sidecar with no metadata and no transparentProxying in spec",
-			item:  overview("dp-1", kubernetesLabels, map[string]any{"inbound": []any{map[string]any{"port": 8080}}}, nil),
-			title: titleKubernetesDeny,
+			name: "kubernetes sidecar with no metadata and no transparentProxying in spec",
+			item: overview("dp-1", kubernetesLabels, map[string]any{"inbound": []any{map[string]any{"port": 8080}}}, nil),
 		},
 		{
-			name:  "kubernetes sidecar with no networking at all",
-			item:  overview("dp-1", kubernetesLabels, nil, nil),
-			title: titleKubernetesDeny,
+			name: "kubernetes sidecar with no networking at all",
+			item: overview("dp-1", kubernetesLabels, nil, nil),
 		},
 		{
-			name:  "unlabeled proxy counts as Universal",
-			item:  overview("dp-1", nil, tproxySpec(nil), nil),
-			title: titleUniversalDeny,
+			name: "unlabeled proxy counts as Universal",
+			item: overview("dp-1", nil, tproxySpec(nil), nil),
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditOverviews(t, tc.item)
-			f, ok := findFinding(m, "blocker", categoryOutboundDefaults, tc.title)
+			f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
 			if !ok {
-				t.Fatalf("missing finding %q\nfindings: %+v", tc.title, m.Findings)
+				t.Fatalf("missing finding %q\nfindings: %+v", titleNoReachableBackends, m.Findings)
 			}
 			if f.Count != 1 {
 				t.Errorf("count = %d, want 1", f.Count)
@@ -124,6 +117,45 @@ func TestOutboundDenyFlagsProxiesWithNoReachableBackends(t *testing.T) {
 				t.Errorf("status = %q, want %q", m.Status, StatusBlockers)
 			}
 		})
+	}
+}
+
+// One entry, both environments: the detail breaks the tally down per
+// environment and carries both fixes; a single-environment estate gets no
+// zero-count line for the absent one.
+func TestOutboundDenyMergesEnvironmentsIntoOneEntry(t *testing.T) {
+	m := auditOverviews(t,
+		overview("dp-u", universalLabels, tproxySpec(nil), nil),
+		overview("dp-k", kubernetesLabels, tproxySpec(nil), nil),
+	)
+	f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
+	if !ok {
+		t.Fatalf("missing finding %q\nfindings: %+v", titleNoReachableBackends, m.Findings)
+	}
+	if f.Count != 2 || !strings.Contains(f.Detail, "2 of 2") {
+		t.Fatalf("count/detail = %d/%q, want 2 and a 2-of-2 tally", f.Count, f.Detail)
+	}
+	for _, want := range []string{
+		"Universal Dataplanes: 1 of 1",
+		"Kubernetes dataplanes: 1 of 1",
+		"On Universal, add `networking.transparentProxying.reachableBackends.refs`",
+		"On Kubernetes, add the `kuma.io/reachable-backends` annotation",
+	} {
+		if !strings.Contains(f.Detail, want) {
+			t.Errorf("detail misses %q: %q", want, f.Detail)
+		}
+	}
+
+	m = auditOverviews(t, overview("dp-u", universalLabels, tproxySpec(nil), nil))
+	f, ok = findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
+	if !ok {
+		t.Fatalf("missing finding for the single-environment estate\nfindings: %+v", m.Findings)
+	}
+	if !strings.Contains(f.Detail, "Universal Dataplanes: 1 of 1") {
+		t.Errorf("detail misses the Universal breakdown: %q", f.Detail)
+	}
+	if strings.Contains(f.Detail, "Kubernetes") {
+		t.Errorf("detail mentions the absent environment: %q", f.Detail)
 	}
 }
 
@@ -198,10 +230,8 @@ func TestOutboundDenySkipsProxiesThatKeepOutbounds(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditOverviews(t, tc.item)
-			for _, title := range []string{titleUniversalDeny, titleKubernetesDeny} {
-				if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, title); ok {
-					t.Errorf("wrongly flagged %q\nfindings: %+v", title, m.Findings)
-				}
+			if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends); ok {
+				t.Errorf("wrongly flagged %q\nfindings: %+v", titleNoReachableBackends, m.Findings)
 			}
 		})
 	}
@@ -217,9 +247,9 @@ func TestOutboundDenyReportsSummaryNotPerProxy(t *testing.T) {
 		items = append(items, overview(n, universalLabels, tproxySpec(nil), nil))
 	}
 	m := auditOverviews(t, items...)
-	f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleUniversalDeny)
+	f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
 	if !ok {
-		t.Fatalf("missing finding %q\nfindings: %+v", titleUniversalDeny, m.Findings)
+		t.Fatalf("missing finding %q\nfindings: %+v", titleNoReachableBackends, m.Findings)
 	}
 	if f.Count != 3 {
 		t.Errorf("count = %d, want 3", f.Count)
@@ -234,10 +264,8 @@ func TestOutboundDenyReportsSummaryNotPerProxy(t *testing.T) {
 
 func TestOutboundDenyNotConcludedFromCoverageGap(t *testing.T) {
 	m := auditWithNotFound(t, map[string]string{"/config": unsetConfigJSON}, "/dataplanes+insights")
-	for _, title := range []string{titleUniversalDeny, titleKubernetesDeny} {
-		if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, title); ok {
-			t.Errorf("finding %q concluded from an unread collection\nfindings: %+v", title, m.Findings)
-		}
+	if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends); ok {
+		t.Errorf("finding %q concluded from an unread collection\nfindings: %+v", titleNoReachableBackends, m.Findings)
 	}
 	if m.Status != StatusInconclusive {
 		t.Errorf("status = %q, want %q", m.Status, StatusInconclusive)
@@ -334,7 +362,7 @@ func TestRestrictedControlPlaneStillVerifiesReachableBackends(t *testing.T) {
 		t.Fatalf("status = %q, want %q\nfindings: %+v", m.Status, StatusClean, m.Findings)
 	}
 	for _, tc := range []struct{ sev, title string }{
-		{SeverityInfo, titleUniversalDeny},
+		{SeverityInfo, titleNoReachableBackends},
 		{SeverityInfo, titleNoMeshPassthrough},
 	} {
 		f, ok := findFinding(m, tc.sev, categoryOutboundDefaults, tc.title)
@@ -385,7 +413,7 @@ func TestPinnedControlPlaneDoesNotBlockOutboundDefaults(t *testing.T) {
 		"/meshes":              listBody(t, meshItem(nil)),
 		"/dataplanes+insights": listBody(t, overview("dp-1", universalLabels, tproxySpec(nil), nil)),
 	})
-	for _, title := range []string{titleUniversalDeny, titleNoMeshPassthrough} {
+	for _, title := range []string{titleNoReachableBackends, titleNoMeshPassthrough} {
 		if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, title); ok {
 			t.Errorf("pinned control plane still blocks on %q\nfindings: %+v", title, m.Findings)
 		}
@@ -426,7 +454,7 @@ func TestOutboundDefaultsJudgedPerZone(t *testing.T) {
 			inZone("dp-east", "east"), inZone("dp-west", "west"), inZone("dp-north", "north"),
 		),
 	})
-	f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleUniversalDeny)
+	f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
 	if !ok {
 		t.Fatalf("missing blocker for the unset zone\nfindings: %+v", m.Findings)
 	}
@@ -435,7 +463,7 @@ func TestOutboundDefaultsJudgedPerZone(t *testing.T) {
 	}
 	var infoRefs []string
 	for _, f := range m.Findings {
-		if f.Severity == SeverityInfo && f.Category == categoryOutboundDefaults && f.Title == titleUniversalDeny {
+		if f.Severity == SeverityInfo && f.Category == categoryOutboundDefaults && f.Title == titleNoReachableBackends {
 			infoRefs = append(infoRefs, f.Examples...)
 		}
 	}
