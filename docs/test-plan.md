@@ -4,7 +4,7 @@ Produced via the three-persona method (Bach / Kaner / Hendrickson), drafted in p
 
 ## Scope
 
-`cmd/kuma3-preflight` (`main.go`, `client.go`, `audit.go`, `report.go`) — a stdlib-only Go CLI that audits a running Kuma control plane over its REST API (default `http://localhost:5681`) and emits a JSON or self-contained HTML pre-upgrade report for Kuma 3.0 (default HTML; Markdown is `--classify`-only). Exit codes: `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse). Flags: `--address`, `--token`, `--mesh`, `--output`, `--timeout`.
+`cmd/kuma3-preflight` (`main.go`, `client.go`, `audit.go`, `report.go`) — a stdlib-only Go CLI that audits a running Kuma control plane over its REST API (default `http://localhost:5681`) and emits a JSON or self-contained HTML pre-upgrade report for Kuma 3.0 (default HTML; Markdown is `--classify`-only). Exit codes: `0` report produced (any status — findings live in the report) · `2` operational error. Flags: `--address`, `--token`, `--mesh`, `--output`, `--timeout`.
 
 Most cases use a **local stub HTTP server** that mimics the CP REST API (the cheapest way to drive edge responses); a few want a real Kuma 2.x CP.
 
@@ -208,15 +208,15 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-25: `--address` path prefix is honored (behind an ingress)
 **Setup:** Stub serving the CP under a path prefix: `GET /kuma/`, `GET /kuma/meshes`, `GET /kuma/<collection>`. Run `--address http://127.0.0.1:<port>/kuma`. Log every request path the stub receives.
 **Steps:** Run a full audit; capture the request paths.
-**Expected:** Requests hit `/kuma/meshes`, `/kuma/dataplanes`, … (prefix preserved); pagination cursors are not double-prefixed. A wrong subpath now reaches the server and 404s → exit 2/3 rather than a false green.
+**Expected:** Requests hit `/kuma/meshes`, `/kuma/dataplanes`, … (prefix preserved); pagination cursors are not double-prefixed. A wrong subpath now reaches the server and 404s → exit 0 with status `inconclusive`, or exit 2 when `/meshes` itself 404s, rather than a false green.
 **Oracle:** FAIL if any request drops the `/kuma` prefix (hits host root), or a server cursor already carrying `/kuma/...` gets it prepended twice.
 **Source:** real-CP run (BUG-4).
 
 #### TC-26: Exit-code matrix
 **Setup:** Drive each terminal state: clean Exclusive mesh; a mesh with a blocker; an unreachable CP; a 404'd collection; an unparseable resource.
-**Steps:** Run each; record `$?`.
-**Expected:** `0` clean · `1` blockers · `2` operational error (unreachable / bad flag / write failure) · `3` inconclusive (coverage gap OR unparseable). Inconclusive (3) takes precedence over blockers (1) because a partial audit is not fully trustworthy.
-**Oracle:** FAIL if any state maps to the wrong code — especially a 404'd collection or unparseable resource yielding `0`, which a CI `$?` gate would read as success.
+**Steps:** Run each; record `$?` and the report's `status`.
+**Expected:** `0` whenever a report was produced — clean, blockers, or inconclusive (coverage gap OR unparseable); `2` operational error (unreachable / bad flag / write failure). Findings live in the report: inconclusive outranks blockers in `status` because a partial audit is not fully trustworthy.
+**Oracle:** FAIL if a terminal state maps to the wrong code — especially an unreachable CP, bad flag, or write failure yielding `0`, or a produced report yielding non-zero. Gate readiness on the report's `status` field, not `$?`.
 **Source:** merge; Kaner — exit-code trust for automation.
 
 ## Basic / smoke manual tests
@@ -259,7 +259,7 @@ Run these first — they confirm the tool works at all before the edge-case TCs.
 ## Risk areas (where bugs most likely hide)
 
 1. **Spec serialization split (TC-23) — highest harm, already bit once.** Core/legacy/Dataplane inline spec; new policies nest under `spec`. A check that reads only `spec` is a silent no-op against half the resources, and a `spec`-wrapping stub will pass it anyway. Any new check MUST be exercised against both encodings (prefer a real CP).
-2. **Failure-to-observe rendered as clean (TC-1, TC-6, TC-11, TC-12).** A non-CP, a mid-pagination failure, a 404'd collection, or an unparseable resource must never read as a clean pass — these now drive exit 2/3, not 0. For a gate whose whole job is "did I miss a blocker?", this is the dominant risk class.
+2. **Failure-to-observe rendered as clean (TC-1, TC-6, TC-11, TC-12).** A non-CP, a mid-pagination failure, a 404'd collection, or an unparseable resource must never read as a clean pass — these now drive exit 2, or exit 0 with report status `inconclusive`, never a false green. For a gate whose whole job is "did I miss a blocker?", this is the dominant risk class.
 3. **Server-controlled exhaustion / non-authoritative limits (TC-5, TC-7, TC-21).** Cursor cycle guard + page cap, `--timeout`-derived client timeout, and the 64 MiB body cap must hold; a hostile/large CP must not hang or OOM the client.
 4. **Untrusted input & output side-effects (TC-9, TC-19, TC-20).** `--mesh` path escaping, symlink refusal + atomic write, and the FAILED-stamp on a failed run.
 
