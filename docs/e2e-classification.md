@@ -51,8 +51,8 @@ KUMA3_PREFLIGHT_DIR="$PWD/preflight-out" \
 ```
 
 Each spec writes `preflight-out/<NNNN>-<spec-slug>.json` (sequence-numbered so lexical order
-matches execution order). Capture never fails a test: exit 1 (blockers) / 3 (inconclusive)
-are expected and the snapshot is still written.
+matches execution order). Capture never fails a test: the snapshot is written and the exit
+code is `0` whenever a report was produced — only an execution error exits `2`.
 
 ## 3. Merge static + dynamic into one report
 

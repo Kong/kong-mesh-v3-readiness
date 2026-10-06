@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Kong/kong-mesh-v3-readiness/preflight"
@@ -64,9 +65,9 @@ func TestAuditFormat(t *testing.T) {
 func TestExitForStatus(t *testing.T) {
 	cases := map[string]int{
 		preflight.StatusClean:        0,
-		preflight.StatusBlockers:     1,
+		preflight.StatusBlockers:     0,
+		preflight.StatusInconclusive: 0,
 		preflight.StatusFailed:       2,
-		preflight.StatusInconclusive: 3,
 		"unknown":                    0,
 	}
 	for status, want := range cases {
@@ -76,7 +77,7 @@ func TestExitForStatus(t *testing.T) {
 	}
 }
 
-func TestRunCollectionReadFailureExitsInconclusive(t *testing.T) {
+func TestRunCollectionReadFailureExitsZero(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/":
@@ -110,8 +111,8 @@ func TestRunCollectionReadFailureExitsInconclusive(t *testing.T) {
 		"--latest-version", "2.14.0",
 	}
 
-	if got := run(); got != 3 {
-		t.Fatalf("run() exit = %d, want 3", got)
+	if got := run(); got != 0 {
+		t.Fatalf("run() exit = %d, want 0", got)
 	}
 }
 
@@ -164,8 +165,8 @@ func TestRunMaxResourceReadsWiring(t *testing.T) {
 		"--max-resource-reads", "1",
 	}
 
-	if got := run(); got != 3 {
-		t.Fatalf("run() exit = %d, want 3", got)
+	if got := run(); got != 0 {
+		t.Fatalf("run() exit = %d, want 0", got)
 	}
 }
 
@@ -204,6 +205,84 @@ func TestRunDefaultResourceReadLimitKeepsSmallAuditClean(t *testing.T) {
 
 	if got := run(); got != 0 {
 		t.Fatalf("run() exit = %d, want 0", got)
+	}
+}
+
+func TestRunBlockersReportExitsZero(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			writeJSON(w, []byte(`{"product":"Kuma","version":"2.14.0"}`))
+		case "/config":
+			writeJSON(w, []byte(cleanConfigJSON))
+		case "/meshes":
+			writeJSON(w, []byte(`{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Disabled"}}],"next":null}`))
+		default:
+			writeJSON(w, []byte(`{"total":0,"items":[],"next":null}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	oldArgs := os.Args
+	oldFlags := flag.CommandLine
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlags
+	})
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.SetOutput(os.Stderr)
+	out := filepath.Join(t.TempDir(), "report.json")
+	os.Args = []string{
+		"kuma3-preflight",
+		"--address", srv.URL,
+		"--format", "json",
+		"--output", out,
+		"--latest-version", "2.14.0",
+	}
+
+	if got := run(); got != 0 {
+		t.Fatalf("run() exit = %d, want 0", got)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("reading report: %v", err)
+	}
+	if !strings.Contains(string(data), `"status": "blockers"`) {
+		t.Errorf("report status is not blockers: %.200s", data)
+	}
+}
+
+func TestRunFromJSONFailedReportExitsTwo(t *testing.T) {
+	failed := `{
+	  "tool_schema": "kuma3-preflight/v6",
+	  "tool": "kuma3-preflight",
+	  "status": "failed",
+	  "control_plane": {"address": "http://localhost:5681"},
+	  "summary": {"findings": 0, "coverage_gaps": 0, "manual_checks": 0},
+	  "findings": [],
+	  "coverage_gaps": [],
+	  "manual_checks": []
+	}`
+	path := filepath.Join(t.TempDir(), "failed.json")
+	if err := os.WriteFile(path, []byte(failed), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	oldArgs := os.Args
+	oldFlags := flag.CommandLine
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlags
+	})
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flag.CommandLine.SetOutput(os.Stderr)
+	out := filepath.Join(t.TempDir(), "report.html")
+	os.Args = []string{"kuma3-preflight", "--from-json", path, "--format", "html", "--output", out}
+
+	if got := run(); got != 2 {
+		t.Fatalf("run() exit = %d, want 2", got)
 	}
 }
 
