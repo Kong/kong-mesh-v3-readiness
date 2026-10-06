@@ -1,8 +1,8 @@
-# Manual Test Results — `kuma3-preflight`
+# Manual Test Results — `kong-mesh-v3-preflight`
 
 Execution of `docs/test-plan.md`. Driven by a stdlib Python
 stub of the CP REST API (scenario-selected handlers) plus a few no-server cases.
-Binary: `go build -o /tmp/kuma3-preflight ./cmd/kuma3-preflight` (clean build).
+Binary: `go build -o /tmp/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight` (clean build).
 
 > **Supersedes the prior results in git history.** That run audited an earlier,
 > un-hardened build (12 FAIL). The tool source has since been reworked
@@ -232,7 +232,7 @@ Source of truth: `docs/deprecated-features.md`._
 The plan calls for a few cases against a **real** Kuma CP (TC-15 happy path, TC-14
 cry-wolf, TC-1/TC-8). Executed against a fresh k3d cluster running this repo's CP
 (`kuma-cp 0.0.0-preview.vabc376b0a`, a 2.x build), helm-deployed, port-forwarded on
-`:5681`. Binary: `go build -o /tmp/kuma3-preflight ./cmd/kuma3-preflight`.
+`:5681`. Binary: `go build -o /tmp/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight`.
 
 Fixtures authored on the live CP via `kubectl`:
 - 9 legacy resources on `default`: TrafficPermission, TrafficRoute, TrafficLog,
@@ -345,7 +345,7 @@ _Harness/fixtures: `/tmp/k3pf-legacy.yaml`, `/tmp/k3pf-meshes.yaml`, `/tmp/k3pf-
 # Real-CP RE-RUN against the hardened build (2026-06-16, BUG-1/2/3/4 fixed)
 
 Re-executed the real-CP plan cases against the **current** binary (`go build -o
-/tmp/kuma3-preflight ./cmd/kuma3-preflight`) on the same live k3d CP
+/tmp/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight`) on the same live k3d CP
 (`kuma-cp 0.0.0-preview.vabc376b0a`, port-forward `:5681`). The source has since
 landed the fixes the addendum above sketched — `resourceItem.specBytes()` falls back
 to the whole raw object when there is no `spec` envelope, `labels` are captured, and

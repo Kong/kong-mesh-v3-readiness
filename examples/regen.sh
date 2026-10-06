@@ -10,21 +10,21 @@
 #
 # Usage:
 #   examples/regen.sh            # rebuild the binary, render every fixture
-#   examples/regen.sh --no-build # skip the build, reuse bin/kuma3-preflight
+#   examples/regen.sh --no-build # skip the build, reuse bin/kong-mesh-v3-preflight
 #
 set -euo pipefail
 
 cd "$(dirname "$0")/.."   # repo root
 JSON_DIR="examples/json"
 HTML_DIR="examples/html"
-BIN="bin/kuma3-preflight"
+BIN="bin/kong-mesh-v3-preflight"
 
 # Honour the pinned toolchain (GOFLAGS, Go version) when mise is available.
 run() { if command -v mise >/dev/null 2>&1; then mise exec -- "$@"; else "$@"; fi; }
 
 if [[ "${1:-}" != "--no-build" ]]; then
   echo "building $BIN ..."
-  run go build -o "$BIN" ./cmd/kuma3-preflight
+  run go build -o "$BIN" ./cmd/kong-mesh-v3-preflight
 fi
 [[ -x "$BIN" ]] || { echo "error: $BIN not found - run without --no-build" >&2; exit 1; }
 

@@ -1,4 +1,4 @@
-# kuma3-preflight
+# kong-mesh-v3-preflight
 
 Audits a running Kuma control plane (zone or global) over its REST API and
 produces a self-contained HTML (default) or JSON report of what must change before
@@ -12,14 +12,14 @@ program.
 ## Usage
 
 ```bash
-go run ./cmd/kuma3-preflight --address http://localhost:5681 --output report.html
+go run ./cmd/kong-mesh-v3-preflight --address http://localhost:5681 --output report.html
 ```
 
 Against a Kubernetes zone CP, port-forward first:
 
 ```bash
 kubectl -n kuma-system port-forward svc/kuma-control-plane 5681:5681
-go run ./cmd/kuma3-preflight --output report.html
+go run ./cmd/kong-mesh-v3-preflight --output report.html
 ```
 
 ### Flags
@@ -54,16 +54,16 @@ resource) vs **rewrite** (it uses a removed thing only as scaffolding).
 
 ```bash
 # Static: scan the e2e sources (fast, no CP, per-feature attribution)
-./bin/kuma3-preflight --classify --source-dir ~/kuma/test/e2e_env/universal --format markdown
+./bin/kong-mesh-v3-preflight --classify --source-dir ~/kuma/test/e2e_env/universal --format markdown
 
 # + Dynamic: fold in per-spec snapshots captured during an e2e run (see docs/e2e-classification.md)
-./bin/kuma3-preflight --classify \
+./bin/kong-mesh-v3-preflight --classify \
   --source-dir ~/kuma/test/e2e_env/universal --reports-dir ./preflight-out \
   --format html --output classification.html
 ```
 
 Output (markdown/json/html, same one-model contract, JSON schema
-`kuma3-preflight-classification/v1`) leads — when any are present — with a **🌐 Global
+`kong-mesh-v3-preflight-classification/v1`) leads — when any are present — with a **🌐 Global
 migrations** table (omitted when there are none): the cross-cutting fixes (a non-removable
 field/policy/mesh setting recurring across `globalSuiteThreshold` suites, e.g. inline
 `Mesh.mtls`→MeshIdentity+MeshTrust or the shared `MeshTimeout`/`MeshTrafficPermission`
@@ -91,13 +91,13 @@ data, so they never disagree. (Markdown is produced only by `--classify`.)
 
 ```bash
 # Capture machine-readable JSON in CI…
-./bin/kuma3-preflight --address http://localhost:5681 --format json --output report.json
+./bin/kong-mesh-v3-preflight --address http://localhost:5681 --format json --output report.json
 
 # …then build the static site from that JSON later, without touching the control plane:
-./bin/kuma3-preflight --from-json report.json --format html --output report.html
+./bin/kong-mesh-v3-preflight --from-json report.json --format html --output report.html
 
 # (or pipe it)
-cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.html
+cat report.json | ./bin/kong-mesh-v3-preflight --from-json - --format html > report.html
 ```
 
 ## What it checks

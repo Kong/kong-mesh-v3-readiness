@@ -3,8 +3,8 @@ package reportmodel
 // Classification is the canonical, serializable form of a --classify run.
 // JSON, HTML, and Markdown all render from this structure.
 type Classification struct {
-	Schema      string       `json:"schema" jsonschema:"enum=kuma3-preflight-classification/v1"`
-	Tool        string       `json:"tool" jsonschema:"enum=kuma3-preflight"`
+	Schema      string       `json:"schema" jsonschema:"enum=kong-mesh-v3-preflight-classification/v1"`
+	Tool        string       `json:"tool" jsonschema:"enum=kong-mesh-v3-preflight"`
 	GeneratedAt string       `json:"generatedAt,omitempty" jsonschema:"format=date-time"`
 	SourceDir   string       `json:"sourceDir,omitempty"`
 	ReportsDir  string       `json:"reportsDir,omitempty"`

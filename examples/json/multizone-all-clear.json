@@ -1,6 +1,6 @@
 {
-  "tool_schema": "kuma3-preflight/v6",
-  "tool": "kuma3-preflight",
+  "tool_schema": "kong-mesh-v3-preflight/v6",
+  "tool": "kong-mesh-v3-preflight",
   "generated_at": "2026-06-25T09:30:00Z",
   "status": "clean",
   "address": "http://localhost:5681",

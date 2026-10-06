@@ -10,10 +10,10 @@ import (
 // Schema/tool identifiers stamped into every JSON report so a consumer (or
 // ParseReport) can recognize and version the payload.
 const (
-	SchemaVersion = "kuma3-preflight/v6"
+	SchemaVersion = "kong-mesh-v3-preflight/v6"
 	// ToolName identifies this tool in the JSON payload and in the User-Agent
 	// header of outbound HTTP requests.
-	ToolName = "kuma3-preflight"
+	ToolName = "kong-mesh-v3-preflight"
 )
 
 // Audit outcome, mirrored by the process exit code the CLI derives from it.
@@ -37,9 +37,9 @@ const (
 // structure, and ParseReport loads it back, so they can never drift apart.
 // (Markdown is produced only by the CLI's --classify mode, from a different model.)
 type Report struct {
-	// Schema is "kuma3-preflight/vN"; ParseReport accepts the current vN only.
-	Schema      string `json:"tool_schema" jsonschema:"pattern=^kuma3-preflight/v[0-9]+$"`
-	Tool        string `json:"tool" jsonschema:"enum=kuma3-preflight"`
+	// Schema is "kong-mesh-v3-preflight/vN"; ParseReport accepts the current vN only.
+	Schema      string `json:"tool_schema" jsonschema:"pattern=^kong-mesh-v3-preflight/v[0-9]+$"`
+	Tool        string `json:"tool" jsonschema:"enum=kong-mesh-v3-preflight"`
 	GeneratedAt string `json:"generated_at,omitempty" jsonschema:"format=date-time"`
 	// Status reflects report trustworthiness first: an incomplete audit is
 	// inconclusive even when it still found blockers elsewhere.

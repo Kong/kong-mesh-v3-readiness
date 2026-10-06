@@ -103,7 +103,7 @@ func TestRunCollectionReadFailureExitsInconclusive(t *testing.T) {
 	flag.CommandLine.SetOutput(os.Stderr)
 	out := filepath.Join(t.TempDir(), "report.json")
 	os.Args = []string{
-		"kuma3-preflight",
+		"kong-mesh-v3-preflight",
 		"--address", srv.URL,
 		"--format", "json",
 		"--output", out,
@@ -125,7 +125,7 @@ func TestRunMaxResourceReadsValidation(t *testing.T) {
 
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	flag.CommandLine.SetOutput(os.Stderr)
-	os.Args = []string{"kuma3-preflight", "--max-resource-reads", "-1"}
+	os.Args = []string{"kong-mesh-v3-preflight", "--max-resource-reads", "-1"}
 
 	if got := run(); got != 2 {
 		t.Fatalf("run() exit = %d, want 2", got)
@@ -156,7 +156,7 @@ func TestRunMaxResourceReadsWiring(t *testing.T) {
 	flag.CommandLine.SetOutput(os.Stderr)
 	out := filepath.Join(t.TempDir(), "report.json")
 	os.Args = []string{
-		"kuma3-preflight",
+		"kong-mesh-v3-preflight",
 		"--address", srv.URL,
 		"--format", "json",
 		"--output", out,
@@ -195,7 +195,7 @@ func TestRunDefaultResourceReadLimitKeepsSmallAuditClean(t *testing.T) {
 	flag.CommandLine.SetOutput(os.Stderr)
 	out := filepath.Join(t.TempDir(), "report.json")
 	os.Args = []string{
-		"kuma3-preflight",
+		"kong-mesh-v3-preflight",
 		"--address", srv.URL,
 		"--format", "json",
 		"--output", out,
