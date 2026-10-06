@@ -11,13 +11,15 @@
   `Classification` and re-exports the audit types as aliases of the `preflight` ones, so
   `tools/openapigen` can reflect both contracts into `docs/openapi.yaml`; it holds struct
   shapes only, never audit/render logic.
-- **Exit codes gate CI** (derived in `cmd/kuma3-preflight/main.go`'s `run`/`exitForStatus`):
-  `0` clean · `1` blockers · `2` operational error · `3` inconclusive. Keep `exitForStatus`,
-  the internal `collector.status()` (`preflight/model.go`), and `preflight.Status*` constants
-  in sync.
+- **Exit codes report execution, findings live in the report** (derived in
+  `cmd/kuma3-preflight/main.go`'s `run`/`exitForStatus`): `0` report produced
+  (clean, blockers, or inconclusive) · `2` operational error. A run that produced a report
+  always exits `0`; gate readiness on the report's `status` field, not on `$?`. Keep
+  `exitForStatus`, the internal `collector.status()` (`preflight/model.go`), and
+  `preflight.Status*` constants in sync.
 - **Never emit a misleading clean report.** A 404 on a collection is a *coverage gap*
   (`addGap`); an unparseable spec is a *parse error* (`parseErrors++`) — both make the run
-  `inconclusive` (exit 3), not clean. A non-Kuma endpoint, an empty `--mesh` match, or a 404
+  `inconclusive`, not clean. A non-Kuma endpoint, an empty `--mesh` match, or a 404
   on `/meshes` is a hard error (`preflight.Audit` returns an error; the CLI exits 2). Don't
   treat "not observed" as "absent".
 - **Failures stamp the output.** On audit error the destination is overwritten with a FAILED

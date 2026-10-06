@@ -52,8 +52,9 @@ New manual (non-CP-detectable) items go in the `manualChecks` slice in `prefligh
 ## Severity — choose deliberately
 
 **Default to `blocker` for anything actionable** — deprecations, relocations and
-should-fix items are blockers. `info` is reserved for non-actionable counts. Only
-`blocker` changes the exit code; `info` leaves a fully-observed run `clean` (exit 0).
+should-fix items are blockers. `info` is reserved for non-actionable counts. Severity
+never changes the exit code (findings live in the report); `info` leaves a fully-observed
+run `clean`.
 The `warning` tier still exists in the severity enum, but no check emits one and the
 HTML report no longer renders a warnings section — do not add new warnings.
 

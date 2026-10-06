@@ -40,7 +40,7 @@ go run ./cmd/kuma3-preflight --output report.html
 | `--source-dir` | _(none)_ | With `--classify`: root of an e2e test tree to scan statically (e.g. a Kuma `test/e2e_env/<env>` dir) |
 | `--reports-dir` | _(none)_ | With `--classify`: directory of per-spec preflight JSON snapshots captured during an e2e run, folded into the classification |
 
-Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse — the result is a partial report, not a proven clean bill of health, even if it retained blockers). In `--classify` mode the exit code is `0` on success or `2` on error.
+Exit codes (so it can gate CI): `0` report produced · `2` operational error. Findings live in the report, not the exit code — a run that produced a report exits `0` whether it is clean, has blockers, or is inconclusive (a collection could not be read, or a resource spec failed to parse — the result is a partial report, not a proven clean bill of health, even if it retained blockers); gate readiness on the report's `status` field, not on `$?`. In `--classify` mode the exit code is `0` on success or `2` on error.
 
 `--max-resource-reads` defaults to `50000`, which leaves the checked-in example reports unchanged. Lower it to bound one audit's total collection reads on very large estates; the report names the collection and ceiling that stopped the run so you can raise it and rerun.
 
@@ -86,7 +86,6 @@ data, so they never disagree. (Markdown is produced only by `--classify`.)
   and a manual-checks checklist whose progress is saved per report in the browser.
 - **`json`** — a stable, machine-readable document (`schema`, `status`, `summary`,
   `findings[]`, `coverage_gaps[]`, `manual_checks[]`). Every key is snake_case.
-  Status maps to the same exit codes.
   This is the format the e2e capture hook saves per spec and `--classify` folds back in.
 
 ```bash

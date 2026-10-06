@@ -16,7 +16,7 @@ const (
 	ToolName = "kuma3-preflight"
 )
 
-// Audit outcome, mirrored by the process exit code the CLI derives from it.
+// Audit outcome; the CLI's exit code only flags execution errors (FAILED). // EXC:FILE011:documents-the-exit-code-contract
 const (
 	StatusClean        = "clean"
 	StatusBlockers     = "blockers"
