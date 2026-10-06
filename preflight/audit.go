@@ -3572,7 +3572,7 @@ var kubernetesManualChecks = []ManualCheck{
 			"objects directly. Move every `kuma.io/mesh` annotation to a label with the same " +
 			"value. The command below lists offenders (the HTTPRoute query is skipped when the " +
 			"Gateway API CRDs are not installed); empty output means there is nothing left to fix.",
-		Command: `{ kubectl get ns,pods,services -A -o json; kubectl get httproutes.gateway.networking.k8s.io -A -o json 2>/dev/null; } | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != "")) | join("/")'`,
+		Command: `{ kubectl get ns,pods,services -A -o json; if kubectl api-resources --api-group=gateway.networking.k8s.io -o name | grep -Fxq 'httproutes.gateway.networking.k8s.io'; then kubectl get httproutes.gateway.networking.k8s.io -A -o json; fi; } | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != "")) | join("/")'`,
 	},
 	{
 		Title: "Drop the `kuma.io/tags` Pod annotation",
