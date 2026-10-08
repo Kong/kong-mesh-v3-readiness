@@ -11,7 +11,7 @@
     "default"
   ],
   "summary": {
-    "blockers": 87,
+    "blockers": 93,
     "warnings": 0,
     "info": 2,
     "coverage_gaps": 3,
@@ -210,6 +210,23 @@
       "count": 1,
       "example_resources": [
         "zone zone-1: experimental.inboundTagsDisabled=false"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Control plane configuration",
+      "title": "KDS auth set under the removed kmesh.multizone settings",
+      "detail": "3.0 removes the Kong Mesh kmesh.multizone KDS authentication settings and aborts at startup on the KMESH_MULTIZONE_* environment variables. A global left on them serves KDS without authentication (multizone.global.kds.auth.type defaults to none) and a zone presents no token, so the global rejects it. Set the KDS auth with the Kuma names instead — KUMA_MULTIZONE_GLOBAL_KDS_AUTH_TYPE (cpToken is called zoneToken there), KUMA_MULTIZONE_GLOBAL_KDS_AUTH_ZONE_TOKEN_ENABLE_ISSUER, KUMA_MULTIZONE_GLOBAL_KDS_AUTH_ZONE_TOKEN_VALIDATOR_USE_SECRETS, KUMA_MULTIZONE_ZONE_KDS_AUTH_TOKEN_INLINE and KUMA_MULTIZONE_ZONE_KDS_AUTH_TOKEN_PATH — and delete the KMESH_MULTIZONE_* variables: a leftover aborts the 3.0 startup even when the new variable is set too. 2.14.6 mirrors the effective values into both the multizone.* and kmesh.multizone.* paths of /config, so this finding can also fire on a zone or global already migrated to the new names: the control-plane startup log lines \"kmesh.multizone... is deprecated, use ... instead\" name the settings that actually still use the old names.",
+      "doc_url": "https://developer.konghq.com/mesh/reference/kuma-cp/",
+      "count": 6,
+      "example_resources": [
+        "kmesh.multizone.global.kds.auth.type=cpToken (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_TYPE)",
+        "kmesh.multizone.global.kds.auth.cpToken.enableIssuer=false (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_CP_TOKEN_ENABLE_ISSUER)",
+        "kmesh.multizone.global.kds.auth.cpToken.validator.useSecrets=false (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_CP_TOKEN_VALIDATOR_USE_SECRETS)",
+        "kmesh.multizone.global.kds.auth.cpToken.validator.publicKeys set",
+        "zone zone-1: kmesh.multizone.zone.kds.auth.cpTokenInline set (KMESH_MULTIZONE_ZONE_KDS_AUTH_CP_TOKEN_INLINE)",
+        "zone zone-1: kmesh.multizone.zone.kds.auth.cpTokenPath=/etc/kong-mesh/zone-token (KMESH_MULTIZONE_ZONE_KDS_AUTH_CP_TOKEN_PATH)"
       ]
     },
     {

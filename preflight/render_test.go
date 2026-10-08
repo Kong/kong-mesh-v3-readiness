@@ -23,6 +23,9 @@ func sampleReport() *collector {
 	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")
 	r.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label", "Add label.", "default/dp-1")
 	r.add(blocker, "Zone proxies", "zoneingresses present", "Migrate to the unified Zone Proxy.", "zi-1")
+	r.addDoc(blocker, cpConfigCategory, "KDS auth set under the removed kmesh.multizone settings",
+		"Set the KDS auth with the Kuma names.", docKumaCPReference,
+		"kmesh.multizone.global.kds.auth.type=cpToken (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_TYPE)")
 	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", "1/2")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
@@ -55,8 +58,8 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Status != StatusInconclusive {
 		t.Fatalf("status = %q, want %q", m.Status, StatusInconclusive)
 	}
-	if m.Summary.Blockers != 16 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies)
-		t.Errorf("blockers = %d, want 16", m.Summary.Blockers)
+	if m.Summary.Blockers != 17 { // EXC:FILE011:per-finding tally — 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies) + 1 (KDS auth)
+		t.Errorf("blockers = %d, want 17", m.Summary.Blockers)
 	}
 	if m.Summary.Warnings != 0 { // the tool no longer emits warning-severity findings
 		t.Errorf("warnings = %d, want 0", m.Summary.Warnings)
