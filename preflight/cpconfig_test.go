@@ -91,16 +91,15 @@ func TestAddCPConfigFindings(t *testing.T) {
 		c.Environment = "universal"
 		a := &auditor{rep: &collector{}}
 		a.addCPConfigFindings(c, "")
-		// eBPF + unified-naming are injector (k8s) checks and MADS stays served
-		// on Universal; the rest still fire.
+		// EXC:FILE011:eBPF + unified-naming are injector (k8s) checks, MADS stays served on Universal, and experimental.deltaXds reaches DPs only through the injector (the per-DP feature-delta-grpc check covers Universal); the rest still fire.
 		for _, f := range a.rep.findings {
 			switch f.title {
-			case "eBPF transparent proxy enabled", "Unified resource naming not enabled", "MADS not served on Kubernetes in 3.0":
+			case "eBPF transparent proxy enabled", "Unified resource naming not enabled", "MADS not served on Kubernetes in 3.0", "Delta xDS not enabled":
 				t.Errorf("k8s-gated check %q fired on a Universal CP", f.title)
 			}
 		}
-		// 12 minus eBPF, unified naming and MADS.
-		if got, want := a.rep.count(blocker), 9; got != want {
+		// EXC:FILE011:12 minus eBPF, unified naming, MADS and deltaXds.
+		if got, want := a.rep.count(blocker), 8; got != want {
 			t.Errorf("universal blockers = %d, want %d", got, want)
 		}
 	})

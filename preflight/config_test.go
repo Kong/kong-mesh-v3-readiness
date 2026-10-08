@@ -121,13 +121,14 @@ func TestControlPlaneConfigDeprecatedSettingReported(t *testing.T) {
 }
 
 // TestControlPlaneConfigInjectorChecksSkippedOffKubernetes verifies the
-// injector-only checks (unified naming, eBPF) do not fire on a Universal CP,
-// which has no injector, while the environment-agnostic experimental blockers do.
+// injector-only checks (unified naming, eBPF, deltaXds — the flag reaches pods
+// only through the injector) do not fire on a Universal CP, which has no
+// injector, while the environment-agnostic experimental blockers do.
 func TestControlPlaneConfigInjectorChecksSkippedOffKubernetes(t *testing.T) {
 	m := auditResponses(t, map[string]string{
-		"/config": `{"defaults":{"restrictOutbound":true},"environment":"universal","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}}}`,
+		"/config": `{"defaults":{"restrictOutbound":true},"environment":"universal","mode":"zone","experimental":{"deltaXds":false,"sidecarContainers":true,"inboundTagsDisabled":true,"kdsEventBasedWatchdog":{"enabled":true}}}`,
 	})
-	for _, title := range []string{"Unified resource naming not enabled", "eBPF transparent proxy enabled", "Global control plane on Kubernetes"} {
+	for _, title := range []string{"Unified resource naming not enabled", "eBPF transparent proxy enabled", "Delta xDS not enabled", "Global control plane on Kubernetes"} {
 		if _, ok := findFinding(m, "blocker", cpConfigCategory, title); ok {
 			t.Errorf("injector/k8s check %q must not fire on Universal", title)
 		}
