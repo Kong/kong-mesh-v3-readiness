@@ -55,7 +55,7 @@ func TestControlPlaneConfigDeprecatedSettingReported(t *testing.T) {
 			name:     "inbound tags enabled",
 			config:   `{"defaults":{"restrictOutbound":true},"environment":"kubernetes","mode":"zone","experimental":{"deltaXds":true,"sidecarContainers":true,"inboundTagsDisabled":false,"kdsEventBasedWatchdog":{"enabled":true}},"runtime":{"kubernetes":{"injector":{"unifiedResourceNamingEnabled":true}}}}`,
 			severity: "blocker", title: "Inbound tags still enabled",
-			detail: cpConfigDetail("experimental.inboundTagsDisabled", "false", "true"),
+			detail: inboundTagsDisabledDetail,
 		},
 		{
 			name:     "kds event-based watchdog off",

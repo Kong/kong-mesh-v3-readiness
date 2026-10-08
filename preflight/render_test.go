@@ -26,6 +26,8 @@ func sampleReport() *collector {
 	r.addDoc(blocker, cpConfigCategory, "KDS auth set under the removed kmesh.multizone settings",
 		"Set the KDS auth with the Kuma names.", docKumaCPReference,
 		"kmesh.multizone.global.kds.auth.type=cpToken (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_TYPE)")
+	a := auditor{rep: r}
+	a.checkPermissionMatches([]byte(`{"rules":[{"default":{"allow":[{}]}}]}`), "default/mtp-1")
 	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", "1/2")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
@@ -58,8 +60,8 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Status != StatusInconclusive {
 		t.Fatalf("status = %q, want %q", m.Status, StatusInconclusive)
 	}
-	if m.Summary.Blockers != 17 { // EXC:FILE011:per-finding tally — 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies) + 1 (KDS auth)
-		t.Errorf("blockers = %d, want 17", m.Summary.Blockers)
+	if m.Summary.Blockers != 18 { // EXC:FILE011:per-finding tally — 16 existing occurrences + 1 empty permission match + 1 KDS auth
+		t.Errorf("blockers = %d, want 18", m.Summary.Blockers)
 	}
 	if m.Summary.Warnings != 0 { // the tool no longer emits warning-severity findings
 		t.Errorf("warnings = %d, want 0", m.Summary.Warnings)
@@ -107,6 +109,7 @@ func TestToModelGroups(t *testing.T) {
 		"Inline mTLS on Mesh":                                groupMeshObject,
 		"meshServices.mode is not Exclusive":                 groupMeshObject,
 		"MeshTimeout uses `from`":                            groupPolicies,
+		emptyMatchTitle:                                      groupPolicies,
 		"zoneingresses present":                              groupOther,
 		"Universal Dataplane missing kuma.io/workload label": groupDataPlane,
 	}
