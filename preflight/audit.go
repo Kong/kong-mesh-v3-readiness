@@ -1369,7 +1369,7 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		}
 		if tagged {
 			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.inbound[].tags",
-				"`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService, except `kuma.io/protocol`, which belongs in `networking.inbound[].protocol`. This pairs with `experimental.inboundTagsDisabled: true` on the control plane.",
+				"`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService, except `kuma.io/protocol`, which belongs in `networking.inbound[].protocol`. This pairs with `experimental.inboundTagsDisabled: true` on the control plane. Drop the tags only after the mesh runs `meshServices.mode: Exclusive` with mesh-scoped zone proxies: a standalone ZoneIngress on a non-Exclusive mesh cannot route to an inbound without `kuma.io/service`.",
 				docMeshService, qualified(it))
 		}
 		// 2.x fell back to the kuma.io/protocol tag when the protocol field was
@@ -2205,6 +2205,11 @@ func cpConfigDetail(field, from, to string) string {
 	return fmt.Sprintf("the field %s value has to be changed from %s to %s", field, from, to)
 }
 
+// inboundTagsDisabledDetail orders the remediation: a standalone ZoneIngress
+// exposes a non-Exclusive mesh only through inbound kuma.io/service tags.
+var inboundTagsDisabledDetail = cpConfigDetail("experimental.inboundTagsDisabled", "false", "true") +
+	". Turn it on only after every mesh runs `meshServices.mode: Exclusive` with mesh-scoped zone proxies: on Kubernetes it removes `kuma.io/service` from every inbound, and a standalone ZoneIngress on a non-Exclusive mesh cannot route to such an inbound, so cross-zone traffic into the zone breaks."
+
 // checkControlPlaneConfig audits the live CP settings exposed by GET /config for
 // 3.0 readiness. The data-plane-relevant settings (injector + experimental flags)
 // only govern the CP that actually runs proxies, so they are audited on the CP we
@@ -2477,7 +2482,7 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	}
 	if !cfg.Experimental.InboundTagsDisabled {
 		a.rep.addDoc(blocker, cpConfigCategory, "Inbound tags still enabled",
-			cpConfigDetail("experimental.inboundTagsDisabled", "false", "true"),
+			inboundTagsDisabledDetail,
 			docMeshService, ref("experimental.inboundTagsDisabled=false"))
 	}
 
