@@ -622,7 +622,7 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 		present                   bool
 		title, detail, doc, field string
 	}{
-		{hasJSON(spec.Metrics), "Inline metrics on Mesh", "Replace `mesh.metrics` with the MeshMetric policy.", docMeshMetric, "metrics"},
+		{hasJSON(spec.Metrics), "Inline metrics on Mesh", "Preserve the client certificate checks from the source before you replace `mesh.metrics` with MeshMetric. Check the source Prometheus `tls.mode` and `skipMTLS`. With mesh mTLS active, the default mode requires remote client certificates unless `skipMTLS` is true. MeshMetric `ProvidedTLS` supplies server TLS only. It does not preserve legacy client certificate checks. Use a verified replacement that preserves the source access rules before the upgrade.", docMeshMetric, "metrics"},
 		{hasJSON(spec.Tracing), "Inline tracing on Mesh", "Replace `mesh.tracing` with the MeshTrace policy.", docMeshTrace, "tracing"},
 		{hasJSON(spec.Logging), "Inline logging on Mesh", "Replace `mesh.logging` with the MeshAccessLog policy.", docMeshAccessLog, "logging"},
 		{hasJSON(spec.Constraints), "Mesh membership constraints", "`mesh.constraints` (membership) is removed.", docKumaCPReference, "constraints"},
@@ -1079,6 +1079,9 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 		}
 		if json.Unmarshal(spec, &s) == nil && hasOtelEndpoint(s.Default) {
 			a.addOtelEndpoint(it.Type, ref)
+		}
+		if it.Type == "MeshMetric" {
+			a.checkMeshMetricTLS(it, ref)
 		}
 	case "MeshHealthCheck":
 		var s struct {
@@ -1920,6 +1923,32 @@ func (a *auditor) addUnsupportedAppProtocol(kind string, ports []servicePort, re
 				docMeshService, ref)
 			return
 		}
+	}
+}
+
+func (a *auditor) checkMeshMetricTLS(it resourceItem, ref string) {
+	var spec struct {
+		Default struct {
+			Backends []struct {
+				Type       string `json:"type"`
+				Prometheus *struct {
+					TLS *struct {
+						Mode string `json:"mode"`
+					} `json:"tls"`
+				} `json:"prometheus"`
+			} `json:"backends"`
+		} `json:"default"`
+	}
+	if !a.unmarshalSpec(it, &spec, ref) {
+		return
+	}
+	for _, backend := range spec.Default.Backends {
+		if backend.Type != "Prometheus" || backend.Prometheus == nil || backend.Prometheus.TLS == nil || backend.Prometheus.TLS.Mode != "ActiveMTLSBackend" {
+			continue
+		}
+		a.rep.addDoc(blocker, "Metric TLS", "MeshMetric ActiveMTLSBackend does not enable TLS",
+			"Do not use `ActiveMTLSBackend` to preserve client certificate checks. MeshMetric accepts this mode but creates a plaintext Prometheus listener. `ProvidedTLS` supplies server TLS only. Use a verified replacement that preserves the source access rules before the upgrade.", docMeshMetric, ref)
+		break
 	}
 }
 
