@@ -940,6 +940,9 @@ func (a *auditor) checkNewPolicy(it resourceItem) {
 	if it.Type == "MeshHTTPRoute" || it.Type == "MeshTCPRoute" {
 		byName = a.checkRouteBackendRefs(it.Type, it.specBytes(), ref) || byName
 	}
+	if it.Type == "MeshTrafficPermission" {
+		a.checkPermissionMatches(it.specBytes(), ref)
+	}
 	if byName {
 		a.addSelectsByName(it.Type, ref)
 	}
@@ -1015,6 +1018,60 @@ func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref string) boo
 		}
 	}
 	return byName
+}
+
+// permissionMatchActions are the MeshTrafficPermission rules[].default action
+// fields whose entries each need a predicate.
+var permissionMatchActions = []string{"allow", "allowWithShadowDeny", "deny"}
+
+// matchPredicate mirrors the wire shape of one match entry's spiffeID or sni
+// field: an object with type and value (api/common/v1alpha1.Match), never a
+// plain string.
+type matchPredicate struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+// checkPermissionMatches flags a stored MeshTrafficPermission rule whose action
+// entry sets neither spiffeID nor sni. Write-time validation rejects only new
+// resources: a 2.14 store can already hold empty entries, and a universal KDS
+// apply can bypass validation. Validation never rewrites stored resources, so
+// the upgrade carries them into 3.0 unchanged. Malformed shapes follow
+// unmarshalSpec: a parse error, not a silent pass.
+func (a *auditor) checkPermissionMatches(spec []byte, ref string) {
+	var parsed struct {
+		Rules []struct {
+			Default map[string][]json.RawMessage `json:"default"`
+		} `json:"rules"`
+	}
+	if err := json.Unmarshal(spec, &parsed); err != nil {
+		a.rep.parseErrors++
+		a.rep.add(blocker, "Unparseable resources", "MeshTrafficPermission spec could not be parsed",
+			"Could not parse this resource; audit it manually before upgrading.", ref)
+		return
+	}
+	for _, rule := range parsed.Rules {
+		for _, action := range permissionMatchActions {
+			for _, entry := range rule.Default[action] {
+				var match struct {
+					SpiffeID *matchPredicate `json:"spiffeID"`
+					SNI      *matchPredicate `json:"sni"`
+				}
+				if err := json.Unmarshal(entry, &match); err != nil {
+					a.rep.parseErrors++
+					a.rep.add(blocker, "Unparseable resources", "MeshTrafficPermission match entry could not be parsed",
+						"Could not parse this resource; audit it manually before upgrading.", ref)
+					return
+				}
+				if match.SpiffeID == nil && match.SNI == nil {
+					a.rep.addDoc(blocker, "Empty match entry", "MeshTrafficPermission has a match entry without spiffeID or sni",
+						"3.0 rejects an entry without spiffeID or sni. Validation does not change stored policies. A KDS write through the Kubernetes admission webhook also fails. Correct each entry before the upgrade. Set spiffeID or sni, or remove the entry.",
+						docMeshTrafficPermission, ref)
+					return
+				}
+			}
+		}
+	}
 }
 
 // checkPolicyFields flags per-policy deprecated fields visible in the spec but not

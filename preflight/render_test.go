@@ -23,6 +23,8 @@ func sampleReport() *collector {
 	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")
 	r.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label", "Add label.", "default/dp-1")
 	r.add(blocker, "Zone proxies", "zoneingresses present", "Migrate to the unified Zone Proxy.", "zi-1")
+	a := auditor{rep: r}
+	a.checkPermissionMatches([]byte(`{"rules":[{"default":{"allow":[{}]}}]}`), "default/mtp-1")
 	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", "1/2")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
@@ -55,8 +57,8 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Status != StatusInconclusive {
 		t.Fatalf("status = %q, want %q", m.Status, StatusInconclusive)
 	}
-	if m.Summary.Blockers != 16 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies)
-		t.Errorf("blockers = %d, want 16", m.Summary.Blockers)
+	if m.Summary.Blockers != 17 { // 16 existing occurrences + 1 empty permission match
+		t.Errorf("blockers = %d, want 17", m.Summary.Blockers)
 	}
 	if m.Summary.Warnings != 0 { // the tool no longer emits warning-severity findings
 		t.Errorf("warnings = %d, want 0", m.Summary.Warnings)
@@ -104,6 +106,7 @@ func TestToModelGroups(t *testing.T) {
 		"Inline mTLS on Mesh":                                groupMeshObject,
 		"meshServices.mode is not Exclusive":                 groupMeshObject,
 		"MeshTimeout uses `from`":                            groupPolicies,
+		emptyMatchTitle:                                      groupPolicies,
 		"zoneingresses present":                              groupOther,
 		"Universal Dataplane missing kuma.io/workload label": groupDataPlane,
 	}
