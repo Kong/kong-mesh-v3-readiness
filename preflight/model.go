@@ -155,6 +155,7 @@ var categoryToGroup = map[string]string{
 	"Route backendRef":          groupPolicies,
 	"MeshPassthrough":           groupPolicies,
 	"MeshOPA data source":       groupPolicies,
+	"Metric TLS":                groupPolicies,
 	categoryAccessRoles:         groupControlPlane,
 	"Removed resources":         groupRemovedResources,
 	"reachableServices":         groupDataPlane,
