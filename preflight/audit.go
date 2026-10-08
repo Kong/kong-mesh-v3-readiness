@@ -2151,6 +2151,33 @@ type cpConfig struct {
 			} `json:"kds"`
 		} `json:"global"`
 	} `json:"multizone"`
+	// EXC:FILE011:2.14.6 mirrors the effective KDS auth values into both multizone.* and kmesh.multizone.*, so a set kmesh path does not prove the old KMESH_MULTIZONE_* name is in use; addKDSAuthFindings keys on these paths because they are the only /config signal the old names leave — 3.0 removes them (the env vars abort startup, the config keys are ignored, so a global left on them serves KDS unauthenticated and a zone presents no token).
+	KongMesh struct {
+		Multizone struct {
+			Global struct {
+				Kds struct {
+					Auth struct {
+						Type    string `json:"type"`
+						CpToken struct {
+							EnableIssuer *bool `json:"enableIssuer"`
+							Validator    struct {
+								UseSecrets *bool             `json:"useSecrets"`
+								PublicKeys []json.RawMessage `json:"publicKeys"`
+							} `json:"validator"`
+						} `json:"cpToken"`
+					} `json:"auth"`
+				} `json:"kds"`
+			} `json:"global"`
+			Zone struct {
+				Kds struct {
+					Auth struct {
+						CpTokenInline string `json:"cpTokenInline"`
+						CpTokenPath   string `json:"cpTokenPath"`
+					} `json:"auth"`
+				} `json:"kds"`
+			} `json:"zone"`
+		} `json:"multizone"`
+	} `json:"kmesh"`
 	// ApiServer carries the admin API authentication settings: 3.0 drops the
 	// adminClientCerts authn plugin (the CP refuses to start with it) and the
 	// auth.clientCertsDir field (silently ignored, so its client certs stop
@@ -2326,6 +2353,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 		a.addAPIServerFindings(cfg, zoneRef(""))
 		a.addDroppedSettingFindings(cfg, zoneRef(""))
 		a.addZoneTokenIssuerFinding(cfg)
+		a.addKDSAuthFindings(cfg, zoneRef(""))
 		return a.checkZoneControlPlaneConfigs(ctx)
 	}
 	// Standalone or a directly-connected zone CP: audit the config we reached.
@@ -2446,6 +2474,50 @@ func (a *auditor) addZoneTokenIssuerFinding(cfg cpConfig) {
 	}
 }
 
+// addKDSAuthFindings flags KDS authentication configured under the Kong Mesh
+// kmesh.multizone settings, which 3.0 removes together with the
+// KMESH_MULTIZONE_* environment variables. The conditions mirror the ones the
+// 2.14 control plane itself deprecates on (kdsAuthRenames in
+// pkg/config/app/kuma-cp/kds_auth.go): only values differing from the default
+// count, because an explicitly set default is indistinguishable from an unset
+// one in /config and needs no migration either.
+//
+// 2.14.6 mirrors the effective values into both the multizone.* and the
+// kmesh.multizone.* paths of /config, so the finding also fires on a control
+// plane already migrated to the KUMA_* names — the detail points at the
+// startup-log deprecation line, the only signal naming the settings that
+// actually still use the old names. The check runs on every audited config,
+// a global's fanned-out zone configs included: the zone token settings belong
+// to a zone, and the global settings of a zone CP are inert on 2.14 but their
+// KMESH_* environment variables abort the 3.0 startup there too.
+func (a *auditor) addKDSAuthFindings(cfg cpConfig, ref func(string) string) {
+	kmesh := cfg.KongMesh.Multizone
+	var examples []string
+	if t := kmesh.Global.Kds.Auth.Type; t != "" && t != "none" {
+		examples = append(examples, "kmesh.multizone.global.kds.auth.type="+t+" (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_TYPE)")
+	}
+	if e := kmesh.Global.Kds.Auth.CpToken.EnableIssuer; e != nil && !*e {
+		examples = append(examples, "kmesh.multizone.global.kds.auth.cpToken.enableIssuer=false (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_CP_TOKEN_ENABLE_ISSUER)")
+	}
+	if u := kmesh.Global.Kds.Auth.CpToken.Validator.UseSecrets; u != nil && !*u {
+		examples = append(examples, "kmesh.multizone.global.kds.auth.cpToken.validator.useSecrets=false (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_CP_TOKEN_VALIDATOR_USE_SECRETS)")
+	}
+	if len(kmesh.Global.Kds.Auth.CpToken.Validator.PublicKeys) > 0 {
+		examples = append(examples, "kmesh.multizone.global.kds.auth.cpToken.validator.publicKeys set")
+	}
+	if kmesh.Zone.Kds.Auth.CpTokenInline != "" {
+		examples = append(examples, "kmesh.multizone.zone.kds.auth.cpTokenInline set (KMESH_MULTIZONE_ZONE_KDS_AUTH_CP_TOKEN_INLINE)")
+	}
+	if p := kmesh.Zone.Kds.Auth.CpTokenPath; p != "" {
+		examples = append(examples, "kmesh.multizone.zone.kds.auth.cpTokenPath="+p+" (KMESH_MULTIZONE_ZONE_KDS_AUTH_CP_TOKEN_PATH)")
+	}
+	for _, ex := range examples {
+		a.rep.addDoc(blocker, cpConfigCategory, "KDS auth set under the removed kmesh.multizone settings",
+			"3.0 removes the Kong Mesh kmesh.multizone KDS authentication settings and aborts at startup on the KMESH_MULTIZONE_* environment variables. A global left on them serves KDS without authentication (multizone.global.kds.auth.type defaults to none) and a zone presents no token, so the global rejects it. Set the KDS auth with the Kuma names instead — KUMA_MULTIZONE_GLOBAL_KDS_AUTH_TYPE (cpToken is called zoneToken there), KUMA_MULTIZONE_GLOBAL_KDS_AUTH_ZONE_TOKEN_ENABLE_ISSUER, KUMA_MULTIZONE_GLOBAL_KDS_AUTH_ZONE_TOKEN_VALIDATOR_USE_SECRETS, KUMA_MULTIZONE_ZONE_KDS_AUTH_TOKEN_INLINE and KUMA_MULTIZONE_ZONE_KDS_AUTH_TOKEN_PATH — and delete the KMESH_MULTIZONE_* variables: a leftover aborts the 3.0 startup even when the new variable is set too. 2.14.6 mirrors the effective values into both the multizone.* and kmesh.multizone.* paths of /config, so this finding can also fire on a zone or global already migrated to the new names: the control-plane startup log lines \"kmesh.multizone... is deprecated, use ... instead\" name the settings that actually still use the old names.",
+			docKumaCPReference, ref(ex))
+	}
+}
+
 // setDuration parses a Go duration string served by /config, reporting false
 // for an unset ("", "0s") or unparseable value.
 func setDuration(s string) (time.Duration, bool) {
@@ -2506,6 +2578,7 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	// Settings the 3.0 control plane refuses to start with, or silently drops.
 	a.addAPIServerFindings(cfg, ref)
 	a.addDroppedSettingFindings(cfg, ref)
+	a.addKDSAuthFindings(cfg, ref)
 	// zoneProxy.type authenticated only the standalone zone proxies; 3.0 zone
 	// proxies are Dataplanes and authenticate like any other proxy. On Kubernetes
 	// that is the pod service-account token, issued without operator action.
