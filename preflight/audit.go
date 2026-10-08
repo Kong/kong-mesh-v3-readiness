@@ -2084,6 +2084,15 @@ type cpConfig struct {
 		Zone struct {
 			Name string `json:"name"`
 		} `json:"zone"`
+		Global struct {
+			Kds struct {
+				Auth struct {
+					ZoneToken struct {
+						EnableIssuer *bool `json:"enableIssuer"`
+					} `json:"zoneToken"`
+				} `json:"auth"`
+			} `json:"kds"`
+		} `json:"global"`
 	} `json:"multizone"`
 	// ApiServer carries the admin API authentication settings: 3.0 drops the
 	// adminClientCerts authn plugin (the CP refuses to start with it) and the
@@ -2356,11 +2365,21 @@ func (a *auditor) addDroppedSettingFindings(cfg cpConfig, ref func(string) strin
 }
 
 // addZoneTokenIssuerFinding flags a global that turned the zone token issuer
-// off. 3.0 validates zone tokens on the global only, so a zone's value is inert.
+// off with the dpServer switch alone. 3.0 validates zone tokens on the global
+// only, so a zone's value is inert, and 3.0 drops the dpServer switch: with
+// only it set the issuer turns back on. The 2.14 cp-token switch under
+// multizone.global already opts out of 3.0's behavior, so an explicit false
+// there clears the finding. The two 2.14 switches gate disjoint token kinds
+// (dpServer: ingress/egress, multizone.global: cp), so the new key has to be
+// set in addition to the old one — removing the old key re-enables
+// ingress/egress issuance on 2.14.
 func (a *auditor) addZoneTokenIssuerFinding(cfg cpConfig) {
 	if e := cfg.DpServer.Authn.ZoneProxy.ZoneToken.EnableIssuer; e != nil && !*e {
+		if k := cfg.Multizone.Global.Kds.Auth.ZoneToken.EnableIssuer; k != nil && !*k {
+			return
+		}
 		a.rep.addDoc(blocker, cpConfigCategory, "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer",
-			"3.0 ignores dpServer.authn.zoneProxy.zoneToken.enableIssuer, so the issuer turns back on. Set multizone.global.kds.auth.zoneToken.enableIssuer to false on the global to keep it off.",
+			"3.0 ignores dpServer.authn.zoneProxy.zoneToken.enableIssuer, so the issuer turns back on. On 2.14 the old key still gates ingress/egress zone tokens, so set multizone.global.kds.auth.zoneToken.enableIssuer=false on the global in addition to it — swapping the keys re-enables their issuance.",
 			docKumaCPReference, "dpServer.authn.zoneProxy.zoneToken.enableIssuer=false")
 	}
 }
