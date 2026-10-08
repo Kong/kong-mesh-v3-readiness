@@ -76,6 +76,50 @@ func TestDroppedCPSettingsOnGlobal(t *testing.T) {
 	}
 }
 
+// TestZoneTokenIssuerFinding: a 2.14 global carries two issuer switches — the
+// dpServer one for ingress/egress tokens and the multizone.global one for cp
+// tokens. Both keys off is the migrated state and clears the finding; the
+// dpServer switch alone still flags it.
+func TestZoneTokenIssuerFinding(t *testing.T) {
+	for _, tc := range []struct {
+		name, patch string
+		want        bool
+	}{
+		{"dpServer key off", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":false}}}}}`, true},
+		{"both keys off", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":false}}}},"multizone":{"global":{"kds":{"auth":{"zoneToken":{"enableIssuer":false}}}}}}`, false},
+		{"dpServer off, cp issuer on", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":false}}}},"multizone":{"global":{"kds":{"auth":{"zoneToken":{"enableIssuer":true}}}}}}`, true},
+		{"cp key off only", `{"multizone":{"global":{"kds":{"auth":{"zoneToken":{"enableIssuer":false}}}}}}`, false},
+		{"issuer left on", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":true}}}}}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var cfg cpConfig
+			if err := json.Unmarshal([]byte(tc.patch), &cfg); err != nil {
+				t.Fatal(err)
+			}
+			a := &auditor{rep: &collector{}}
+			a.addZoneTokenIssuerFinding(cfg)
+			got := false
+			for _, f := range a.rep.findings {
+				got = got || (f.severity == blocker && f.title == "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer")
+			}
+			if got != tc.want {
+				t.Errorf("flagged = %v, want %v\nfindings: %+v", got, tc.want, a.rep.findings)
+			}
+		})
+	}
+}
+
+// TestZoneTokenIssuerClearedOnGlobal: a global serving both issuer switches off
+// end-to-end (the migrated 2.14 setup) produces no zone token issuer finding.
+func TestZoneTokenIssuerClearedOnGlobal(t *testing.T) {
+	m := auditResponses(t, map[string]string{
+		"/config": `{"mode":"global","environment":"universal","dpServer":{"authn":{"dpProxy":{"type":"dpToken"},"zoneProxy":{"type":"none","zoneToken":{"enableIssuer":false}}}},"multizone":{"global":{"kds":{"auth":{"zoneToken":{"enableIssuer":false}}}}}}`,
+	})
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer"); ok {
+		t.Errorf("both keys off still flagged the zone token issuer; findings: %+v", m.Findings)
+	}
+}
+
 // TestDeprecatedTransparentProxyFields: a Universal Dataplane still carrying the
 // redirect ports or ipFamilyMode is informational (removed in 3.1, not 3.0).
 func TestDeprecatedTransparentProxyFields(t *testing.T) {
