@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -53,6 +54,57 @@ func TestDroppedCPSettings(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("flagged = %v, want %v\nfindings: %+v", got, tc.want, a.rep.findings)
+			}
+		})
+	}
+}
+
+// TestKDSWatchdogTimingRemediation: the timing finding cannot tell the operator
+// to unset the value on 2.x — the 3.0 replacement keys do not exist there, so
+// unsetting resets the timing to the default before the upgrade. The finding
+// merges both timing fields under one title that keeps only the first detail,
+// so even with a single custom field the detail has to name both 3.0 env keys.
+func TestKDSWatchdogTimingRemediation(t *testing.T) {
+	const (
+		kdsTitle = "KDS watchdog timing moved to multizone.{global,zone}.kds.eventBasedWatchdog"
+		flushKey = "KUMA_MULTIZONE_{GLOBAL,ZONE}_KDS_EVENT_BASED_WATCHDOG_{FLUSH_INTERVAL,FULL_RESYNC_INTERVAL}"
+	)
+	for _, tc := range []struct {
+		name, patch string
+	}{
+		{"flush interval", `{"experimental":{"kdsEventBasedWatchdog":{"enabled":true,"flushInterval":"10s"}}}`},
+		{"full resync interval", `{"experimental":{"kdsEventBasedWatchdog":{"enabled":true,"fullResyncInterval":"30s"}}}`},
+		{"both custom", `{"experimental":{"kdsEventBasedWatchdog":{"enabled":true,"flushInterval":"10s","fullResyncInterval":"30s"}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := goodK8sConfig()
+			if err := json.Unmarshal([]byte(tc.patch), &cfg); err != nil {
+				t.Fatal(err)
+			}
+			a := &auditor{rep: &collector{}}
+			a.addCPConfigFindings(cfg, "")
+			var detail string
+			for _, f := range a.rep.findings {
+				if f.severity == blocker && f.title == kdsTitle {
+					detail = f.detail
+				}
+			}
+			if detail == "" {
+				t.Fatalf("watchdog timing not flagged; findings: %+v", a.rep.findings)
+			}
+			for _, key := range []string{flushKey, "FLUSH_INTERVAL", "FULL_RESYNC_INTERVAL"} {
+				if !strings.Contains(detail, key) {
+					t.Errorf("detail %q missing the 3.0 env key %q", detail, key)
+				}
+			}
+			if !strings.Contains(detail, "cannot be moved before the upgrade") {
+				t.Errorf("detail %q missing the 2.x limitation", detail)
+			}
+			if !strings.Contains(detail, "Keep the current values") {
+				t.Errorf("detail %q does not tell the operator to keep the values", detail)
+			}
+			if strings.Contains(detail, "to unset") {
+				t.Errorf("detail %q still tells the operator to unset on 2.x", detail)
 			}
 		})
 	}

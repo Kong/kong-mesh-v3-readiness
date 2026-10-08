@@ -2292,10 +2292,9 @@ func (a *auditor) addDroppedSettingFindings(cfg cpConfig, ref func(string) strin
 			{"fullResyncInterval", wd.FullResyncInterval, time.Minute},
 		} {
 			if d, ok := setDuration(s.value); ok && d != s.def {
-				field := "experimental.kdsEventBasedWatchdog." + s.field
 				a.rep.addDoc(blocker, cpConfigCategory, "KDS watchdog timing moved to multizone.{global,zone}.kds.eventBasedWatchdog",
-					cpConfigDetail(field, s.value, "unset"),
-					docKumaCPReference, ref(field+"="+s.value))
+					"3.0 ignores experimental.kdsEventBasedWatchdog.{flushInterval,fullResyncInterval}, and their replacements multizone.{global,zone}.kds.eventBasedWatchdog.{flushInterval,fullResyncInterval} (KUMA_MULTIZONE_{GLOBAL,ZONE}_KDS_EVENT_BASED_WATCHDOG_{FLUSH_INTERVAL,FULL_RESYNC_INTERVAL}) do not exist on 2.x, so the intervals cannot be moved before the upgrade. Keep the current values and set the 3.0 keys as part of the 3.0 configuration.",
+					docKumaCPReference, ref("experimental.kdsEventBasedWatchdog."+s.field+"="+s.value))
 			}
 		}
 	}
