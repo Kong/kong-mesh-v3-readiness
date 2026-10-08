@@ -2464,7 +2464,8 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	}
 
 	// Settings that become the default in 3.0 — enable and validate before upgrading.
-	if !cfg.Experimental.DeltaXds {
+	// EXC:FILE011:experimental.deltaXds reaches pods only through the Kubernetes injector — on a Universal CP the setting is inert and the per-DP feature-delta-grpc check already flags those proxies, so the gate is onK8s
+	if onK8s && !cfg.Experimental.DeltaXds {
 		a.rep.addDoc(blocker, cpConfigCategory, "Delta xDS not enabled",
 			cpConfigDetail("experimental.deltaXds", "false", "true"),
 			docKumaCPReference, ref("experimental.deltaXds=false"))
