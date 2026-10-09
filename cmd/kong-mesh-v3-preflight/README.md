@@ -39,6 +39,7 @@ go run ./cmd/kong-mesh-v3-preflight --output report.html
 | `--classify` | `false` | Classification mode: instead of auditing a CP, classify e2e tests by their 3.0-deprecated-feature usage (see below). Uses `--source-dir` and/or `--reports-dir` |
 | `--source-dir` | _(none)_ | With `--classify`: root of an e2e test tree to scan statically (e.g. a Kuma `test/e2e_env/<env>` dir) |
 | `--reports-dir` | _(none)_ | With `--classify`: directory of per-spec preflight JSON snapshots captured during an e2e run, folded into the classification |
+| `--version` | `false` | Print the CLI version and exit; `kong-mesh-v3-preflight version` does the same. Any other positional argument is an error |
 
 Exit codes (so it can gate CI): `0` report produced · `2` operational error. Findings live in the report, not the exit code — a run that produced a report exits `0` whether it is clean, has blockers, or is inconclusive (a collection could not be read, or a resource spec failed to parse — the result is a partial report, not a proven clean bill of health, even if it retained blockers); gate readiness on the report's `status` field, not on `$?`. In `--classify` mode the exit code is `0` on success or `2` on error.
 

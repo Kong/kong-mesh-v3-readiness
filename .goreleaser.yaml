@@ -20,7 +20,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w
+      - -s -w -X main.version={{ .Version }}
 
 # Archive name template is the contract the CI download step relies on:
 #   kong-mesh-v3-preflight_<os>_<arch>.tar.gz  (each contains the `kong-mesh-v3-preflight` binary)

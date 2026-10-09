@@ -48,7 +48,19 @@ func run() int {
 	classify := flag.Bool("classify", false, "Classify e2e tests by Kuma-3.0 deprecated-feature usage (uses --source-dir / --reports-dir) instead of auditing a CP")
 	sourceDir := flag.String("source-dir", "", "With --classify: root of the e2e test sources to scan statically")
 	reportsDir := flag.String("reports-dir", "", "With --classify: directory of per-spec preflight JSON snapshots to fold in")
+	showVersion := flag.Bool("version", false, "Print the kong-mesh-v3-preflight version and exit (same as the version subcommand)")
 	flag.Parse()
+
+	// `version` is the only positional argument; anything else is a typo that
+	// would otherwise silently run a full audit and print the report.
+	switch args := flag.Args(); {
+	case *showVersion || (len(args) == 1 && args[0] == "version"):
+		fmt.Printf("kong-mesh-v3-preflight %s\n", toolVersion())
+		return 0
+	case len(args) > 0:
+		fmt.Fprintf(os.Stderr, "error: unexpected arguments %q (the only subcommand is `version`; see --help)\n", args)
+		return 2
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
