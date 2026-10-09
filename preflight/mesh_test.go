@@ -36,6 +36,7 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			name:     "inline mTLS",
 			mesh:     map[string]any{"mtls": map[string]any{"enabledBackend": "ca-1"}},
 			severity: "blocker", category: "Mesh object settings", title: "Inline mTLS on Mesh",
+			detailContains:  "bundled.insecureAllowSelfSigned: true",
 			exampleContains: "(mtls)",
 		},
 		{
