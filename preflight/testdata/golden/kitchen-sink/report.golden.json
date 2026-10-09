@@ -12,7 +12,7 @@
     "other"
   ],
   "summary": {
-    "blockers": 94,
+    "blockers": 96,
     "warnings": 0,
     "info": 3,
     "coverage_gaps": 3,
@@ -396,6 +396,30 @@
       "count": 1,
       "example_resources": [
         "kri_mopa_default___opa-flat-datasource_"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "MeshRetry",
+      "title": "MeshRetry retryOn names an unknown condition",
+      "detail": "MeshRetry write validation rejects a `retryOn` item outside the condition list with `unknown item '\u003citem\u003e'`, so re-applying this policy fails — on 2.14 as much as on 3.0, meaning the resource was stored through a path that skips validation. The accepted items are case-sensitive: `5xx`, `GatewayError`, `Reset`, `Retriable4xx`, `ConnectFailure`, `EnvoyRatelimited`, `RefusedStream`, `Http3PostConnectFailure`, `HttpMethod\u003cMethod\u003e` plus any numeric HTTP status code (`\"503\"`) for `http.retryOn`; `Canceled`, `DeadlineExceeded`, `Internal`, `ResourceExhausted`, `Unavailable` for `grpc.retryOn`. The Envoy spellings (`reset`, `connect-failure`, `gateway-error`, `deadline-exceeded`) and the uppercase `5XX` are rejected — `5xx` alone covers `reset`, `connect-failure` and `refused-stream`.",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshretry/",
+      "count": 1,
+      "example_resources": [
+        "kri_mr_default___mr-legacy-retry-conf_"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "policies",
+      "category": "MeshRetry",
+      "title": "MeshRetry uses legacy Retry fields",
+      "detail": "`retriableStatusCodes` and `retriableMethods` under `http`, and `maxConnectAttempts` under `tcp`, belong to the legacy `Retry` policy — `MeshRetry` has no such fields. A 2.14 control plane drops unknown fields silently, so a manifest carrying them applies without an error and without any effect; 3.0 rejects a write that carries a field outside the schema (`unknown field`), so the first re-apply after the upgrade (GitOps included) fails with `400`. Fix the manifests: express retriable status codes as numeric `http.retryOn` items (`\"500\"`, `\"504\"`) and retriable methods as `HttpMethod\u003cMethod\u003e` conditions, and spell the TCP field `maxConnectAttempt` (singular) — the renamed value then starts to apply, which is a behavior change on 2.14 already, and a `tcp` section has to set it.",
+      "doc_url": "https://developer.konghq.com/mesh/policies/meshretry/",
+      "count": 1,
+      "example_resources": [
+        "kri_mr_default___mr-legacy-retry-conf_"
       ]
     },
     {
@@ -996,6 +1020,11 @@
       "title": "Validate user-supplied MeshIdentity CAs",
       "detail": "Kuma 3.0 validates a CA supplied through a Bundled MeshIdentity's `provider.bundled.ca` like the legacy `provided` mTLS backend did: the certificate must be a CA (`CA:TRUE`) with the `keyCertSign` key usage and without `keyAgreement`. 2.x accepts any certificate there, so a MeshIdentity whose CA fails these checks works today, and after the upgrade it never becomes Ready and the proxies it selects get no workload certificates, which breaks mTLS. The certificate usually lives in a Secret, which the tool does not read, so check each one. The first command lists every MeshIdentity with a user-supplied CA and where its certificate comes from; check each certificate with the second.",
       "command": "# MeshIdentities with a user-supplied CA, and the source of each certificate\nfor m in $(kumactl get meshes -o json | jq -r '.items[].name'); do\n  kumactl get meshidentities --mesh \"$m\" -o json | jq -r '.items[] | select(.spec.provider.bundled.ca.certificate) | [.mesh, .name, (.spec.provider.bundled.ca.certificate | tostring)] | @tsv'\ndone\n\n# For each certificate: needs \"CA:TRUE\" and \"Certificate Sign\", must not show \"Key Agreement\"\nopenssl x509 -in ca.crt -noout -ext basicConstraints,keyUsage"
+    },
+    {
+      "title": "Fix MeshRetry manifests carrying legacy Retry fields",
+      "detail": "3.0 rejects a policy write that carries a field outside its schema (`unknown field`), while 2.x silently dropped such fields. `MeshRetry` never had the legacy `Retry` conf fields, so a manifest that copied a Retry conf carries `http.retriableStatusCodes`, `http.retriableMethods` and/or `tcp.maxConnectAttempts`: it applies on 2.14 with the fields dropped (and no effect), and the first re-apply after the upgrade fails with `400`. The stored resources read back without the fields — the drop happens at write time — so this cannot be seen from the control-plane API and the tool cannot detect it for you; audit the manifests and GitOps sources instead. Replace the two `retriable*` fields with numeric `http.retryOn` items (`\"500\"`) and `HttpMethod\u003cMethod\u003e` conditions, and spell the TCP field `maxConnectAttempt` (singular); renaming it makes the value apply, which changes behavior on 2.14 already, and a `tcp` section has to set it.",
+      "command": "# Find MeshRetry manifests still naming legacy Retry fields\ngrep -rnE 'retriableStatusCodes|retriableMethods|maxConnectAttempts' --include='*.yaml' --include='*.yml' --include='*.json' ."
     },
     {
       "title": "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",

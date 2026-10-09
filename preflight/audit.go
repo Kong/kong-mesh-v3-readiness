@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -1274,7 +1275,105 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 			a.rep.addDoc(blocker, "Relocated policy fields", "MeshLoadBalancingStrategy uses SourceIP hash policy",
 				"The `SourceIP` hash policy type is deprecated; use `Connection`.", docMeshLoadBalancing, ref)
 		}
+	case "MeshRetry":
+		var s struct {
+			To []struct {
+				Default struct {
+					HTTP struct {
+						RetriableStatusCodes json.RawMessage   `json:"retriableStatusCodes"`
+						RetriableMethods     json.RawMessage   `json:"retriableMethods"`
+						RetryOn              []json.RawMessage `json:"retryOn"`
+					} `json:"http"`
+					TCP struct {
+						MaxConnectAttempts json.RawMessage `json:"maxConnectAttempts"`
+					} `json:"tcp"`
+					GRPC struct {
+						RetryOn []json.RawMessage `json:"retryOn"`
+					} `json:"grpc"`
+				} `json:"default"`
+			} `json:"to"`
+		}
+		if json.Unmarshal(spec, &s) != nil {
+			return
+		}
+		var legacyFields, badRetryOn bool
+		for _, t := range s.To {
+			if hasJSON(t.Default.HTTP.RetriableStatusCodes) || hasJSON(t.Default.HTTP.RetriableMethods) ||
+				hasJSON(t.Default.TCP.MaxConnectAttempts) {
+				legacyFields = true
+			}
+			if len(invalidRetryOnItems(t.Default.HTTP.RetryOn, httpRetryOnConditions, true)) > 0 ||
+				len(invalidRetryOnItems(t.Default.GRPC.RetryOn, grpcRetryOnConditions, false)) > 0 {
+				badRetryOn = true
+			}
+		}
+		if legacyFields {
+			a.rep.addDoc(blocker, "MeshRetry", "MeshRetry uses legacy Retry fields",
+				"`retriableStatusCodes` and `retriableMethods` under `http`, and `maxConnectAttempts` under `tcp`, "+
+					"belong to the legacy `Retry` policy — `MeshRetry` has no such fields. A 2.14 control plane drops "+
+					"unknown fields silently, so a manifest carrying them applies without an error and without any effect; "+
+					"3.0 rejects a write that carries a field outside the schema (`unknown field`), so the first re-apply "+
+					"after the upgrade (GitOps included) fails with `400`. Fix the manifests: express retriable status codes "+
+					"as numeric `http.retryOn` items (`\"500\"`, `\"504\"`) and retriable methods as `HttpMethod<Method>` "+
+					"conditions, and spell the TCP field `maxConnectAttempt` (singular) — the renamed value then starts to "+
+					"apply, which is a behavior change on 2.14 already, and a `tcp` section has to set it.",
+				docMeshRetry, ref)
+		}
+		if badRetryOn {
+			a.rep.addDoc(blocker, "MeshRetry", "MeshRetry retryOn names an unknown condition",
+				"MeshRetry write validation rejects a `retryOn` item outside the condition list with `unknown item '<item>'`, "+
+					"so re-applying this policy fails — on 2.14 as much as on 3.0, meaning the resource was stored through "+
+					"a path that skips validation. The accepted items are case-sensitive: `5xx`, `GatewayError`, `Reset`, "+
+					"`Retriable4xx`, `ConnectFailure`, `EnvoyRatelimited`, `RefusedStream`, `Http3PostConnectFailure`, "+
+					"`HttpMethod<Method>` plus any numeric HTTP status code (`\"503\"`) for `http.retryOn`; `Canceled`, "+
+					"`DeadlineExceeded`, `Internal`, `ResourceExhausted`, `Unavailable` for `grpc.retryOn`. The Envoy "+
+					"spellings (`reset`, `connect-failure`, `gateway-error`, `deadline-exceeded`) and the uppercase `5XX` "+
+					"are rejected — `5xx` alone covers `reset`, `connect-failure` and `refused-stream`.",
+				docMeshRetry, ref)
+		}
 	}
+}
+
+// httpRetryOnConditions mirrors the MeshRetry HTTPRetryOn validation (identical
+// on 2.14 and 3.0): the named conditions, case-sensitively, plus any numeric
+// HTTP status code.
+var httpRetryOnConditions = map[string]bool{
+	"5xx": true, "GatewayError": true, "Reset": true, "Retriable4xx": true,
+	"ConnectFailure": true, "EnvoyRatelimited": true, "RefusedStream": true,
+	"Http3PostConnectFailure": true,
+	"HttpMethodConnect":       true, "HttpMethodDelete": true, "HttpMethodGet": true,
+	"HttpMethodHead": true, "HttpMethodOptions": true, "HttpMethodPatch": true,
+	"HttpMethodPost": true, "HttpMethodPut": true, "HttpMethodTrace": true,
+}
+
+// grpcRetryOnConditions mirrors the MeshRetry GRPCRetryOn validation.
+var grpcRetryOnConditions = map[string]bool{
+	"Canceled": true, "DeadlineExceeded": true, "Internal": true,
+	"ResourceExhausted": true, "Unavailable": true,
+}
+
+// invalidRetryOnItems returns the retryOn items MeshRetry's validator rejects,
+// mirroring its `unknown item` rule: a named condition from the set, or — for
+// HTTP only — any numeric HTTP status code. rawItems are the raw JSON array
+// elements, so a quoted string is unquoted and a bare number keeps its literal
+// text and is judged as a status code.
+func invalidRetryOnItems(rawItems []json.RawMessage, conditions map[string]bool, numericOK bool) []string {
+	var bad []string
+	for _, raw := range rawItems {
+		item := string(raw)
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			item = s
+		}
+		if conditions[item] {
+			continue
+		}
+		if code, err := strconv.Atoi(item); numericOK && err == nil && http.StatusText(code) != "" {
+			continue
+		}
+		bad = append(bad, item)
+	}
+	return bad
 }
 
 func (a *auditor) addOtelEndpoint(typ string, ref string) {
@@ -3869,6 +3968,21 @@ done
 
 # For each certificate: needs "CA:TRUE" and "Certificate Sign", must not show "Key Agreement"
 openssl x509 -in ca.crt -noout -ext basicConstraints,keyUsage`,
+	},
+	{
+		Title: "Fix MeshRetry manifests carrying legacy Retry fields",
+		Detail: "3.0 rejects a policy write that carries a field outside its schema (`unknown field`), while 2.x " +
+			"silently dropped such fields. `MeshRetry` never had the legacy `Retry` conf fields, so a manifest that " +
+			"copied a Retry conf carries `http.retriableStatusCodes`, `http.retriableMethods` and/or " +
+			"`tcp.maxConnectAttempts`: it applies on 2.14 with the fields dropped (and no effect), and the first " +
+			"re-apply after the upgrade fails with `400`. The stored resources read back without the fields — the " +
+			"drop happens at write time — so this cannot be seen from the control-plane API and the tool cannot " +
+			"detect it for you; audit the manifests and GitOps sources instead. Replace the two `retriable*` fields " +
+			"with numeric `http.retryOn` items (`\"500\"`) and `HttpMethod<Method>` conditions, and spell the TCP " +
+			"field `maxConnectAttempt` (singular); renaming it makes the value apply, which changes behavior on 2.14 " +
+			"already, and a `tcp` section has to set it.",
+		Command: `# Find MeshRetry manifests still naming legacy Retry fields
+grep -rnE 'retriableStatusCodes|retriableMethods|maxConnectAttempts' --include='*.yaml' --include='*.yml' --include='*.json' .`,
 	},
 }
 
