@@ -1,5 +1,5 @@
 {
-  "total": 3,
+  "total": 5,
   "items": [
     {
       "type": "Dataplane",
@@ -87,6 +87,44 @@
             "kuma.io/service": "gw"
           }
         }
+      }
+    },
+    {
+      "type": "Dataplane",
+      "mesh": "other",
+      "name": "other-dp-east",
+      "labels": {
+        "kuma.io/env": "universal",
+        "kuma.io/zone": "east",
+        "kuma.io/workload": "other-dp-east"
+      },
+      "networking": {
+        "address": "10.0.0.1",
+        "inbound": [
+          {
+            "port": 8080,
+            "protocol": "tcp"
+          }
+        ]
+      }
+    },
+    {
+      "type": "Dataplane",
+      "mesh": "other",
+      "name": "other-dp-west",
+      "labels": {
+        "kuma.io/env": "universal",
+        "kuma.io/zone": "west",
+        "kuma.io/workload": "other-dp-west"
+      },
+      "networking": {
+        "address": "10.0.0.1",
+        "inbound": [
+          {
+            "port": 8080,
+            "protocol": "tcp"
+          }
+        ]
       }
     }
   ],

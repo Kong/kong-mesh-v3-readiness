@@ -3,6 +3,7 @@ package preflight
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -155,6 +156,9 @@ var categoryToGroup = map[string]string{
 	"Route backendRef":          groupPolicies,
 	"MeshPassthrough":           groupPolicies,
 	"MeshOPA data source":       groupPolicies,
+	"MeshRetry":                 groupPolicies,
+	"Metric TLS":                groupPolicies,
+	"Empty match entry":         groupPolicies,
 	categoryAccessRoles:         groupControlPlane,
 	"Removed resources":         groupRemovedResources,
 	"reachableServices":         groupDataPlane,
@@ -311,6 +315,9 @@ func (r *collector) toModel(generatedAt string) Report {
 
 	cg := append([]coverageGap(nil), r.coverage...)
 	sort.SliceStable(cg, func(i, j int) bool { return cg[i].path < cg[j].path })
+	// EXC:FILE011:same-gap-read-twice — checks share uncached collection reads, and two checks failing on the same path record one fact, not two
+	cg = slices.CompactFunc(cg, func(a, b coverageGap) bool { return a.path == b.path && a.reason == b.reason })
+	m.Summary.CoverageGaps = len(cg)
 	for _, g := range cg {
 		m.Coverage = append(m.Coverage, CoverageGap{Path: g.path, Reason: g.reason})
 	}

@@ -1,5 +1,5 @@
 {
-  "total": 1,
+  "total": 2,
   "items": [
     {
       "type": "MeshRetry",
@@ -8,6 +8,24 @@
       "spec": {
         "targetRef": { "kind": "Mesh", "proxyTypes": [ "Gateway" ] },
         "to": [ { "targetRef": { "kind": "Mesh" }, "default": { "http": { "numRetries": 3 } } } ]
+      }
+    },
+    {
+      "type": "MeshRetry",
+      "mesh": "default",
+      "name": "mr-legacy-retry-conf",
+      "spec": {
+        "targetRef": { "kind": "Mesh" },
+        "to": [
+          {
+            "targetRef": { "kind": "MeshService", "labels": { "kuma.io/display-name": "backend" } },
+            "default": {
+              "http": { "numRetries": 5, "retriableStatusCodes": [ 500, 504 ], "retriableMethods": [ "GET", "DELETE" ], "retryOn": [ "5xx", "reset" ] },
+              "tcp": { "maxConnectAttempts": 5 },
+              "grpc": { "numRetries": 5, "retryOn": [ "deadline-exceeded" ] }
+            }
+          }
+        ]
       }
     }
   ],

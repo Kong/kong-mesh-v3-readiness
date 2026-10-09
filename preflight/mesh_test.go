@@ -36,6 +36,7 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			name:     "inline mTLS",
 			mesh:     map[string]any{"mtls": map[string]any{"enabledBackend": "ca-1"}},
 			severity: "blocker", category: "Mesh object settings", title: "Inline mTLS on Mesh",
+			detailContains:  "bundled.insecureAllowSelfSigned: true",
 			exampleContains: "(mtls)",
 		},
 		{
@@ -75,6 +76,7 @@ func TestMeshDeprecatedFeatureReportedAsIssue(t *testing.T) {
 			name:     "inline metrics",
 			mesh:     map[string]any{"metrics": map[string]any{"enabledBackend": "prom", "backends": []any{map[string]any{"type": "prometheus"}}}},
 			severity: "blocker", category: "Mesh object settings", title: "Inline metrics on Mesh",
+			detailContains: "It does not preserve legacy client certificate checks.",
 		},
 		{
 			name:     "inline tracing",

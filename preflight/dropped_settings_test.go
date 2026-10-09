@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -58,6 +59,57 @@ func TestDroppedCPSettings(t *testing.T) {
 	}
 }
 
+// TestKDSWatchdogTimingRemediation: the timing finding cannot tell the operator
+// to unset the value on 2.x — the 3.0 replacement keys do not exist there, so
+// unsetting resets the timing to the default before the upgrade. The finding
+// merges both timing fields under one title that keeps only the first detail,
+// so even with a single custom field the detail has to name both 3.0 env keys.
+func TestKDSWatchdogTimingRemediation(t *testing.T) {
+	const (
+		kdsTitle = "KDS watchdog timing moved to multizone.{global,zone}.kds.eventBasedWatchdog"
+		flushKey = "KUMA_MULTIZONE_{GLOBAL,ZONE}_KDS_EVENT_BASED_WATCHDOG_{FLUSH_INTERVAL,FULL_RESYNC_INTERVAL}"
+	)
+	for _, tc := range []struct {
+		name, patch string
+	}{
+		{"flush interval", `{"experimental":{"kdsEventBasedWatchdog":{"enabled":true,"flushInterval":"10s"}}}`},
+		{"full resync interval", `{"experimental":{"kdsEventBasedWatchdog":{"enabled":true,"fullResyncInterval":"30s"}}}`},
+		{"both custom", `{"experimental":{"kdsEventBasedWatchdog":{"enabled":true,"flushInterval":"10s","fullResyncInterval":"30s"}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := goodK8sConfig()
+			if err := json.Unmarshal([]byte(tc.patch), &cfg); err != nil {
+				t.Fatal(err)
+			}
+			a := &auditor{rep: &collector{}}
+			a.addCPConfigFindings(cfg, "")
+			var detail string
+			for _, f := range a.rep.findings {
+				if f.severity == blocker && f.title == kdsTitle {
+					detail = f.detail
+				}
+			}
+			if detail == "" {
+				t.Fatalf("watchdog timing not flagged; findings: %+v", a.rep.findings)
+			}
+			for _, key := range []string{flushKey, "FLUSH_INTERVAL", "FULL_RESYNC_INTERVAL"} {
+				if !strings.Contains(detail, key) {
+					t.Errorf("detail %q missing the 3.0 env key %q", detail, key)
+				}
+			}
+			if !strings.Contains(detail, "cannot be moved before the upgrade") {
+				t.Errorf("detail %q missing the 2.x limitation", detail)
+			}
+			if !strings.Contains(detail, "Keep the current values") {
+				t.Errorf("detail %q does not tell the operator to keep the values", detail)
+			}
+			if strings.Contains(detail, "to unset") {
+				t.Errorf("detail %q still tells the operator to unset on 2.x", detail)
+			}
+		})
+	}
+}
+
 // TestDroppedCPSettingsOnGlobal: a global audits its own mode-independent
 // settings and the zone token issuer, but not the proxy-serving zone proxy
 // authn one.
@@ -73,6 +125,50 @@ func TestDroppedCPSettingsOnGlobal(t *testing.T) {
 	}
 	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Zone proxies need a dataplane token in 3.0"); ok {
 		t.Errorf("zone proxy authn flagged on a global, which serves no proxies")
+	}
+}
+
+// TestZoneTokenIssuerFinding: a 2.14 global carries two issuer switches — the
+// dpServer one for ingress/egress tokens and the multizone.global one for cp
+// tokens. Both keys off is the migrated state and clears the finding; the
+// dpServer switch alone still flags it.
+func TestZoneTokenIssuerFinding(t *testing.T) {
+	for _, tc := range []struct {
+		name, patch string
+		want        bool
+	}{
+		{"dpServer key off", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":false}}}}}`, true},
+		{"both keys off", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":false}}}},"multizone":{"global":{"kds":{"auth":{"zoneToken":{"enableIssuer":false}}}}}}`, false},
+		{"dpServer off, cp issuer on", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":false}}}},"multizone":{"global":{"kds":{"auth":{"zoneToken":{"enableIssuer":true}}}}}}`, true},
+		{"cp key off only", `{"multizone":{"global":{"kds":{"auth":{"zoneToken":{"enableIssuer":false}}}}}}`, false},
+		{"issuer left on", `{"dpServer":{"authn":{"zoneProxy":{"zoneToken":{"enableIssuer":true}}}}}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var cfg cpConfig
+			if err := json.Unmarshal([]byte(tc.patch), &cfg); err != nil {
+				t.Fatal(err)
+			}
+			a := &auditor{rep: &collector{}}
+			a.addZoneTokenIssuerFinding(cfg)
+			got := false
+			for _, f := range a.rep.findings {
+				got = got || (f.severity == blocker && f.title == "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer")
+			}
+			if got != tc.want {
+				t.Errorf("flagged = %v, want %v\nfindings: %+v", got, tc.want, a.rep.findings)
+			}
+		})
+	}
+}
+
+// TestZoneTokenIssuerClearedOnGlobal: a global serving both issuer switches off
+// end-to-end (the migrated 2.14 setup) produces no zone token issuer finding.
+func TestZoneTokenIssuerClearedOnGlobal(t *testing.T) {
+	m := auditResponses(t, map[string]string{
+		"/config": `{"mode":"global","environment":"universal","dpServer":{"authn":{"dpProxy":{"type":"dpToken"},"zoneProxy":{"type":"none","zoneToken":{"enableIssuer":false}}}},"multizone":{"global":{"kds":{"auth":{"zoneToken":{"enableIssuer":false}}}}}}`,
+	})
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer"); ok {
+		t.Errorf("both keys off still flagged the zone token issuer; findings: %+v", m.Findings)
 	}
 }
 

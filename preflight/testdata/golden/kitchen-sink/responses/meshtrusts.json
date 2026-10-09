@@ -1,0 +1,44 @@
+{
+  "total": 2,
+  "items": [
+    {
+      "type": "MeshTrust",
+      "mesh": "other",
+      "name": "trust-east",
+      "labels": {
+        "kuma.io/zone": "east"
+      },
+      "spec": {
+        "trustDomain": "default.mesh.local",
+        "caBundles": [
+          {
+            "type": "Pem",
+            "pem": {
+              "value": "-----BEGIN CERTIFICATE-----\neast\n-----END CERTIFICATE-----"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "MeshTrust",
+      "mesh": "other",
+      "name": "trust-west",
+      "labels": {
+        "kuma.io/zone": "west"
+      },
+      "spec": {
+        "trustDomain": "default.mesh.local",
+        "caBundles": [
+          {
+            "type": "Pem",
+            "pem": {
+              "value": "-----BEGIN CERTIFICATE-----\nwest\n-----END CERTIFICATE-----"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "next": null
+}

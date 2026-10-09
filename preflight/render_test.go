@@ -23,7 +23,16 @@ func sampleReport() *collector {
 	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")
 	r.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label", "Add label.", "default/dp-1")
 	r.add(blocker, "Zone proxies", "zoneingresses present", "Migrate to the unified Zone Proxy.", "zi-1")
+	r.addDoc(blocker, cpConfigCategory, "KDS auth set under the removed kmesh.multizone settings",
+		"Set the KDS auth with the Kuma names.", docKumaCPReference,
+		"kmesh.multizone.global.kds.auth.type=cpToken (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_TYPE)")
+	a := auditor{rep: r}
+	a.checkPermissionMatches([]byte(`{"rules":[{"default":{"allow":[{}]}}]}`), "default/mtp-1")
+	r.addDoc(blocker, "MeshRetry", "MeshRetry uses legacy Retry fields",
+		"Legacy Retry fields are rejected on write in 3.0.", docMeshRetry, "default/mr-1")
 	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", "1/2")
+	r.addDoc(info, "MeshIdentity coverage", "Zone-spanning mesh has no federated MeshTrust",
+		"Create a federated MeshTrust on the global per peer zone.", docMeshIdentity, "mesh default (zones east, west)")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
 }
@@ -55,14 +64,14 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Status != StatusInconclusive {
 		t.Fatalf("status = %q, want %q", m.Status, StatusInconclusive)
 	}
-	if m.Summary.Blockers != 16 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies)
-		t.Errorf("blockers = %d, want 16", m.Summary.Blockers)
+	if m.Summary.Blockers != 19 { // EXC:FILE011:per-finding tally — 16 existing occurrences + 1 empty permission match + 1 KDS auth + 1 MeshRetry
+		t.Errorf("blockers = %d, want 19", m.Summary.Blockers)
 	}
 	if m.Summary.Warnings != 0 { // the tool no longer emits warning-severity findings
 		t.Errorf("warnings = %d, want 0", m.Summary.Warnings)
 	}
-	if m.Summary.Info != 1 { // Dataplane DNS sampling coverage
-		t.Errorf("info = %d, want 1", m.Summary.Info)
+	if m.Summary.Info != 2 { // EXC:FILE011:per-finding tally — Dataplane DNS sampling coverage + the cross-zone trust note
+		t.Errorf("info = %d, want 2", m.Summary.Info)
 	}
 	if m.Summary.CoverageGaps != 1 || m.Summary.ParseErrors != 1 {
 		t.Errorf("coverageGaps/parseErrors = %d/%d, want 1/1", m.Summary.CoverageGaps, m.Summary.ParseErrors)
@@ -104,8 +113,10 @@ func TestToModelGroups(t *testing.T) {
 		"Inline mTLS on Mesh":                                groupMeshObject,
 		"meshServices.mode is not Exclusive":                 groupMeshObject,
 		"MeshTimeout uses `from`":                            groupPolicies,
+		emptyMatchTitle:                                      groupPolicies,
 		"zoneingresses present":                              groupOther,
 		"Universal Dataplane missing kuma.io/workload label": groupDataPlane,
+		"MeshRetry uses legacy Retry fields":                 groupPolicies,
 	}
 	for _, f := range m.Findings {
 		if g, ok := want[f.Title]; ok && f.Group != g {
