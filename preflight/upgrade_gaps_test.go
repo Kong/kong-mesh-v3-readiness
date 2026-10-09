@@ -175,16 +175,66 @@ func TestZoneOriginMeshExternalService(t *testing.T) {
 			"spec": map[string]any{"match": map[string]any{"type": "HostnameGenerator", "port": 80, "protocol": "http"}},
 		}
 	}
+	zoneOrigin := map[string]any{"kuma.io/origin": "zone", "kuma.io/zone": "east"}
+	global := func(zones []string) map[string]string {
+		zoneItems := make([]map[string]any, 0, len(zones))
+		dpItems := make([]map[string]any, 0, len(zones))
+		for _, z := range zones {
+			zoneItems = append(zoneItems, map[string]any{"type": "ZoneOverview", "name": z})
+			dpItems = append(dpItems, universalDP("default", "dp-"+z, z))
+		}
+		return map[string]string{
+			"/config":         `{"mode": "global", "environment": "universal"}`,
+			"/meshes":         listBody(t, map[string]any{"type": "Mesh", "name": "default", "meshServices": map[string]any{"mode": "Exclusive"}}),
+			"/zones+insights": listBody(t, zoneItems...),
+			"/dataplanes":     listBody(t, dpItems...),
+		}
+	}
+	withMES := func(zones []string, labels map[string]any) map[string]string {
+		r := global(zones)
+		r["/meshexternalservices"] = listBody(t, mes(labels))
+		return r
+	}
 	for _, tc := range []struct {
-		name   string
-		labels map[string]any
-		want   bool
+		name      string
+		responses map[string]string
+		want      bool
 	}{
-		{"zone origin", map[string]any{"kuma.io/origin": "zone", "kuma.io/zone": "zone-1"}, true},
-		{"global origin", map[string]any{"kuma.io/origin": "global"}, false},
+		{
+			name:      "multizone global with the mesh spanning zones",
+			responses: withMES([]string{"east", "west"}, zoneOrigin),
+			want:      true,
+		},
+		{
+			name: "unfederated zone has no client elsewhere",
+			responses: map[string]string{
+				"/config":               `{"mode": "zone", "environment": "universal"}`,
+				"/meshexternalservices": listBody(t, mes(map[string]any{"kuma.io/origin": "zone", "kuma.io/zone": "default"})),
+			},
+			want: false,
+		},
+		{
+			name:      "single-zone global has no cross-zone traffic",
+			responses: withMES([]string{"east"}, zoneOrigin),
+			want:      false,
+		},
+		{
+			name: "multizone global but the mesh is local to one zone",
+			responses: func() map[string]string {
+				r := withMES([]string{"east", "west"}, zoneOrigin)
+				r["/dataplanes"] = listBody(t, universalDP("default", "dp-e", "east"))
+				return r
+			}(),
+			want: false,
+		},
+		{
+			name:      "global-origin MeshExternalService is not zone-routed",
+			responses: withMES([]string{"east", "west"}, map[string]any{"kuma.io/origin": "global"}),
+			want:      false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := auditResponses(t, map[string]string{"/meshexternalservices": listBody(t, mes(tc.labels))})
+			m := auditResponses(t, tc.responses)
 			if _, got := findFinding(m, "blocker", "MeshExternalService routing", title); got != tc.want {
 				t.Errorf("flagged = %v, want %v\nfindings: %+v", got, tc.want, m.Findings)
 			}

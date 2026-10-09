@@ -2115,6 +2115,19 @@ func (a *auditor) checkCrossZoneTrust(ctx context.Context) error {
 	return nil
 }
 
+// crossZoneEligible reports whether a zone-origin MeshExternalService can be
+// reached from another zone on this estate: the audited CP is a multi-zone
+// global (only a global sees the other zones) and the mesh's proxies span two or
+// more zones. On a standalone or otherwise unfederated CP there is no client
+// elsewhere, so 3.0's per-zone routing change cannot break anything there.
+func (a *auditor) crossZoneEligible(ctx context.Context, mesh string) bool {
+	if len(a.meshZones[mesh]) < 2 {
+		return false
+	}
+	zones, found, err := a.zoneInsights(ctx)
+	return err == nil && found && len(zones) >= 2
+}
+
 // checkServiceResources flags MeshService, MeshExternalService and
 // MeshMultiZoneService names that are not valid RFC-1035 DNS labels (deprecated
 // in 3.0) and the spec fields 3.0 no longer reads. These resource types are newer
@@ -2141,7 +2154,8 @@ func (a *auditor) checkServiceResources(ctx context.Context) error {
 					a.externalServiceMeshes = map[string]bool{}
 				}
 				a.externalServiceMeshes[it.Mesh] = true
-				if it.Labels["kuma.io/origin"] == "zone" {
+				// EXC:FILE011:unfederated-zone — cross-zone routing only matters where another zone can reach the MES; a standalone CP has no client elsewhere (issue #86)
+				if it.Labels["kuma.io/origin"] == "zone" && a.crossZoneEligible(ctx, it.Mesh) {
 					a.rep.addDoc(blocker, "MeshExternalService routing", "Zone-origin MeshExternalService is reached through its own zone",
 						"2.x reaches a MeshExternalService created in a zone only through that zone's ingress and egress, so clients elsewhere depend on that zone's network path to the endpoint. 3.0 drops per-zone routing: every zone's local egress dials the endpoint directly. Make sure each zone's egress can reach it (or recreate the resource on the global) before upgrading.",
 						docMeshExternalService, qualified(it))
