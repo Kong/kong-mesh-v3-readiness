@@ -139,8 +139,8 @@ func TestOutboundDenyMergesEnvironmentsIntoOneEntry(t *testing.T) {
 	for _, want := range []string{
 		"Universal Dataplanes: 1 of 1",
 		"Kubernetes dataplanes: 1 of 1",
-		"On Universal, add `networking.transparentProxying.reachableBackends.refs`",
-		"On Kubernetes, add the `kuma.io/reachable-backends` annotation",
+		"On Universal, set `networking.transparentProxying.reachableBackends`",
+		"On Kubernetes, set the Pod annotation `kuma.io/reachable-backends`",
 	} {
 		if !strings.Contains(f.Detail, want) {
 			t.Errorf("detail misses %q: %q", want, f.Detail)
@@ -397,7 +397,7 @@ func TestRestrictedControlPlaneStillVerifiesReachableBackends(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing %s finding %q\nfindings: %+v", tc.sev, tc.title, m.Findings)
 		}
-		if !strings.Contains(f.Detail, "already `true` here") {
+		if !strings.Contains(f.Detail, "`defaults.restrictOutbound: true` already") {
 			t.Errorf("finding %q keeps the future-tense framing: %q", tc.title, f.Detail)
 		}
 	}
@@ -449,7 +449,7 @@ func TestPinnedControlPlaneDoesNotBlockOutboundDefaults(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing info finding %q\nfindings: %+v", title, m.Findings)
 		}
-		if !strings.Contains(f.Detail, "explicitly `false` here") {
+		if !strings.Contains(f.Detail, "`defaults.restrictOutbound: false` keeps") {
 			t.Errorf("finding %q does not explain the pin: %q", title, f.Detail)
 		}
 	}

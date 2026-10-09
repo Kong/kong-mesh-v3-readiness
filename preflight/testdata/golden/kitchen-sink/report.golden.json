@@ -784,7 +784,7 @@
       "group": "data_plane_and_workloads",
       "category": "Outbound defaults",
       "title": "Transparent proxies have no reachableBackends",
-      "detail": "4 of 5 transparent-proxy data plane proxies define neither `reachableBackends` nor an outbound with a `backendRef`; Universal Dataplanes: 3 of 4; Kubernetes dataplanes: 1 of 1. In 2.x an unset `reachableBackends` means *every* destination in the mesh; 3.0 flips that default to none, so these proxies get no outbound clusters and every in-mesh call they make fails. On Universal, add `networking.transparentProxying.reachableBackends.refs` to each Dataplane, selecting by `labels` (not `name`/`namespace`, which 3.0 drops) the MeshServices the workload actually calls. On Kubernetes, add the `kuma.io/reachable-backends` annotation to each Pod (the control plane copies it onto the Dataplane), selecting by `labels` (not `name`/`namespace`, which 3.0 drops) the MeshServices the workload actually calls. This applies because `defaults.restrictOutbound` is not set on the control plane governing these proxies, so 3.0 applies its new default: set it explicitly to `false` (and keep it on 3.0) to keep today's behavior through the upgrade, or to `true` to enforce the 3.0 behavior now and validate it.",
+      "detail": "4 of 5 transparent proxies have no `reachableBackends`; Universal Dataplanes: 3 of 4; Kubernetes dataplanes: 1 of 1. 3.0 gives them no outbounds by default, so their in-mesh calls fail. On Universal, set `networking.transparentProxying.reachableBackends`, selecting MeshServices by `labels`. On Kubernetes, set the Pod annotation `kuma.io/reachable-backends`, selecting MeshServices by `labels`. Or set `defaults.restrictOutbound` explicitly: `false` keeps today's behavior on 3.0, `true` applies the 3.0 behavior now.",
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 4,
       "example_resources": [
@@ -799,7 +799,7 @@
       "group": "data_plane_and_workloads",
       "category": "Outbound defaults",
       "title": "Transparent proxies selected by no MeshPassthrough",
-      "detail": "5 of 5 transparent-proxy data plane proxies are selected by no MeshPassthrough. In 2.x a proxy matched by no MeshPassthrough still gets a passthrough cluster, so anything the application dials that the mesh does not know about still leaves the proxy; 3.0 makes the no-policy case behave like `passthroughMode: None` and drops that traffic. Add a MeshPassthrough selecting every proxy that needs external egress, or model those destinations as MeshExternalServices. This applies because `defaults.restrictOutbound` is not set on the control plane governing these proxies, so 3.0 applies its new default: set it explicitly to `false` (and keep it on 3.0) to keep today's behavior through the upgrade, or to `true` to enforce the 3.0 behavior now and validate it.",
+      "detail": "5 of 5 transparent proxies are selected by no MeshPassthrough. 3.0 drops their traffic to destinations outside the mesh. Add a MeshPassthrough selecting them, or model those destinations as MeshExternalServices. Or set `defaults.restrictOutbound` explicitly: `false` keeps today's behavior on 3.0, `true` applies the 3.0 behavior now.",
       "doc_url": "https://developer.konghq.com/mesh/policies/meshpassthrough/",
       "count": 5,
       "example_resources": [
@@ -936,7 +936,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Default outbound changes in 3.0",
-      "detail": "`defaults.restrictOutbound` is not set, so it follows the default: `false` on 2.14 and `true` in 3.0. After the upgrade a proxy with no `reachableBackends` reaches nothing and a proxy matched by no MeshPassthrough loses outbound passthrough. To keep today's behavior, set it explicitly to `false` before upgrading and keep that setting on 3.0. To adopt the 3.0 behavior, set it to `true` now and validate — the control plane then denies exactly what 3.0 will, so the proxies and meshes this report flags break here instead of after the upgrade.",
+      "detail": "`defaults.restrictOutbound` is unset: `false` on 2.14, `true` on 3.0. Set it to `false` to keep today's behavior, or to `true` now to validate the 3.0 behavior before upgrading.",
       "doc_url": "https://developer.konghq.com/mesh/meshservice/#reachablebackends",
       "count": 1,
       "example_resources": [
