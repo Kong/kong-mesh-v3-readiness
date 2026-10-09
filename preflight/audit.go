@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -1168,15 +1169,16 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 	case "MeshPassthrough":
 		var s struct {
 			Default struct {
-				AppendMatch []struct {
-					Type  string `json:"type"`
-					Value string `json:"value"`
-					Port  int    `json:"port"`
-				} `json:"appendMatch"`
+				AppendMatch []passthroughMatch `json:"appendMatch"`
 			} `json:"default"`
 		}
 		if json.Unmarshal(spec, &s) != nil {
 			return
+		}
+		if conflict := passthroughChainConflict(s.Default.AppendMatch); conflict != "" {
+			a.rep.addDoc(blocker, "MeshPassthrough", "MeshPassthrough matches produce the same filter chain",
+				"3.0 resolves every match to one Envoy filter chain and rejects a policy where two matches resolve to the same one: an IP and a CIDR covering only that address, two CIDRs with the same canonical prefix, or `tcp` and `mysql` on the same address and port. A stored policy keeps the first match, ignores the later one and fails on re-apply (`produce the same filter chain`); 2.14 already sends Envoy a listener it rejects (`has the same matching rules defined`). Remove the duplicate match.",
+				docMeshPassthrough, refNote(ref, conflict))
 		}
 		for _, m := range s.Default.AppendMatch {
 			if m.Type == "Domain" && m.Port == 0 && !strings.HasPrefix(m.Value, "*") {
@@ -4294,4 +4296,114 @@ func (a *auditor) checkExternalServiceIdentity(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+type passthroughMatch struct {
+	Type     string `json:"type"`
+	Value    string `json:"value"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+}
+
+// passthroughChain identifies the filter chain a MeshPassthrough match resolves to on
+// 3.0 (kumahq/kuma release-3.0 meshpassthrough/api/v1alpha1/conflicts.go): tcp and
+// mysql share a chain class, as do http, http2, grpc and anything unrecognized; IPs
+// and CIDRs key on the canonical prefix, TLS domains on the SNI.
+type passthroughChain struct {
+	class   string
+	port    int
+	address string
+	ipv6    bool
+	sni     string
+}
+
+// passthroughChainConflict returns the first pair of matches 3.0 rejects because they
+// resolve to the same filter chain, or "" when there is none. Matches the generator
+// cannot build a chain from are skipped, other checks report them.
+func passthroughChainConflict(matches []passthroughMatch) string {
+	type owner struct{ protocol, value string }
+	owners := map[passthroughChain]owner{}
+	for _, m := range matches {
+		chain, ok := passthroughChainOf(m)
+		// L7 domains on one port merge as virtual hosts, and 2.14 already rejects
+		// mixed L7 protocols on a port, so they never conflict in a stored policy
+		if !ok || (m.Type == "Domain" && chain.class == "http") {
+			continue
+		}
+		candidate := owner{protocol: m.Protocol, value: m.Value}
+		first, used := owners[chain]
+		switch {
+		case !used:
+			owners[chain] = candidate
+		case first == candidate:
+		case first.protocol != candidate.protocol:
+			return fmt.Sprintf("protocols %s and %s produce the same filter chain for %s", first.protocol, candidate.protocol, chain)
+		default:
+			return fmt.Sprintf("matches %q and %q produce the same filter chain for %s", first.value, candidate.value, chain)
+		}
+	}
+	return ""
+}
+
+func passthroughChainOf(m passthroughMatch) (passthroughChain, bool) {
+	chain := passthroughChain{class: "http", port: m.Port}
+	switch m.Protocol {
+	case "tls":
+		chain.class = "tls"
+	case "tcp", "mysql":
+		chain.class = "tcp"
+	}
+	switch m.Type {
+	case "IP":
+		ip := net.ParseIP(m.Value)
+		if ip == nil {
+			return chain, false
+		}
+		// the value as written decides the listener, so an IPv4-mapped form stays IPv6
+		chain.ipv6 = strings.Contains(m.Value, ":")
+		bits := "/32"
+		if chain.ipv6 {
+			bits = "/128"
+		}
+		chain.address = canonicalCIDR(m.Value + bits)
+	case "CIDR":
+		if _, _, err := net.ParseCIDR(m.Value); err != nil {
+			return chain, false
+		}
+		chain.address = canonicalCIDR(m.Value)
+		chain.ipv6 = strings.Contains(chain.address, ":")
+	case "Domain":
+		if m.Port == 0 && !strings.HasPrefix(m.Value, "*") {
+			return chain, false
+		}
+		if chain.class == "tls" {
+			chain.sni = m.Value
+		}
+	default:
+		return chain, false
+	}
+	return chain, true
+}
+
+// canonicalCIDR drops host bits and collapses IPv4-mapped IPv6 to IPv4, the prefix
+// range Envoy matches on.
+func canonicalCIDR(value string) string {
+	if _, ipNet, err := net.ParseCIDR(value); err == nil {
+		return ipNet.String()
+	}
+	return value
+}
+
+func (c passthroughChain) String() string {
+	target := "domains"
+	switch {
+	case c.sni != "":
+		target = fmt.Sprintf("domain %q", c.sni)
+	case c.address != "":
+		target = c.address
+	}
+	if c.port == 0 {
+		return target + " on all ports"
+	}
+	return fmt.Sprintf("%s on port %d", target, c.port)
 }
