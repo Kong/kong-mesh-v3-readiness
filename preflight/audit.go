@@ -359,7 +359,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 
 	for _, check := range []func(context.Context) error{
 		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkAccessControl, a.checkNewPolicies, a.checkDataplanes,
-		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
+		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses, a.checkCrossZoneTrust,
 		a.checkServiceResources, a.checkExternalServiceIdentity, a.checkMeshTrust,
 		a.checkControlPlaneConfig,
 		// Both read defaults.restrictOutbound, which checkControlPlaneConfig resolves;
@@ -588,7 +588,10 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 				"MeshIdentity `provider`: `builtin` -> `type: Bundled`, `provided` -> `type: Bundled` "+
 				"with your CA under `bundled.ca`, `vault`/`acmpca`/`certmanager` -> `type: Extension` "+
 				"with `extension.name` set to the same value (Kong Mesh only). Each example resource "+
-				"names the backends that mesh carries.",
+				"names the backends that mesh carries. In a multizone mesh, a Bundled provider's "+
+				"zone-origin MeshTrusts do not propagate to the other zones — create a federated "+
+				"MeshTrust on the global per peer zone (carrying the peer zone's CA bundle) or "+
+				"cross-zone mTLS dies after the upgrade.",
 			docMeshIdentity, ref(mtlsNote(spec.Mtls.Backends)))
 	}
 
@@ -1919,6 +1922,96 @@ func (a *auditor) requiredZoneAddresses() []string {
 	}
 	slices.Sort(required)
 	return required
+}
+
+// checkCrossZoneTrust flags a zone-spanning mesh whose MeshIdentity uses the
+// Bundled provider but that has no federated (global-origin) MeshTrust: each
+// zone's control plane auto-generates its own zone-local MeshTrust, and
+// zone-origin MeshTrusts do not propagate to the other zones, so cross-zone mTLS
+// dies with TLS verification failures once the zones run 3.0. This is an info,
+// not a blocker: whether the mesh needs cross-zone traffic is unknowable from
+// the control plane, and the federation may exist as zone-local MeshTrusts that
+// carry the peers' CAs — presence-only, the check cannot verify bundles. Four
+// preconditions keep it off estates that cannot be affected: a multi-zone global
+// (only the global sees every zone's MeshTrusts), a mesh with proxies in two or
+// more zones, a Bundled MeshIdentity in that mesh (Spire and Extension manage
+// trust differently), and the meshidentities list being served (a 404 is a
+// type the CP does not register — not applicable). An unreadable or
+// unregistered meshtrusts list is a coverage gap, never silence and never a
+// fire on absence.
+func (a *auditor) checkCrossZoneTrust(ctx context.Context) error {
+	if len(a.meshZones) == 0 {
+		return nil
+	}
+	zones, found, err := a.zoneInsights(ctx)
+	if err != nil || !found || len(zones) < 2 {
+		// EXC:FILE011:not-a-multizone-global — the same precondition checkMeshZoneAddresses applies; the zones overview already gapped out in checkControlPlaneConfig, which reports it once
+		return nil
+	}
+	ids, complete := a.listServed(ctx, a.scopedPath("meshidentities"))
+	if !complete {
+		return nil
+	}
+	bundled := map[string]bool{}
+	// EXC:FILE011:trust-creation-disabled — trust creation is per MeshIdentity, so a mesh fires the disabled-creation wording only when every Bundled identity in it sets meshTrustCreation: Disabled
+	enabled := map[string]bool{}
+	for _, id := range ids {
+		var spec struct {
+			Provider struct {
+				Type    string `json:"type"`
+				Bundled struct {
+					MeshTrustCreation string `json:"meshTrustCreation"`
+				} `json:"bundled"`
+			} `json:"provider"`
+		}
+		if err := json.Unmarshal(id.specBytes(), &spec); err != nil {
+			a.rep.parseErrors++
+			a.rep.add(blocker, "Unparseable resources", "MeshIdentity spec could not be parsed",
+				"Could not parse this resource; audit it manually before upgrading.", a.ref(id))
+			continue
+		}
+		if spec.Provider.Type == "Bundled" {
+			bundled[id.Mesh] = true
+			if spec.Provider.Bundled.MeshTrustCreation != "Disabled" {
+				enabled[id.Mesh] = true
+			}
+		}
+	}
+	if len(bundled) == 0 {
+		return nil
+	}
+	trusts, served, err := a.c.list(ctx, a.scopedPath("meshtrusts"))
+	if err != nil {
+		a.rep.addGap(a.scopedPath("meshtrusts"), collectionReadGapReason(err))
+		return nil
+	}
+	if !served {
+		// EXC:FILE011:not-observed-is-not-absent — a CP that serves MeshIdentity but has not registered MeshTrust can neither confirm nor deny federation, so this is a coverage gap like checkMeshZoneAddresses records, never silence and never a fire on absence
+		a.rep.addGap(a.scopedPath("meshtrusts"), "endpoint returned 404 — this control plane does not serve MeshTrust; cross-zone trust federation NOT audited")
+		return nil
+	}
+	a.stampZone(trusts)
+	federated := map[string]bool{}
+	// EXC:FILE011:global-origin-detection — a MeshTrust created on the global carries the CP-stamped kuma.io/origin: global (even when an operator added a zone label); a zone→global-synced copy carries kuma.io/origin: zone plus its zone label, so only origin:global (or, defensively, a missing zone label) marks the federation
+	for _, it := range trusts {
+		if it.Mesh != "" && (it.Labels[zoneLabel] == "" || it.Labels["kuma.io/origin"] == "global") {
+			federated[it.Mesh] = true
+		}
+	}
+	for _, mesh := range slices.Sorted(maps.Keys(a.meshZones)) {
+		if !bundled[mesh] || federated[mesh] || len(a.meshZones[mesh]) < 2 {
+			continue
+		}
+		zs := slices.Sorted(maps.Keys(a.meshZones[mesh]))
+		cause := "Each zone's control plane auto-generates its own zone-local MeshTrust from the mesh's Bundled MeshIdentity, and zone-origin MeshTrusts do not propagate to the other zones — so every zone trusts only its own CA."
+		if bundled[mesh] && !enabled[mesh] {
+			cause = "The mesh's Bundled MeshIdentity sets `meshTrustCreation: Disabled`, so no zone control plane generates a MeshTrust at all, and zone-origin MeshTrusts would not propagate to the other zones anyway."
+		}
+		a.rep.addDoc(info, "MeshIdentity coverage", "Zone-spanning mesh has no federated MeshTrust",
+			cause+" Cross-zone mTLS after the upgrade then fails with TLS verification errors (`ssl.fail_verify_error` climbing on cross-zone clusters). If this mesh needs cross-zone communication, create a federated MeshTrust on the global for each peer zone (trustDomain set to the peer zone's, `caBundles` carrying the peer zone's CA bundle): a global-origin MeshTrust syncs to every zone, and 2.14 already registers the type. If this mesh never carries cross-zone traffic, ignore this note. To see what each zone trusts: `kumactl get meshtrusts --mesh <mesh> -o json | jq -r '.items[] | [(.labels[\"kuma.io/zone\"] // \"global\"), .spec.trustDomain] | @tsv'`.",
+			docMeshIdentity, "mesh "+mesh+" (zones "+strings.Join(zs, ", ")+")")
+	}
+	return nil
 }
 
 // checkServiceResources flags MeshService, MeshExternalService and
