@@ -31,6 +31,8 @@ func sampleReport() *collector {
 	r.addDoc(blocker, "MeshRetry", "MeshRetry uses legacy Retry fields",
 		"Legacy Retry fields are rejected on write in 3.0.", docMeshRetry, "default/mr-1")
 	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", "1/2")
+	r.addDoc(info, "MeshIdentity coverage", "Zone-spanning mesh has no federated MeshTrust",
+		"Create a federated MeshTrust on the global per peer zone.", docMeshIdentity, "mesh default (zones east, west)")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
 }
@@ -68,8 +70,8 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Summary.Warnings != 0 { // the tool no longer emits warning-severity findings
 		t.Errorf("warnings = %d, want 0", m.Summary.Warnings)
 	}
-	if m.Summary.Info != 1 { // Dataplane DNS sampling coverage
-		t.Errorf("info = %d, want 1", m.Summary.Info)
+	if m.Summary.Info != 2 { // EXC:FILE011:per-finding tally — Dataplane DNS sampling coverage + the cross-zone trust note
+		t.Errorf("info = %d, want 2", m.Summary.Info)
 	}
 	if m.Summary.CoverageGaps != 1 || m.Summary.ParseErrors != 1 {
 		t.Errorf("coverageGaps/parseErrors = %d/%d, want 1/1", m.Summary.CoverageGaps, m.Summary.ParseErrors)

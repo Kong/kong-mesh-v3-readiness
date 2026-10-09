@@ -157,6 +157,11 @@ cat report.json | ./bin/kong-mesh-v3-preflight --from-json - --format html > rep
 - **MeshExternalService identity** — meshes with MeshExternalServices but no MeshIdentity, whose
   clients get no MeshExternalService cluster in 3.0 (503). An unreadable MeshIdentity list is a
   coverage gap.
+- **Cross-zone trust federation** (info) — a mesh whose MeshIdentity uses the Bundled provider and
+  whose proxies span zones but that has no federated (global-origin) MeshTrust: zone-origin
+  MeshTrusts do not propagate to the other zones, so cross-zone mTLS dies with TLS verification
+  failures after the upgrade. Info because the mesh may not need cross-zone traffic and zone-local
+  trusts may already carry the peers' CAs; the inline-mTLS migration blocker carries the same note.
 - **Reserved labels** — `kuma.io/`, `k8s.kuma.io/` labels outside the 3.0 registry on user-authored
   policies, Universal Dataplanes and service resources (3.0 rejects them on write), and selectors
   keyed on one (targetRef/backendRef `labels`, MeshService `dataplaneLabels`, MeshMultiZoneService

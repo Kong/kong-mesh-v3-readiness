@@ -8,12 +8,13 @@
     "mode": "global"
   },
   "meshes": [
-    "default"
+    "default",
+    "other"
   ],
   "summary": {
-    "blockers": 95,
+    "blockers": 96,
     "warnings": 0,
-    "info": 2,
+    "info": 3,
     "coverage_gaps": 3,
     "parse_errors": 0,
     "system_findings": 3
@@ -330,7 +331,7 @@
       "group": "mesh_object",
       "category": "Mesh object settings",
       "title": "Inline mTLS on Mesh",
-      "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust. Each legacy backend type maps to a MeshIdentity `provider`: `builtin` -\u003e `type: Bundled`, `provided` -\u003e `type: Bundled` with your CA under `bundled.ca`, `vault`/`acmpca`/`certmanager` -\u003e `type: Extension` with `extension.name` set to the same value (Kong Mesh only). Each example resource names the backends that mesh carries.",
+      "detail": "Migrate `mesh.mtls` to MeshIdentity + MeshTrust. Each legacy backend type maps to a MeshIdentity `provider`: `builtin` -\u003e `type: Bundled`, `provided` -\u003e `type: Bundled` with your CA under `bundled.ca`, `vault`/`acmpca`/`certmanager` -\u003e `type: Extension` with `extension.name` set to the same value (Kong Mesh only). Each example resource names the backends that mesh carries. In a multizone mesh, a Bundled provider's zone-origin MeshTrusts do not propagate to the other zones — create a federated MeshTrust on the global per peer zone (carrying the peer zone's CA bundle) or cross-zone mTLS dies after the upgrade.",
       "doc_url": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
       "count": 1,
       "example_resources": [
@@ -900,9 +901,10 @@
       "title": "Mesh has no MeshZoneAddress for a zone it spans",
       "detail": "MeshZoneAddress is mesh-scoped: every mesh whose services are consumed from another zone needs its own resource in the zone that serves them, or cross-zone MeshService traffic to that mesh is down on 3.0. This mesh has proxies in more than one zone and this zone terminates cross-zone traffic on Universal, but no MeshZoneAddress in the mesh advertises it. 2.14 already registers the type, so create it before upgrading. (Kubernetes zones are not flagged — there the 3.0 control plane creates the resource from the zone-proxy Service.)",
       "doc_url": "https://developer.konghq.com/mesh/zone-proxies/",
-      "count": 1,
+      "count": 2,
       "example_resources": [
-        "mesh default, zone east"
+        "mesh default, zone east",
+        "mesh other, zone east"
       ]
     },
     {
@@ -939,6 +941,18 @@
       "count": 1,
       "example_resources": [
         "zone zone-1: defaults.restrictOutbound=unset"
+      ]
+    },
+    {
+      "severity": "info",
+      "group": "other",
+      "category": "MeshIdentity coverage",
+      "title": "Zone-spanning mesh has no federated MeshTrust",
+      "detail": "Each zone's control plane auto-generates its own zone-local MeshTrust from the mesh's Bundled MeshIdentity, and zone-origin MeshTrusts do not propagate to the other zones — so every zone trusts only its own CA. Cross-zone mTLS after the upgrade then fails with TLS verification errors (`ssl.fail_verify_error` climbing on cross-zone clusters). If this mesh needs cross-zone communication, create a federated MeshTrust on the global for each peer zone (trustDomain set to the peer zone's, `caBundles` carrying the peer zone's CA bundle): a global-origin MeshTrust syncs to every zone, and 2.14 already registers the type. If this mesh never carries cross-zone traffic, ignore this note. To see what each zone trusts: `kumactl get meshtrusts --mesh \u003cmesh\u003e -o json | jq -r '.items[] | [(.labels[\"kuma.io/zone\"] // \"global\"), .spec.trustDomain] | @tsv'`.",
+      "doc_url": "https://developer.konghq.com/mesh/issue-identity-with-meshidentity/",
+      "count": 1,
+      "example_resources": [
+        "mesh other (zones east, west)"
       ]
     }
   ],
