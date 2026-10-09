@@ -299,6 +299,15 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	if idx.Version == "" {
 		return nil, fmt.Errorf("endpoint at %s does not look like a Kuma control plane (GET / returned no version)", c.base)
 	}
+	// Every check reads 2.x state: on a 3.x CP the removed endpoints answer 404
+	// (coverage gaps) and removed /config fields read as false (false blockers).
+	if runsTargetMajor(idx.Version) {
+		rep := &collector{cp: idx}
+		rep.add(info, cpVersionCategory, "Control plane already runs 3.x",
+			"This control plane already runs 3.x, so there is nothing to prepare for the 3.0 upgrade and no other check was run. To audit control planes still on 2.x, such as zones not upgraded yet, point the tool at each of them directly.",
+			"control plane ("+idx.Version+")")
+		return rep, nil
+	}
 
 	a := &auditor{
 		c: c, meshFilter: opts.meshFilter, inspectDataplanes: opts.inspectDataplanes,
@@ -2886,6 +2895,13 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 			a.rep.addGap("/zones+insights ("+it.Name+")", "zone insight could not be parsed — config NOT audited")
 			continue
 		}
+		// A 3.x zone no longer reports the 2.x settings, so they would read as off.
+		if v, ok := latestZoneVersion(zo); ok && runsTargetMajor(v) {
+			a.rep.add(info, cpConfigCategory, "Zone control plane already runs 3.x",
+				"This zone control plane already runs 3.x, so its settings were not audited for the 3.0 upgrade.",
+				"zone "+it.Name+" ("+v+")")
+			continue
+		}
 		cfg, ok := latestZoneConfig(zo)
 		if !ok {
 			a.rep.addGap("/zones+insights ("+it.Name+")",
@@ -3108,6 +3124,11 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 			a.rep.addDoc(blocker, "Dataplane version", "Dataplane is version-incompatible with the control plane",
 				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
 				docUpgrade, qualifiedNote(it, "kuma-dp "+kd.Version))
+		}
+		// kuma-dp 3.x always runs what the feature checks below look for and stops
+		// advertising some of it, so reading its feature list yields false blockers.
+		if runsTargetMajor(kd.Version) {
+			continue
 		}
 		// 3.0 upgrades only from 2.14, and older kuma-dp does not advertise the
 		// features checkDataplaneFeatures reads, so this comes before every other

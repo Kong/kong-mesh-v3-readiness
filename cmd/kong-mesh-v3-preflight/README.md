@@ -136,6 +136,7 @@ cat report.json | ./bin/kong-mesh-v3-preflight --from-json - --format html > rep
   the same `GET /zones+insights` payload — one global audit covers every zone with no extra
   round-trips. If the latest patch can't be determined, or a zone reported no version, it is a
   coverage gap — never a silent pass.
+- **Control plane already on 3.x** — a CP that already runs 3.x (pre-releases such as `3.0.0-preview.v<sha>` included) gets one info finding and no other check, so the report is clean; audit the CPs still on 2.x directly. Behind a 2.x global, a zone CP already on 3.x gets an info finding instead of its config checks, and a kuma-dp 3.x proxy skips the feature checks. Master builds report `0.0.0-preview` and are audited as usual.
 - **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
   eBPF transparent proxy, unified resource naming, inbound-tags-disabled, delta
   xDS, KDS event-based watchdog, native sidecar containers not yet enabled, settings the 3.0

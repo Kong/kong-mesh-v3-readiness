@@ -37,6 +37,15 @@ func ParseSemver(s string) (int, int, int, bool) {
 	return maj, minor, patch, true
 }
 
+// runsTargetMajor reports whether a reported version is already 3.x or later,
+// pre-releases such as "3.0.0-preview.v<sha>" included. Master builds report
+// "0.0.0-preview.v<sha>", which says nothing about the major they will ship as,
+// so they are not recognized and keep being audited as before.
+func runsTargetMajor(version string) bool {
+	maj, _, _, ok := ParseSemver(version)
+	return ok && maj >= 3
+}
+
 // behind reports whether a running version is older than the latest target patch
 // and therefore not a supported 3.0 upgrade source. Anything below 2.x (a 1.x or
 // 0.x build) must reach 2.x first, so it is "behind"; 3.0+ is beyond the 2.x
