@@ -46,7 +46,7 @@ jobs:
         run: go test ./...
 
       - name: go build
-        run: go build -o /dev/null ./cmd/kuma3-preflight
+        run: go build -o /dev/null ./cmd/kong-mesh-v3-preflight
 
       - name: examples up-to-date
         # Re-render examples/html/*.html from the committed JSON fixtures and fail

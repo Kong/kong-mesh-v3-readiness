@@ -4,5 +4,23 @@
   "apiServer": {
     "authn": { "type": "adminClientCerts" },
     "auth": { "clientCertsDir": "/etc/kuma/client-certs" }
+  },
+  "kmesh": {
+    "multizone": {
+      "global": {
+        "kds": {
+          "auth": {
+            "type": "cpToken",
+            "cpToken": {
+              "enableIssuer": false,
+              "validator": {
+                "useSecrets": false,
+                "publicKeys": [{ "kid": "1", "key": "AAA" }]
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }

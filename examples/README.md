@@ -1,6 +1,6 @@
 # Example reports
 
-Self-contained `kuma3-preflight` HTML reports (`--format html`, the default) — open any in a
+Self-contained `kong-mesh-v3-preflight` HTML reports (`--format html`, the default) — open any in a
 browser to see exactly what an operator sees before upgrading to Kuma 3.0. Each is rendered
 from a static fixture in [`json/`](json/), chosen to cover every report state and a realistic
 range of estate sizes (a spotless, fully-migrated estate → 7,490 blockers across 20 meshes).
@@ -28,12 +28,12 @@ changing the template or a fixture:
 mise run examples              # build the CLI + render every fixture
 # or directly:
 examples/regen.sh              # same (builds the binary first)
-examples/regen.sh --no-build   # reuse an existing bin/kuma3-preflight
+examples/regen.sh --no-build   # reuse an existing bin/kong-mesh-v3-preflight
 ```
 
 To add an example, drop a `reportModel` JSON into `json/` and re-run — it renders to
 `html/<name>.html` automatically. (You can also capture a live control plane straight to a
-file: `kuma3-preflight --address http://localhost:5681 --output examples/html/<name>.html`.)
+file: `kong-mesh-v3-preflight --address http://localhost:5681 --output examples/html/<name>.html`.)
 
 ## Kubernetes vs Universal — CP-managed defaults
 

@@ -1,7 +1,7 @@
 # Build output
 /bin/
 /dist/
-/kuma3-preflight
+/kong-mesh-v3-preflight
 /tools/openapigen/openapigen
 
 # Reports produced by the tool

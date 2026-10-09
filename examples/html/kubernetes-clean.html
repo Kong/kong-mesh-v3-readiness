@@ -314,11 +314,11 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
 </head>
 <body>
 <div class="layout" id="app"></div>
-<noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kuma3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
+<noscript><div class="layout"><div class="content"><p>This interactive report needs JavaScript. Re-run kong-mesh-v3-preflight with <code>--format json</code> for a static machine-readable view.</p></div></div></noscript>
 <script id="report-data" type="application/json">
 {
-  "tool_schema": "kuma3-preflight/v5",
-  "tool": "kuma3-preflight",
+  "tool_schema": "kong-mesh-v3-preflight/v6",
+  "tool": "kong-mesh-v3-preflight",
   "generated_at": "2026-06-25T09:30:00Z",
   "status": "clean",
   "address": "http://localhost:5681",
@@ -436,14 +436,24 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   function fid(f){ return f.severity + '|' + groupOf(f) + '|' + f.title; }
   function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
 
-  // The authoritative mesh set; an example "belongs" to a mesh only if its
-  // leading segment matches a real mesh name. This disambiguates resource refs
-  // ("mesh/name", "mesh (field)", bare "mesh") from control-plane-wide examples
-  // ("experimental.x=false", inspect coverage "0/1") which carry no mesh.
+  /* The authoritative mesh set; a legacy "mesh/name" example belongs to a mesh
+     only if its leading segment matches a real mesh name, which disambiguates
+     resource refs from control-plane-wide free text. A KRI names its mesh
+     directly: the identifier is kri_<short>_<mesh>_<zone>_<namespace>_<name>,
+     so the third "_"-separated segment is authoritative (no KRI segment
+     contains "_"). */
   var meshSet = {};
   (data.meshes || []).forEach(function(m){ meshSet[m] = true; });
 
   function meshOf(example){
+    if(example.indexOf('kri_') === 0){
+      var parts = example.split('_');
+      if(parts.length < 6) return null;
+      if(parts[2]) return parts[2];
+      /* EXC:FILE011:only a Mesh (short "m") is its own mesh — a Zone or global-scoped KRI never mesh-attributes by name */
+      if(parts[1] === 'm' && meshSet[parts[5]]) return parts[5];
+      return null;
+    }
     var s = example.replace(/ \(system[^)]*\)\s*$/, '');
     var cand, slash = s.indexOf('/');
     if(slash > 0){ cand = s.slice(0, slash); }
@@ -460,10 +470,14 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   }
   function isMeshScoped(f){ return findingMeshes(f).length > 0; }
 
-  // Zone attribution parallels mesh. A resource example carries its zone as a
-  // "[zone:<name>]" suffix (added by the audit from kuma.io/zone); per-zone CP
-  // config and version findings carry a leading "zone <name>" instead.
+  /* Zone attribution parallels mesh: the third segment of a KRI, the
+     "[zone:<name>]" suffix of a legacy resource ref, or the leading
+     "zone <name>" of a per-zone CP config/version example. */
   function zoneOf(example){
+    if(example.indexOf('kri_') === 0){
+      var parts = example.split('_');
+      return parts.length > 3 ? parts[3] : null;
+    }
     var m = example.match(/\[zone:([^\]]+)\]/);
     if(m) return m[1];
     m = example.match(/^zone ([^\s:]+)/);
@@ -528,14 +542,14 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
   }
 
   // ---- theme (persisted) ----
-  var savedTheme = localStorage.getItem('kuma3pf-theme');
+  var savedTheme = localStorage.getItem('kmv3pf-theme');
   if(savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
   function themeBtn(){
     function label(){ return document.documentElement.getAttribute('data-theme') === 'light' ? 'Dark' : 'Light'; }
     return el('button', {class:'btn icon', title:'Toggle light/dark theme', onclick:function(){
       var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', cur);
-      localStorage.setItem('kuma3pf-theme', cur);
+      localStorage.setItem('kmv3pf-theme', cur);
       this.textContent = label();
     }}, label());
   }
@@ -1043,7 +1057,7 @@ ul.manual li.done{box-shadow:inset 3px 0 0 var(--border-2);opacity:.85}
     var items = data.manual_checks || [];
     if(!items.length) return null;
     var sig = [cp.product, cp.version, (data.meshes||[]).join('|'), items.length].join('::');
-    var key = 'kuma3pf:manual:' + sig;
+    var key = 'kmv3pf:manual:' + sig;
     var saved;
     try { saved = JSON.parse(localStorage.getItem(key)) || []; } catch(e){ saved = []; }
     var sec = el('section', {class:'grp', id:'sec-manual'});

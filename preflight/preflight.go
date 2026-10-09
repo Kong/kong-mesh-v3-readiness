@@ -1,7 +1,7 @@
 // Package preflight audits a running Kuma (or Kong Mesh) control plane over its
 // REST API and reports which resources and settings must change before upgrading
-// to Kuma 3.0. It is the engine behind the kuma3-preflight CLI
-// (cmd/kuma3-preflight), extracted so other Go programs can run the same audit
+// to Kuma 3.0. It is the engine behind the kong-mesh-v3-preflight CLI
+// (cmd/kong-mesh-v3-preflight), extracted so other Go programs can run the same audit
 // directly.
 //
 // Audit performs no I/O other than HTTP requests to the audited control plane: it
@@ -90,7 +90,7 @@ func Audit(ctx context.Context, opts Options) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	// GeneratedAt is left for the caller to stamp (see cmd/kuma3-preflight/main.go,
+	// GeneratedAt is left for the caller to stamp (see cmd/kong-mesh-v3-preflight/main.go,
 	// which measures "now" before starting the audit and assigns it afterward).
 	return col.toModel(""), nil
 }

@@ -8,10 +8,10 @@ golangci-lint = "2.12.2"
 GOFLAGS = "-mod=mod"
 
 [tasks.build]
-description = "Build the kuma3-preflight CLI into bin/"
+description = "Build the kong-mesh-v3-preflight CLI into bin/"
 sources = ["cmd/**/*.go", "preflight/**/*.go", "reportmodel/**/*.go", "go.mod"]
-outputs = ["bin/kuma3-preflight"]
-run = "go build -o bin/kuma3-preflight ./cmd/kuma3-preflight"
+outputs = ["bin/kong-mesh-v3-preflight"]
+run = "go build -o bin/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight"
 
 [tasks.test]
 description = "Run all tests"
@@ -47,7 +47,7 @@ fi
 [tasks.examples]
 description = "Regenerate examples/html/*.html from the examples/json/*.json fixtures"
 depends = ["build"]
-sources = ["preflight/html.go", "examples/json/*.json", "bin/kuma3-preflight"]
+sources = ["preflight/html.go", "examples/json/*.json", "bin/kong-mesh-v3-preflight"]
 outputs = ["examples/html/*.html"]
 run = "examples/regen.sh --no-build"
 

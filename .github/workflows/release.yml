@@ -1,4 +1,4 @@
-# Publish kuma3-preflight binaries to a GitHub Release (GoReleaser).
+# Publish kong-mesh-v3-preflight binaries to a GitHub Release (GoReleaser).
 # The kuma/kong-mesh nightly readiness workflow downloads the linux asset from here.
 #
 # Two ways to cut a release:

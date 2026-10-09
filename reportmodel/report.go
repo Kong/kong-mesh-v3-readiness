@@ -1,4 +1,4 @@
-// Package reportmodel names the JSON contracts kuma3-preflight emits: Report
+// Package reportmodel names the JSON contracts kong-mesh-v3-preflight emits: Report
 // (the CP-audit report) and Classification (the --classify output). Both are
 // stable, versioned shapes — --from-json reloads Report verbatim, and every
 // renderer (JSON/HTML/Markdown) draws from the same struct. docs/openapi.yaml

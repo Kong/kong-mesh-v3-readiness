@@ -23,7 +23,16 @@ func sampleReport() *collector {
 	r.add(blocker, "MeshService mode", "meshServices.mode is not Exclusive", "Use Exclusive.", "default")
 	r.add(blocker, "Workload grouping", "Universal Dataplane missing kuma.io/workload label", "Add label.", "default/dp-1")
 	r.add(blocker, "Zone proxies", "zoneingresses present", "Migrate to the unified Zone Proxy.", "zi-1")
+	r.addDoc(blocker, cpConfigCategory, "KDS auth set under the removed kmesh.multizone settings",
+		"Set the KDS auth with the Kuma names.", docKumaCPReference,
+		"kmesh.multizone.global.kds.auth.type=cpToken (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_TYPE)")
+	a := auditor{rep: r}
+	a.checkPermissionMatches([]byte(`{"rules":[{"default":{"allow":[{}]}}]}`), "default/mtp-1")
+	r.addDoc(blocker, "MeshRetry", "MeshRetry uses legacy Retry fields",
+		"Legacy Retry fields are rejected on write in 3.0.", docMeshRetry, "default/mr-1")
 	r.add(info, "Dataplane DNS", "Envoy config inspected for a sample of dataplanes", "Raise --inspect-dataplanes.", "1/2")
+	r.addDoc(info, "MeshIdentity coverage", "Zone-spanning mesh has no federated MeshTrust",
+		"Create a federated MeshTrust on the global per peer zone.", docMeshIdentity, "mesh default (zones east, west)")
 	r.addGap("/meshes/default/meshpassthroughs", "endpoint returned 404 — NOT audited")
 	return r
 }
@@ -55,14 +64,14 @@ func TestToModelSummaryAndStatus(t *testing.T) {
 	if m.Status != StatusInconclusive {
 		t.Fatalf("status = %q, want %q", m.Status, StatusInconclusive)
 	}
-	if m.Summary.Blockers != 16 { // 1 + 12 + 1 (MeshService mode) + 1 (Workload grouping) + 1 (Zone proxies)
-		t.Errorf("blockers = %d, want 16", m.Summary.Blockers)
+	if m.Summary.Blockers != 19 { // EXC:FILE011:per-finding tally — 16 existing occurrences + 1 empty permission match + 1 KDS auth + 1 MeshRetry
+		t.Errorf("blockers = %d, want 19", m.Summary.Blockers)
 	}
 	if m.Summary.Warnings != 0 { // the tool no longer emits warning-severity findings
 		t.Errorf("warnings = %d, want 0", m.Summary.Warnings)
 	}
-	if m.Summary.Info != 1 { // Dataplane DNS sampling coverage
-		t.Errorf("info = %d, want 1", m.Summary.Info)
+	if m.Summary.Info != 2 { // EXC:FILE011:per-finding tally — Dataplane DNS sampling coverage + the cross-zone trust note
+		t.Errorf("info = %d, want 2", m.Summary.Info)
 	}
 	if m.Summary.CoverageGaps != 1 || m.Summary.ParseErrors != 1 {
 		t.Errorf("coverageGaps/parseErrors = %d/%d, want 1/1", m.Summary.CoverageGaps, m.Summary.ParseErrors)
@@ -104,8 +113,10 @@ func TestToModelGroups(t *testing.T) {
 		"Inline mTLS on Mesh":                                groupMeshObject,
 		"meshServices.mode is not Exclusive":                 groupMeshObject,
 		"MeshTimeout uses `from`":                            groupPolicies,
+		emptyMatchTitle:                                      groupPolicies,
 		"zoneingresses present":                              groupOther,
 		"Universal Dataplane missing kuma.io/workload label": groupDataPlane,
+		"MeshRetry uses legacy Retry fields":                 groupPolicies,
 	}
 	for _, f := range m.Findings {
 		if g, ok := want[f.Title]; ok && f.Group != g {
@@ -289,8 +300,8 @@ func TestHTMLScriptReadsSnakeCaseKeys(t *testing.T) {
 // controlPlane, coverageGaps and manualChecks would all land empty and an
 // inconclusive audit would re-render as clean. ParseReport must refuse it.
 func TestParseReportRejectsOlderSchema(t *testing.T) {
-	for _, version := range []string{"kuma3-preflight/v2", "kuma3-preflight/v3", "kuma3-preflight/v4"} {
-		old := `{"schema":"` + version + `","tool":"kuma3-preflight","status":"inconclusive",` +
+	for _, version := range []string{"kong-mesh-v3-preflight/v2", "kong-mesh-v3-preflight/v3", "kong-mesh-v3-preflight/v4"} {
+		old := `{"schema":"` + version + `","tool":"kong-mesh-v3-preflight","status":"inconclusive",` +
 			`"controlPlane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
 			`"summary":{"coverageGaps":1},"findings":[],` +
 			`"coverageGaps":[{"path":"/meshes/default/meshpassthroughs","reason":"404"}],` +
@@ -302,6 +313,30 @@ func TestParseReportRejectsOlderSchema(t *testing.T) {
 		if !strings.Contains(err.Error(), version) || !strings.Contains(err.Error(), SchemaVersion) {
 			t.Errorf("error should name both the found and expected schema, got: %v", err)
 		}
+	}
+	// EXC:FILE011:a real v5 capture declares tool_schema and display-string examples; it must be refused with the re-run message, not silently re-rendered
+	capture := `{"tool_schema":"kong-mesh-v3-preflight/v5","tool":"kong-mesh-v3-preflight","status":"blockers",` +
+		`"control_plane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
+		`"findings":[{"severity":"blocker","group":"policies","category":"Policy from field",` +
+		`"title":"MeshTimeout uses from","detail":"d","count":1,` +
+		`"example_resources":["default/my-timeout"]}],"coverage_gaps":[],"manual_checks":[]}`
+	_, err := ParseReport([]byte(capture))
+	if err == nil {
+		t.Fatal("v5 capture was accepted; want rejection")
+	}
+	if !strings.Contains(err.Error(), "not supported by this build") || !strings.Contains(err.Error(), "re-run the audit") {
+		t.Errorf("v5 capture should fail with the re-run message, got: %v", err)
+	}
+	// EXC:FILE011:documents-a-non-obvious-invariant — a pre-rename kuma3-preflight/v6 capture is structurally current yet must be refused, so old snapshots are never silently re-rendered under the new name
+	preRename := `{"tool_schema":"kuma3-preflight/v6","tool":"kuma3-preflight","status":"clean",` +
+		`"control_plane":{"product":"Kuma","version":"2.9.0"},"meshes":["default"],` +
+		`"findings":[],"coverage_gaps":[],"manual_checks":[]}`
+	_, err = ParseReport([]byte(preRename))
+	if err == nil {
+		t.Fatal("pre-rename kuma3-preflight/v6 capture was accepted; want rejection")
+	}
+	if !strings.Contains(err.Error(), "kuma3-preflight/v6") || !strings.Contains(err.Error(), "does not look like a kong-mesh-v3-preflight JSON report") {
+		t.Errorf("error should name the found schema and the expected tool identity, got: %v", err)
 	}
 }
 
@@ -391,6 +426,13 @@ func TestBuildManualChecksK8sGating(t *testing.T) {
 		}
 		if !strings.Contains(card.Command, "kubectl") {
 			t.Errorf("k8s card %q command should be a kubectl one-liner; got %q", card.Title, card.Command)
+		}
+	}
+	// 2.14 reads the kuma.io/mesh annotation on Services and HTTPRoutes too, not
+	// just Pods and Namespaces.
+	for _, kind := range []string{"ns,pods,services", "httproutes.gateway.networking.k8s.io"} {
+		if !strings.Contains(added[0].Command, kind) {
+			t.Errorf("kuma.io/mesh card command should list %q; got %q", kind, added[0].Command)
 		}
 	}
 }

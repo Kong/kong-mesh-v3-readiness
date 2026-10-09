@@ -1,6 +1,7 @@
 package preflight
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -63,52 +64,46 @@ var (
 	kubernetesLabels = map[string]any{"kuma.io/env": "kubernetes"}
 )
 
-// Kubernetes and Universal proxies share one finding.
+// Both environments land in one entry: the decision is one, the remediation
+// differs only in where the field is set.
 func TestOutboundDenyFlagsProxiesWithNoReachableBackends(t *testing.T) {
 	cases := []struct {
-		name  string
-		item  map[string]any
-		title string
+		name string
+		item map[string]any
 	}{
 		{
-			name:  "universal, redirect ports on the spec",
-			item:  overview("dp-1", universalLabels, tproxySpec(nil), nil),
-			title: titleNoReachableBackends,
+			name: "universal, redirect ports on the spec",
+			item: overview("dp-1", universalLabels, tproxySpec(nil), nil),
 		},
 		{
-			name:  "kubernetes, redirect ports on the spec",
-			item:  overview("dp-1", kubernetesLabels, tproxySpec(nil), nil),
-			title: titleNoReachableBackends,
+			name: "kubernetes, redirect ports on the spec",
+			item: overview("dp-1", kubernetesLabels, tproxySpec(nil), nil),
 		},
 		{
 			name: "transparent proxy reported only through kuma-dp metadata",
 			item: overview("dp-1", universalLabels, map[string]any{}, map[string]any{
 				"transparentProxy": map[string]any{"redirect": map[string]any{"outbound": map[string]any{"enabled": true}}},
 			}),
-			title: titleNoReachableBackends,
 		},
 		{
-			name:  "kubernetes sidecar with no metadata and no transparentProxying in spec",
-			item:  overview("dp-1", kubernetesLabels, map[string]any{"inbound": []any{map[string]any{"port": 8080}}}, nil),
-			title: titleNoReachableBackends,
+			name: "kubernetes sidecar with no metadata and no transparentProxying in spec",
+			item: overview("dp-1", kubernetesLabels, map[string]any{"inbound": []any{map[string]any{"port": 8080}}}, nil),
 		},
 		{
-			name:  "kubernetes sidecar with no networking at all",
-			item:  overview("dp-1", kubernetesLabels, nil, nil),
-			title: titleNoReachableBackends,
+			name: "kubernetes sidecar with no networking at all",
+			item: overview("dp-1", kubernetesLabels, nil, nil),
 		},
 		{
-			name:  "unlabeled proxy counts as Universal",
-			item:  overview("dp-1", nil, tproxySpec(nil), nil),
-			title: titleNoReachableBackends,
+			name: "unlabeled proxy counts as Universal",
+			item: overview("dp-1", nil, tproxySpec(nil), nil),
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditOverviews(t, tc.item)
-			f, ok := findFinding(m, "blocker", categoryOutboundDefaults, tc.title)
+			f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
 			if !ok {
-				t.Fatalf("missing finding %q\nfindings: %+v", tc.title, m.Findings)
+				t.Fatalf("missing finding %q\nfindings: %+v", titleNoReachableBackends, m.Findings)
 			}
 			if f.Count != 1 {
 				t.Errorf("count = %d, want 1", f.Count)
@@ -123,6 +118,45 @@ func TestOutboundDenyFlagsProxiesWithNoReachableBackends(t *testing.T) {
 				t.Errorf("status = %q, want %q", m.Status, StatusBlockers)
 			}
 		})
+	}
+}
+
+// One entry, both environments: the detail breaks the tally down per
+// environment and carries both fixes; a single-environment estate gets no
+// zero-count line for the absent one.
+func TestOutboundDenyMergesEnvironmentsIntoOneEntry(t *testing.T) {
+	m := auditOverviews(t,
+		overview("dp-u", universalLabels, tproxySpec(nil), nil),
+		overview("dp-k", kubernetesLabels, tproxySpec(nil), nil),
+	)
+	f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
+	if !ok {
+		t.Fatalf("missing finding %q\nfindings: %+v", titleNoReachableBackends, m.Findings)
+	}
+	if f.Count != 2 || !strings.Contains(f.Detail, "2 of 2") {
+		t.Fatalf("count/detail = %d/%q, want 2 and a 2-of-2 tally", f.Count, f.Detail)
+	}
+	for _, want := range []string{
+		"Universal Dataplanes: 1 of 1",
+		"Kubernetes dataplanes: 1 of 1",
+		"On Universal, set `networking.transparentProxying.reachableBackends`",
+		"On Kubernetes, set the Pod annotation `kuma.io/reachable-backends`",
+	} {
+		if !strings.Contains(f.Detail, want) {
+			t.Errorf("detail misses %q: %q", want, f.Detail)
+		}
+	}
+
+	m = auditOverviews(t, overview("dp-u", universalLabels, tproxySpec(nil), nil))
+	f, ok = findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
+	if !ok {
+		t.Fatalf("missing finding for the single-environment estate\nfindings: %+v", m.Findings)
+	}
+	if !strings.Contains(f.Detail, "Universal Dataplanes: 1 of 1") {
+		t.Errorf("detail misses the Universal breakdown: %q", f.Detail)
+	}
+	if strings.Contains(f.Detail, "Kubernetes") {
+		t.Errorf("detail mentions the absent environment: %q", f.Detail)
 	}
 }
 
@@ -197,10 +231,8 @@ func TestOutboundDenySkipsProxiesThatKeepOutbounds(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := auditOverviews(t, tc.item)
-			for _, title := range []string{titleNoReachableBackends} {
-				if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, title); ok {
-					t.Errorf("wrongly flagged %q\nfindings: %+v", title, m.Findings)
-				}
+			if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends); ok {
+				t.Errorf("wrongly flagged %q\nfindings: %+v", titleNoReachableBackends, m.Findings)
 			}
 		})
 	}
@@ -231,12 +263,37 @@ func TestOutboundDenyReportsSummaryNotPerProxy(t *testing.T) {
 	}
 }
 
+// The shared example cap must not crowd one environment out entirely: an
+// estate with a full Universal cap plus flagged Kubernetes proxies still
+// names some Kubernetes proxies.
+func TestOutboundDenyExamplesKeepBothEnvironments(t *testing.T) {
+	var items []map[string]any
+	for i := range 12 {
+		items = append(items, overview(fmt.Sprintf("dp-u%d", i), universalLabels, tproxySpec(nil), nil))
+	}
+	for i := range 3 {
+		items = append(items, overview(fmt.Sprintf("dp-k%d", i), kubernetesLabels, tproxySpec(nil), nil))
+	}
+	m := auditOverviews(t, items...)
+	f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends)
+	if !ok {
+		t.Fatalf("missing finding %q\nfindings: %+v", titleNoReachableBackends, m.Findings)
+	}
+	if f.Count != 15 {
+		t.Errorf("count = %d, want 15", f.Count)
+	}
+	if len(f.Examples) != ExampleCap {
+		t.Errorf("examples = %d entries, want %d", len(f.Examples), ExampleCap)
+	}
+	if !slices.Contains(f.Examples, "kri_dp_default_default__dp-k0_") {
+		t.Errorf("examples lost the Kubernetes proxies: %v", f.Examples)
+	}
+}
+
 func TestOutboundDenyNotConcludedFromCoverageGap(t *testing.T) {
 	m := auditWithNotFound(t, map[string]string{"/config": unsetConfigJSON}, "/dataplanes+insights")
-	for _, title := range []string{titleNoReachableBackends} {
-		if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, title); ok {
-			t.Errorf("finding %q concluded from an unread collection\nfindings: %+v", title, m.Findings)
-		}
+	if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends); ok {
+		t.Errorf("finding %q concluded from an unread collection\nfindings: %+v", titleNoReachableBackends, m.Findings)
 	}
 	if m.Status != StatusInconclusive {
 		t.Errorf("status = %q, want %q", m.Status, StatusInconclusive)
@@ -267,8 +324,8 @@ func TestPassthroughDefaultFlagsMeshWithNoPolicy(t *testing.T) {
 	if f.Doc != docMeshPassthrough {
 		t.Errorf("doc = %q, want %q", f.Doc, docMeshPassthrough)
 	}
-	if len(f.Examples) != 1 || f.Examples[0] != "default/dp-1" {
-		t.Errorf("examples = %v, want [default/dp-1]", f.Examples)
+	if len(f.Examples) != 1 || f.Examples[0] != "kri_dp_default_default__dp-1_" {
+		t.Errorf("examples = %v, want [kri_dp_default_default__dp-1_]", f.Examples)
 	}
 }
 
@@ -429,7 +486,7 @@ func TestOutboundDefaultsJudgedPerZone(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing blocker for the unset zone\nfindings: %+v", m.Findings)
 	}
-	if !slices.Equal(f.Examples, []string{"default/dp-east [zone:east]"}) || !strings.Contains(f.Detail, "1 of 3") {
+	if !slices.Equal(f.Examples, []string{"kri_dp_default_east__dp-east_"}) || !strings.Contains(f.Detail, "1 of 3") {
 		t.Errorf("blocker = %v %q, want only dp-east, 1 of 3", f.Examples, f.Detail)
 	}
 	var infoRefs []string
@@ -439,7 +496,7 @@ func TestOutboundDefaultsJudgedPerZone(t *testing.T) {
 		}
 	}
 	slices.Sort(infoRefs)
-	if want := []string{"default/dp-north [zone:north]", "default/dp-west [zone:west]"}; !slices.Equal(infoRefs, want) {
+	if want := []string{"kri_dp_default_north__dp-north_", "kri_dp_default_west__dp-west_"}; !slices.Equal(infoRefs, want) {
 		t.Errorf("info examples = %v, want %v", infoRefs, want)
 	}
 }
@@ -468,14 +525,14 @@ func TestPassthroughDefaultReadsSelection(t *testing.T) {
 	t.Run("partial selection flags the rest", func(t *testing.T) {
 		m := auditResponses(t, responses(nil))
 		f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoMeshPassthrough)
-		if !ok || !slices.Equal(f.Examples, []string{"default/dp-b"}) || !strings.Contains(f.Detail, "1 of 2") {
+		if !ok || !slices.Equal(f.Examples, []string{"kri_dp_default_default__dp-b_"}) || !strings.Contains(f.Detail, "1 of 2") {
 			t.Errorf("finding = %+v (found %v), want dp-b flagged 1 of 2", f, ok)
 		}
 	})
 	t.Run("shadow policy selects nothing", func(t *testing.T) {
 		m := auditResponses(t, responses(map[string]any{"kuma.io/effect": "shadow"}))
 		f, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoMeshPassthrough)
-		if !ok || !slices.Equal(f.Examples, []string{"default/dp-a", "default/dp-b"}) {
+		if !ok || !slices.Equal(f.Examples, []string{"kri_dp_default_default__dp-a_", "kri_dp_default_default__dp-b_"}) {
 			t.Errorf("finding = %+v (found %v), want both proxies flagged", f, ok)
 		}
 	})

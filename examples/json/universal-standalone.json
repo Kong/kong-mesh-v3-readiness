@@ -1,6 +1,6 @@
 {
-  "tool_schema": "kuma3-preflight/v5",
-  "tool": "kuma3-preflight",
+  "tool_schema": "kong-mesh-v3-preflight/v6",
+  "tool": "kong-mesh-v3-preflight",
   "generated_at": "2026-06-25T09:30:00Z",
   "status": "blockers",
   "address": "http://localhost:5681",
@@ -153,7 +153,7 @@
     {
       "title": "Old inspect APIs removed (switch to the new inspect API)",
       "detail": "Kuma 3.0 removes the legacy dataplane rules-inspection endpoint (`_rules`) and keeps only the redesigned, KRI-based inspect API. Update any tooling that still calls the old endpoint.",
-      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 \u2014 migrate callers to the KRI inspect API"
+      "command": "kubectl get --raw '/meshes/default/dataplanes/web-01/_rules'  # should 404 on 3.0 — migrate callers to the KRI inspect API"
     },
     {
       "title": "Rebuild custom policy plugins against the 3.0 SDK",

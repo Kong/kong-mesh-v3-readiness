@@ -1,4 +1,4 @@
-# kuma3-preflight
+# kong-mesh-v3-preflight
 
 Audits a running Kuma control plane (zone or global) over its REST API and
 produces a self-contained HTML (default) or JSON report of what must change before
@@ -12,14 +12,14 @@ program.
 ## Usage
 
 ```bash
-go run ./cmd/kuma3-preflight --address http://localhost:5681 --output report.html
+go run ./cmd/kong-mesh-v3-preflight --address http://localhost:5681 --output report.html
 ```
 
 Against a Kubernetes zone CP, port-forward first:
 
 ```bash
 kubectl -n kuma-system port-forward svc/kuma-control-plane 5681:5681
-go run ./cmd/kuma3-preflight --output report.html
+go run ./cmd/kong-mesh-v3-preflight --output report.html
 ```
 
 ### Flags
@@ -40,7 +40,7 @@ go run ./cmd/kuma3-preflight --output report.html
 | `--source-dir` | _(none)_ | With `--classify`: root of an e2e test tree to scan statically (e.g. a Kuma `test/e2e_env/<env>` dir) |
 | `--reports-dir` | _(none)_ | With `--classify`: directory of per-spec preflight JSON snapshots captured during an e2e run, folded into the classification |
 
-Exit codes (so it can gate CI): `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse — the result is a partial report, not a proven clean bill of health, even if it retained blockers). In `--classify` mode the exit code is `0` on success or `2` on error.
+Exit codes (so it can gate CI): `0` report produced · `2` operational error. Findings live in the report, not the exit code — a run that produced a report exits `0` whether it is clean, has blockers, or is inconclusive (a collection could not be read, or a resource spec failed to parse — the result is a partial report, not a proven clean bill of health, even if it retained blockers); gate readiness on the report's `status` field, not on `$?`. In `--classify` mode the exit code is `0` on success or `2` on error.
 
 `--max-resource-reads` defaults to `50000`, which leaves the checked-in example reports unchanged. Lower it to bound one audit's total collection reads on very large estates; the report names the collection and ceiling that stopped the run so you can raise it and rerun.
 
@@ -54,16 +54,16 @@ resource) vs **rewrite** (it uses a removed thing only as scaffolding).
 
 ```bash
 # Static: scan the e2e sources (fast, no CP, per-feature attribution)
-./bin/kuma3-preflight --classify --source-dir ~/kuma/test/e2e_env/universal --format markdown
+./bin/kong-mesh-v3-preflight --classify --source-dir ~/kuma/test/e2e_env/universal --format markdown
 
 # + Dynamic: fold in per-spec snapshots captured during an e2e run (see docs/e2e-classification.md)
-./bin/kuma3-preflight --classify \
+./bin/kong-mesh-v3-preflight --classify \
   --source-dir ~/kuma/test/e2e_env/universal --reports-dir ./preflight-out \
   --format html --output classification.html
 ```
 
 Output (markdown/json/html, same one-model contract, JSON schema
-`kuma3-preflight-classification/v1`) leads — when any are present — with a **🌐 Global
+`kong-mesh-v3-preflight-classification/v1`) leads — when any are present — with a **🌐 Global
 migrations** table (omitted when there are none): the cross-cutting fixes (a non-removable
 field/policy/mesh setting recurring across `globalSuiteThreshold` suites, e.g. inline
 `Mesh.mtls`→MeshIdentity+MeshTrust or the shared `MeshTimeout`/`MeshTrafficPermission`
@@ -86,18 +86,17 @@ data, so they never disagree. (Markdown is produced only by `--classify`.)
   and a manual-checks checklist whose progress is saved per report in the browser.
 - **`json`** — a stable, machine-readable document (`schema`, `status`, `summary`,
   `findings[]`, `coverage_gaps[]`, `manual_checks[]`). Every key is snake_case.
-  Status maps to the same exit codes.
   This is the format the e2e capture hook saves per spec and `--classify` folds back in.
 
 ```bash
 # Capture machine-readable JSON in CI…
-./bin/kuma3-preflight --address http://localhost:5681 --format json --output report.json
+./bin/kong-mesh-v3-preflight --address http://localhost:5681 --format json --output report.json
 
 # …then build the static site from that JSON later, without touching the control plane:
-./bin/kuma3-preflight --from-json report.json --format html --output report.html
+./bin/kong-mesh-v3-preflight --from-json report.json --format html --output report.html
 
 # (or pipe it)
-cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.html
+cat report.json | ./bin/kong-mesh-v3-preflight --from-json - --format html > report.html
 ```
 
 ## What it checks
@@ -128,7 +127,7 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
   (`/dataplanes+insights` `metadata.features`) omit `feature-embedded-dns`, or that report a
   `coredns` dependency: they still run the bundled CoreDNS, which loses mesh DNS under a 3.0
   CP. Fix before upgrading with `KUMA_DNS_PROXY_PORT=15053` on Universal kuma-dp (Kubernetes: `builtinDNS.experimentalProxy: true` on the CP), then restart the proxies.
-- **Outbound defaults** — the two 3.0 flips that deny outbound traffic by default: a transparent-proxy proxy with no `reachableBackends` and no outbound `backendRef` gets no outbound clusters, and a transparent proxy no MeshPassthrough selects loses external egress. Transparent proxying is read from kuma-dp's reported metadata, then the spec's redirect ports; a Kubernetes sidecar with neither (offline or older kuma-dp, config from the injector ConfigMap) still counts, zone proxies aside. Selection is read per proxy from the control plane (`_resources/dataplanes`), so a policy that selects only some proxies, or a shadow one, leaves the rest flagged; an unreadable selection is a coverage gap for that mesh. Both are absence-triggered, so each is one summary blocker ("N of M") carrying the fix for its environment (`kuma.io/reachable-backends` Pod annotation on Kubernetes, the Dataplane field on Universal) rather than one finding per proxy. Proxies that already select destinations (including the empty `refs` list zone proxies ship), builtin gateways, and meshes that already turn passthrough off are excluded. Each proxy is judged by the `defaults.restrictOutbound` of the control plane governing it (its zone's, behind a global), which since kumahq/kuma#18862 `/config` serves as `null` when unset. Only **unset** blocks: 3.0 applies its new default there, and the remediation states the choice that forces — pin `false` (and keep it on 3.0) to keep today's behavior, or set `true` to enforce the 3.0 behavior now and validate it. An explicit **`false`** is honored by 3.0, so both findings drop to info recommending the fields before switching to `true`. On **`true`** the restriction is live and the upgrade changes nothing: proxies without `reachableBackends` drop to info (security and performance), and so do proxies no MeshPassthrough selects, worded in the present tense.
+- **Outbound defaults** — the two 3.0 flips that deny outbound traffic by default: a transparent-proxy proxy with no `reachableBackends` and no outbound `backendRef` gets no outbound clusters, and a transparent proxy no MeshPassthrough selects loses external egress. Transparent proxying is read from kuma-dp's reported metadata, then the spec's redirect ports; a Kubernetes sidecar with neither (offline or older kuma-dp, config from the injector ConfigMap) still counts, zone proxies aside. Selection is read per proxy from the control plane (`_resources/dataplanes`), so a policy that selects only some proxies, or a shadow one, leaves the rest flagged; an unreadable selection is a coverage gap for that mesh. Both are absence-triggered, so each is one summary blocker ("N of M") rather than one finding per proxy. The `reachableBackends` entry is one finding for both environments — one decision, two remediations — with the per-environment tally in the detail and each present environment's fix (`kuma.io/reachable-backends` Pod annotation on Kubernetes, the Dataplane field on Universal). Proxies that already select destinations (including the empty `refs` list zone proxies ship), builtin gateways, and meshes that already turn passthrough off are excluded. Each proxy is judged by the `defaults.restrictOutbound` of the control plane governing it (its zone's, behind a global), which since kumahq/kuma#18862 `/config` serves as `null` when unset. Only **unset** blocks: 3.0 applies its new default there, and the remediation states the choice that forces — pin `false` (and keep it on 3.0) to keep today's behavior, or set `true` to enforce the 3.0 behavior now and validate it. An explicit **`false`** is honored by 3.0, so both findings drop to info recommending the fields before switching to `true`. On **`true`** the restriction is live and the upgrade changes nothing: proxies without `reachableBackends` drop to info (security and performance), and so do proxies no MeshPassthrough selects, worded in the present tense.
 - **Control plane version** — flags a CP (or, on a **global**, any connected zone CP) not on
   the latest 2.14 patch, the only supported 3.0 upgrade source (older patch/minor → blocker).
   The latest patch is looked up from the `kumahq/kuma` GitHub releases at run time (Kong Mesh
@@ -158,6 +157,11 @@ cat report.json | ./bin/kuma3-preflight --from-json - --format html > report.htm
 - **MeshExternalService identity** — meshes with MeshExternalServices but no MeshIdentity, whose
   clients get no MeshExternalService cluster in 3.0 (503). An unreadable MeshIdentity list is a
   coverage gap.
+- **Cross-zone trust federation** (info) — a mesh whose MeshIdentity uses the Bundled provider and
+  whose proxies span zones but that has no federated (global-origin) MeshTrust: zone-origin
+  MeshTrusts do not propagate to the other zones, so cross-zone mTLS dies with TLS verification
+  failures after the upgrade. Info because the mesh may not need cross-zone traffic and zone-local
+  trusts may already carry the peers' CAs; the inline-mTLS migration blocker carries the same note.
 - **Reserved labels** — `kuma.io/`, `k8s.kuma.io/` labels outside the 3.0 registry on user-authored
   policies, Universal Dataplanes and service resources (3.0 rejects them on write), and selectors
   keyed on one (targetRef/backendRef `labels`, MeshService `dataplaneLabels`, MeshMultiZoneService

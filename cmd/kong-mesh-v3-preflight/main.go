@@ -1,4 +1,4 @@
-// Command kuma3-preflight audits a running Kuma zone (or global) control plane
+// Command kong-mesh-v3-preflight audits a running Kuma zone (or global) control plane
 // over its REST API and reports which resources and settings must change before
 // upgrading to Kuma 3.0. See docs/deprecated-features.md for the source
 // of truth behind every check. The audit engine itself lives in the importable
@@ -149,8 +149,6 @@ func run() int {
 		return 2
 	}
 
-	// Exit codes (so CI can gate on $?):
-	//   0 clean · 1 blockers found · 2 operational error · 3 audit inconclusive
 	if auditErr != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", auditErr)
 		return 2
@@ -209,17 +207,15 @@ func renderFormat(format string, m preflight.Report) (string, error) {
 	return m.RenderHTML()
 }
 
+// exitForStatus maps a produced report's status to the CLI exit code (CI gates
+// on $?): the exit code reports whether the tool itself executed — findings and
+// coverage gaps live in the report, so any produced report exits 0 (gate
+// readiness on the report's `status` field). Only FAILED is an execution error.
 func exitForStatus(status string) int {
-	switch status {
-	case preflight.StatusFailed:
+	if status == preflight.StatusFailed {
 		return 2
-	case preflight.StatusBlockers:
-		return 1
-	case preflight.StatusInconclusive:
-		return 3
-	default:
-		return 0
 	}
+	return 0
 }
 
 // loadModel reads a JSON report from a file (or stdin when path is "-") and
@@ -248,8 +244,8 @@ func loadModel(path string) (preflight.Report, error) {
 // emit writes content to stdout, or to a file when out is set.
 func emit(out, content string) error {
 	if out == "" {
-		fmt.Print(content)
-		return nil
+		_, err := fmt.Print(content)
+		return err
 	}
 	if err := writeReport(out, content); err != nil {
 		return err
@@ -266,7 +262,7 @@ func writeReport(path, content string) error {
 		return fmt.Errorf("refusing to write %s: destination is a symlink", path)
 	}
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".kuma3-preflight-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".kong-mesh-v3-preflight-*.tmp")
 	if err != nil {
 		return err
 	}

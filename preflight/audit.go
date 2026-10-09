@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -195,6 +197,7 @@ const policyRoleLabel = "kuma.io/policy-role"
 const (
 	envLabel                 = "kuma.io/env"
 	zoneLabel                = "kuma.io/zone"
+	kubeNamespaceLabel       = "k8s.kuma.io/namespace"
 	gatewayLabel             = "kuma.io/gateway"
 	protocolTag              = "kuma.io/protocol"
 	serviceAccountLabel      = "k8s.kuma.io/service-account"
@@ -233,7 +236,13 @@ type auditor struct {
 	checkVersionCurrency bool
 	latestPatch          string
 	skipAuditedCPVersion bool
-	rep                  *collector
+	// EXC:FILE011:the connected zone CP's own name; fills the KRI zone segment of label-less local resources (3.0 materializes the zone on read)
+	cpZone string
+	// EXC:FILE011:/config was readable early; when it was not, the CP's mode is unknown and a label-less resource might be zone-local
+	configKnown bool
+	// EXC:FILE011:the connected CP is a zone or standalone, not a global; a Mesh KRI resolves only at the global
+	cpNotGlobal bool
+	rep         *collector
 
 	// /zones+insights is read by both the config and version fan-outs on a global;
 	// memoize the (single) fetch so one global audit makes one round-trip for it.
@@ -300,6 +309,28 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		rep:                  &collector{cp: idx},
 	}
 
+	// EXC:FILE011:the CP's own zone name fills the KRI zone segment of label-less local resources (3.0 materializes the zone on read)
+	var zoneCfg struct {
+		Mode      string `json:"mode"`
+		Multizone struct {
+			Zone struct {
+				Name string `json:"name"`
+			} `json:"zone"`
+		} `json:"multizone"`
+	}
+	if status, err := a.c.getJSON(ctx, "/config", &zoneCfg); err == nil && status == http.StatusOK {
+		a.configKnown = true
+		// 3.0 removes the standalone mode, and such a CP upgrades to a zone
+		// with the same configured (or "default") name, so both stamp.
+		if strings.EqualFold(zoneCfg.Mode, "zone") || strings.EqualFold(zoneCfg.Mode, "standalone") {
+			a.cpZone = zoneCfg.Multizone.Zone.Name
+			if a.cpZone == "" {
+				a.cpZone = "default"
+			}
+			a.cpNotGlobal = true
+		}
+	}
+
 	meshes, found, err := c.list(ctx, "/meshes")
 	meshesHitResourceLimit := false
 	if err != nil {
@@ -314,6 +345,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 	if !found {
 		return nil, fmt.Errorf("GET /meshes returned 404; is %s a Kuma control plane?", c.base)
 	}
+	a.stampZone(meshes)
 	for _, m := range meshes {
 		if opts.meshFilter != "" && m.Name != opts.meshFilter {
 			continue
@@ -329,7 +361,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 
 	for _, check := range []func(context.Context) error{
 		a.checkLegacyResources, a.checkRemovedEnterprisePolicies, a.checkAccessControl, a.checkNewPolicies, a.checkDataplanes,
-		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses,
+		a.checkZoneProxies, a.checkZoneNames, a.checkMeshZoneAddresses, a.checkCrossZoneTrust,
 		a.checkServiceResources, a.checkExternalServiceIdentity, a.checkMeshTrust,
 		a.checkControlPlaneConfig,
 		// Both read defaults.restrictOutbound, which checkControlPlaneConfig resolves;
@@ -402,6 +434,40 @@ func (a *auditor) listColl(ctx context.Context, path string) []resourceItem {
 	return items
 }
 
+// stampZone fills a local resource's missing kuma.io/zone with the connected
+// zone CP's own name: 2.x stamps the label on write, but a resource created
+// before that and never re-applied carries none, and 3.0 materializes it on
+// read — the KRI must carry it to resolve on the upgraded CP. A resource
+// synced down from the global (kuma.io/origin: global) keeps no zone.
+func (a *auditor) stampZone(items []resourceItem) {
+	if a.configKnown && a.cpZone == "" {
+		return
+	}
+	for i := range items {
+		it := &items[i]
+		if it.Type == "Zone" {
+			continue
+		}
+		// EXC:FILE011:a Mesh is global-scoped and SkipKDSHash — its KRI resolves only at the global, never at a zone CP
+		if it.Type == "Mesh" && a.cpNotGlobal {
+			it.zoneUnknown = true
+			continue
+		}
+		if it.Labels[zoneLabel] != "" || it.Labels["kuma.io/origin"] == "global" {
+			continue
+		}
+		if a.cpZone != "" {
+			if it.Labels == nil {
+				it.Labels = map[string]string{}
+			}
+			it.Labels[zoneLabel] = a.cpZone
+			continue
+		}
+		// EXC:FILE011:zone CP, zone unreadable -> an empty-zone KRI mis-resolves on 3.0 (non-local hash name, 404)
+		it.zoneUnknown = true
+	}
+}
+
 // listCollObserved also reports whether the collection was read: a check that
 // concludes something from a resource's absence must not fire on a coverage gap.
 // Memoized by path, so a shared collection costs one round-trip and one gap.
@@ -410,6 +476,7 @@ func (a *auditor) listCollObserved(ctx context.Context, path string) ([]resource
 		return r.items, r.observed
 	}
 	items, observed := a.readColl(ctx, path)
+	a.stampZone(items)
 	if a.listCache == nil {
 		a.listCache = map[string]listResult{}
 	}
@@ -427,12 +494,15 @@ func (a *auditor) readColl(ctx context.Context, path string) ([]resourceItem, bo
 				a.resourceLimitGapRecorded = true
 			}
 		}
+		// EXC:FILE011:a resource-limit hit still returns the admitted partial items — they must carry the zone too
+		a.stampZone(items)
 		return items, false
 	}
 	if !found {
 		a.rep.addGap(path, "endpoint returned 404 — NOT audited")
 		return nil, false
 	}
+	a.stampZone(items)
 	return items, true
 }
 
@@ -456,11 +526,14 @@ func (a *auditor) listServed(ctx context.Context, path string) ([]resourceItem, 
 				a.resourceLimitGapRecorded = true
 			}
 		}
+		// EXC:FILE011:a resource-limit hit still returns the admitted partial items — they must carry the zone too
+		a.stampZone(items)
 		return items, false
 	}
 	if !found {
 		return nil, true
 	}
+	a.stampZone(items)
 	return items, true
 }
 
@@ -477,11 +550,12 @@ func (a *auditor) unmarshalSpec(it resourceItem, v any, ref string) bool {
 	return true
 }
 
-// ref formats the example reference for a flagged resource, marking CP-managed
-// (policy-role: system) ones so the operator knows which defaults to update. It is
-// side-effect free: the system tally is kept by countSystem, which counts a
-// resource only when it actually yields a finding (ref is computed eagerly, before
-// the checks run, so counting here would over-report resources that turn out clean).
+// ref formats the example of a flagged resource, marking CP-managed
+// (policy-role: system) ones so the operator knows which defaults to update.
+// It is side-effect free: the system tally is kept by countSystem, which
+// counts a resource only when it actually yields a finding (ref is computed
+// eagerly, before the checks run, so counting here would over-report
+// resources that turn out clean).
 func (a *auditor) ref(it resourceItem) string {
 	if isSystem(it) {
 		return qualified(it) + " (system — CP-managed, update before 3.0)"
@@ -502,13 +576,30 @@ func (a *auditor) countSystem(it resourceItem, totalBefore int) {
 
 func (a *auditor) checkMeshSettings(m resourceItem) {
 	var spec meshSpec
-	_ = json.Unmarshal(m.specBytes(), &spec) // Mesh inlines its spec at the top level
-	ref := func(field string) string { return m.Name + " (" + field + ")" }
+	// EXC:FILE011:records-the-error-while-keeping-the-partial-decode — a wrong-typed Mesh field must not silently disable the checks that read it, so the parse error is recorded like every other resource does and the partially decoded spec still feeds the checks that apply.
+	if err := json.Unmarshal(m.specBytes(), &spec); err != nil {
+		a.rep.parseErrors++
+		a.rep.add(blocker, "Unparseable resources", "Mesh spec could not be parsed",
+			"Could not parse this resource; audit it manually before upgrading.", qualified(m))
+	}
+	ref := func(field string) string { return qualifiedNote(m, field) }
 
 	if spec.Mtls != nil && (spec.Mtls.EnabledBackend != "" || len(spec.Mtls.Backends) > 0) {
 		a.rep.addDoc(blocker, "Mesh object settings", "Inline mTLS on Mesh",
-			"Migrate `mesh.mtls` to MeshIdentity + MeshTrust.", docMeshIdentity, ref("mtls"))
+			"Migrate `mesh.mtls` to MeshIdentity + MeshTrust. Each legacy backend type maps to a "+
+				"MeshIdentity `provider`: `builtin` -> `type: Bundled` with "+
+				"`bundled.insecureAllowSelfSigned: true` (its autogenerated CA is self-signed), "+
+				"`provided` -> `type: Bundled` with your CA under `bundled.ca` (a self-signed CA "+
+				"requires `bundled.insecureAllowSelfSigned: true`), "+
+				"`vault`/`acmpca`/`certmanager` -> `type: Extension` "+
+				"with `extension.name` set to the same value (Kong Mesh only). Each example resource "+
+				"names the backends that mesh carries. In a multizone mesh, a Bundled provider's "+
+				"zone-origin MeshTrusts do not propagate to the other zones — create a federated "+
+				"MeshTrust on the global per peer zone (carrying the peer zone's CA bundle) or "+
+				"cross-zone mTLS dies after the upgrade.",
+			docMeshIdentity, ref(mtlsNote(spec.Mtls.Backends)))
 	}
+
 	if spec.Networking != nil && spec.Networking.Outbound != nil && spec.Networking.Outbound.Passthrough != nil {
 		a.rep.addDoc(blocker, "Mesh object settings", "Passthrough on Mesh",
 			"`mesh.networking.outbound.passthrough` is removed; use MeshPassthrough.", docMeshPassthrough, ref("networking.outbound.passthrough"))
@@ -539,7 +630,7 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 		present                   bool
 		title, detail, doc, field string
 	}{
-		{hasJSON(spec.Metrics), "Inline metrics on Mesh", "Replace `mesh.metrics` with the MeshMetric policy.", docMeshMetric, "metrics"},
+		{hasJSON(spec.Metrics), "Inline metrics on Mesh", "Preserve the client certificate checks from the source before you replace `mesh.metrics` with MeshMetric. Check the source Prometheus `tls.mode` and `skipMTLS`. With mesh mTLS active, the default mode requires remote client certificates unless `skipMTLS` is true. MeshMetric `ProvidedTLS` supplies server TLS only. It does not preserve legacy client certificate checks. Use a verified replacement that preserves the source access rules before the upgrade.", docMeshMetric, "metrics"},
 		{hasJSON(spec.Tracing), "Inline tracing on Mesh", "Replace `mesh.tracing` with the MeshTrace policy.", docMeshTrace, "tracing"},
 		{hasJSON(spec.Logging), "Inline logging on Mesh", "Replace `mesh.logging` with the MeshAccessLog policy.", docMeshAccessLog, "logging"},
 		{hasJSON(spec.Constraints), "Mesh membership constraints", "`mesh.constraints` (membership) is removed.", docKumaCPReference, "constraints"},
@@ -558,7 +649,17 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 			shown = "Disabled"
 		}
 		a.rep.addDoc(blocker, "MeshService mode", "meshServices.mode is not Exclusive",
-			"3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: "+shown+").", docMeshServiceExclusive, m.Name)
+			"3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: "+shown+").", docMeshServiceExclusive, qualified(m))
+	}
+	if spec.SkipCreatingInitialPolicies != nil {
+		// EXC:FILE011:the-collector-merges-findings-by-category-and-title-keeping-only-the-first-detail — the per-mesh list lives in the per-resource annotation, not the shared detail, or it would survive only for the first mesh audited.
+		skipped := strings.Join(spec.SkipCreatingInitialPolicies, ", ")
+		if skipped == "" {
+			skipped = "[] (empty list skips nothing)"
+		}
+		a.rep.addDoc(blocker, "Mesh object settings", "skipCreatingInitialPolicies on Mesh",
+			"3.0 removes `mesh.skipCreatingInitialPolicies` (kumahq/kuma#18661): it stops creating default policies for new Meshes altogether, so the field does nothing on the upgraded control plane — it is ignored, the stored Mesh keeps loading and a manifest that still sets it applies without an error, but the first write to the Mesh drops the field. Remove it from every Mesh manifest (GitOps included) before upgrading. Mind the rollback: after that first write, rolling the mesh's control plane back to 2.14 creates the default policies (`mesh-timeout-all-<mesh>`, `mesh-timeout-to-all-<mesh>`, `mesh-circuit-breaker-all-<mesh>`, `mesh-retry-all-<mesh>`) again — including for a mesh whose list deliberately suppressed them. Each example resource names the list that mesh carries.",
+			docUpgrade, refNote(qualified(m), "skipCreatingInitialPolicies: "+skipped))
 	}
 }
 
@@ -696,7 +797,7 @@ func (a *auditor) checkUnauthenticatedBinding(it resourceItem) {
 		"The binding names `mesh-system:unauthenticated` or `system:unauthenticated`, so anyone who reaches the API without a credential holds its roles. With the 2.x default `admin` binding that covers every write, token generation and reading stored Secrets and GlobalSecrets, the bootstrapped admin token included. "+
 			"A 3.0 control plane no longer creates these subjects, but it keeps an existing binding unchanged, so the upgrade neither fixes nor breaks this. "+
 			"Narrow the binding to authenticated groups (issue user tokens with `kumactl generate user-token` first, and on Kubernetes name every identity that applies mesh resources, such as a GitOps controller), then rotate the admin token if the API was reachable without one.",
-		docRBAC, ref+" (roles: "+strings.Join(roles, ", ")+")")
+		docRBAC, refNote(ref, "roles: "+strings.Join(roles, ", ")))
 }
 
 // checkRBACRules records each finding at most once per resource. With --mesh, a
@@ -760,7 +861,7 @@ func (a *auditor) checkRBACRules(kind string, rules []rbacRule, removed map[stri
 		slices.Sort(removedTypes)
 		a.rep.addDoc(blocker, categoryAccessRoles, kind+" rule types name a kind removed in 3.0",
 			"3.0 no longer registers these resource types and rejects a rule whose `types` names one (`unknown types`), so re-applying the resource fails. Remove them from `rules[].types` before upgrading (and add the 3.0 replacements, such as MeshTrafficPermission or MeshOPA, if the rule should cover them).",
-			docRBAC, ref+" ("+strings.Join(removedTypes, ", ")+")")
+			docRBAC, refNote(ref, strings.Join(removedTypes, ", ")))
 	}
 }
 
@@ -847,6 +948,9 @@ func (a *auditor) checkNewPolicy(it resourceItem) {
 	if it.Type == "MeshHTTPRoute" || it.Type == "MeshTCPRoute" {
 		byName = a.checkRouteBackendRefs(it.Type, it.specBytes(), ref) || byName
 	}
+	if it.Type == "MeshTrafficPermission" {
+		a.checkPermissionMatches(it.specBytes(), ref)
+	}
 	if byName {
 		a.addSelectsByName(it.Type, ref)
 	}
@@ -864,7 +968,7 @@ func (a *auditor) checkNewPolicy(it resourceItem) {
 	a.countSystem(it, before)
 }
 
-func (a *auditor) addSelectsByName(typ, ref string) {
+func (a *auditor) addSelectsByName(typ string, ref string) {
 	a.rep.addDoc(blocker, "Reference by name", typ+" references a resource by name",
 		"3.0 drops `name`, `namespace` and `mesh` from `targetRef` and route `backendRefs` and selects by `labels` only. A stored ref that only names its resource loses the name: a top-level `kind: Dataplane` then selects every Dataplane in the mesh, and a `to[]` targetRef or backendRef resolves to nothing. Replace `name` with the `kuma.io/display-name` label, `namespace` with `k8s.kuma.io/namespace`, and drop `mesh`.",
 		docPolicies, ref)
@@ -922,6 +1026,60 @@ func (a *auditor) checkRouteBackendRefs(typ string, spec []byte, ref string) boo
 		}
 	}
 	return byName
+}
+
+// permissionMatchActions are the MeshTrafficPermission rules[].default action
+// fields whose entries each need a predicate.
+var permissionMatchActions = []string{"allow", "allowWithShadowDeny", "deny"}
+
+// matchPredicate mirrors the wire shape of one match entry's spiffeID or sni
+// field: an object with type and value (api/common/v1alpha1.Match), never a
+// plain string.
+type matchPredicate struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+// checkPermissionMatches flags a stored MeshTrafficPermission rule whose action
+// entry sets neither spiffeID nor sni. Write-time validation rejects only new
+// resources: a 2.14 store can already hold empty entries, and a universal KDS
+// apply can bypass validation. Validation never rewrites stored resources, so
+// the upgrade carries them into 3.0 unchanged. Malformed shapes follow
+// unmarshalSpec: a parse error, not a silent pass.
+func (a *auditor) checkPermissionMatches(spec []byte, ref string) {
+	var parsed struct {
+		Rules []struct {
+			Default map[string][]json.RawMessage `json:"default"`
+		} `json:"rules"`
+	}
+	if err := json.Unmarshal(spec, &parsed); err != nil {
+		a.rep.parseErrors++
+		a.rep.add(blocker, "Unparseable resources", "MeshTrafficPermission spec could not be parsed",
+			"Could not parse this resource; audit it manually before upgrading.", ref)
+		return
+	}
+	for _, rule := range parsed.Rules {
+		for _, action := range permissionMatchActions {
+			for _, entry := range rule.Default[action] {
+				var match struct {
+					SpiffeID *matchPredicate `json:"spiffeID"`
+					SNI      *matchPredicate `json:"sni"`
+				}
+				if err := json.Unmarshal(entry, &match); err != nil {
+					a.rep.parseErrors++
+					a.rep.add(blocker, "Unparseable resources", "MeshTrafficPermission match entry could not be parsed",
+						"Could not parse this resource; audit it manually before upgrading.", ref)
+					return
+				}
+				if match.SpiffeID == nil && match.SNI == nil {
+					a.rep.addDoc(blocker, "Empty match entry", "MeshTrafficPermission has a match entry without spiffeID or sni",
+						"3.0 rejects an entry without spiffeID or sni. Validation does not change stored policies. A KDS write through the Kubernetes admission webhook also fails. Correct each entry before the upgrade. Set spiffeID or sni, or remove the entry.",
+						docMeshTrafficPermission, ref)
+					return
+				}
+			}
+		}
+	}
 }
 
 // checkPolicyFields flags per-policy deprecated fields visible in the spec but not
@@ -987,6 +1145,9 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 		if json.Unmarshal(spec, &s) == nil && hasOtelEndpoint(s.Default) {
 			a.addOtelEndpoint(it.Type, ref)
 		}
+		if it.Type == "MeshMetric" {
+			a.checkMeshMetricTLS(it, ref)
+		}
 	case "MeshHealthCheck":
 		var s struct {
 			To []struct {
@@ -1008,15 +1169,16 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 	case "MeshPassthrough":
 		var s struct {
 			Default struct {
-				AppendMatch []struct {
-					Type  string `json:"type"`
-					Value string `json:"value"`
-					Port  int    `json:"port"`
-				} `json:"appendMatch"`
+				AppendMatch []passthroughMatch `json:"appendMatch"`
 			} `json:"default"`
 		}
 		if json.Unmarshal(spec, &s) != nil {
 			return
+		}
+		if conflict := passthroughChainConflict(s.Default.AppendMatch); conflict != "" {
+			a.rep.addDoc(blocker, "MeshPassthrough", "MeshPassthrough matches produce the same filter chain",
+				"3.0 resolves every match to one Envoy filter chain and rejects a policy where two matches resolve to the same one: an IP and a CIDR covering only that address, two CIDRs with the same canonical prefix, or `tcp` and `mysql` on the same address and port. A stored policy keeps the first match, ignores the later one and fails on re-apply (`produce the same filter chain`); 2.14 already sends Envoy a listener it rejects (`has the same matching rules defined`). Remove the duplicate match.",
+				docMeshPassthrough, refNote(ref, conflict))
 		}
 		for _, m := range s.Default.AppendMatch {
 			if m.Type == "Domain" && m.Port == 0 && !strings.HasPrefix(m.Value, "*") {
@@ -1063,7 +1225,7 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 				"A rule with an empty `matches` list generates no Envoy routes at all — the Universal API accepts it, but nothing is emitted for it. In 3.0 a request that matches no rule of an applicable MeshHTTPRoute gets a `404` instead of falling through to the destination, so every request to this destination fails after the upgrade. Give the rule at least one match (`path: {type: PathPrefix, value: /}` matches everything).",
 				docMeshHTTPRoute, ref)
 		case noCatchAll:
-			a.rep.addDoc(info, "MeshHTTPRoute routing", "MeshHTTPRoute has no catch-all rule",
+			a.rep.addDoc(blocker, "MeshHTTPRoute routing", "MeshHTTPRoute has no catch-all rule",
 				"In 3.0 a request that matches no rule of an applicable MeshHTTPRoute gets a `404` instead of falling through to the destination. This route matches only some requests, so if it exists to anchor a MeshTimeout/MeshRetry/MeshAccessLog the unmatched traffic starts failing after the upgrade. Review it and add a catch-all rule (`path: {type: PathPrefix, value: /}` with no other matchers) if the fall-through is intended.",
 				docMeshHTTPRoute, ref)
 		}
@@ -1118,10 +1280,108 @@ func (a *auditor) checkPolicyFields(it resourceItem, ref string) {
 			a.rep.addDoc(blocker, "Relocated policy fields", "MeshLoadBalancingStrategy uses SourceIP hash policy",
 				"The `SourceIP` hash policy type is deprecated; use `Connection`.", docMeshLoadBalancing, ref)
 		}
+	case "MeshRetry":
+		var s struct {
+			To []struct {
+				Default struct {
+					HTTP struct {
+						RetriableStatusCodes json.RawMessage   `json:"retriableStatusCodes"`
+						RetriableMethods     json.RawMessage   `json:"retriableMethods"`
+						RetryOn              []json.RawMessage `json:"retryOn"`
+					} `json:"http"`
+					TCP struct {
+						MaxConnectAttempts json.RawMessage `json:"maxConnectAttempts"`
+					} `json:"tcp"`
+					GRPC struct {
+						RetryOn []json.RawMessage `json:"retryOn"`
+					} `json:"grpc"`
+				} `json:"default"`
+			} `json:"to"`
+		}
+		if json.Unmarshal(spec, &s) != nil {
+			return
+		}
+		var legacyFields, badRetryOn bool
+		for _, t := range s.To {
+			if hasJSON(t.Default.HTTP.RetriableStatusCodes) || hasJSON(t.Default.HTTP.RetriableMethods) ||
+				hasJSON(t.Default.TCP.MaxConnectAttempts) {
+				legacyFields = true
+			}
+			if len(invalidRetryOnItems(t.Default.HTTP.RetryOn, httpRetryOnConditions, true)) > 0 ||
+				len(invalidRetryOnItems(t.Default.GRPC.RetryOn, grpcRetryOnConditions, false)) > 0 {
+				badRetryOn = true
+			}
+		}
+		if legacyFields {
+			a.rep.addDoc(blocker, "MeshRetry", "MeshRetry uses legacy Retry fields",
+				"`retriableStatusCodes` and `retriableMethods` under `http`, and `maxConnectAttempts` under `tcp`, "+
+					"belong to the legacy `Retry` policy — `MeshRetry` has no such fields. A 2.14 control plane drops "+
+					"unknown fields silently, so a manifest carrying them applies without an error and without any effect; "+
+					"3.0 rejects a write that carries a field outside the schema (`unknown field`), so the first re-apply "+
+					"after the upgrade (GitOps included) fails with `400`. Fix the manifests: express retriable status codes "+
+					"as numeric `http.retryOn` items (`\"500\"`, `\"504\"`) and retriable methods as `HttpMethod<Method>` "+
+					"conditions, and spell the TCP field `maxConnectAttempt` (singular) — the renamed value then starts to "+
+					"apply, which is a behavior change on 2.14 already, and a `tcp` section has to set it.",
+				docMeshRetry, ref)
+		}
+		if badRetryOn {
+			a.rep.addDoc(blocker, "MeshRetry", "MeshRetry retryOn names an unknown condition",
+				"MeshRetry write validation rejects a `retryOn` item outside the condition list with `unknown item '<item>'`, "+
+					"so re-applying this policy fails — on 2.14 as much as on 3.0, meaning the resource was stored through "+
+					"a path that skips validation. The accepted items are case-sensitive: `5xx`, `GatewayError`, `Reset`, "+
+					"`Retriable4xx`, `ConnectFailure`, `EnvoyRatelimited`, `RefusedStream`, `Http3PostConnectFailure`, "+
+					"`HttpMethod<Method>` plus any numeric HTTP status code (`\"503\"`) for `http.retryOn`; `Canceled`, "+
+					"`DeadlineExceeded`, `Internal`, `ResourceExhausted`, `Unavailable` for `grpc.retryOn`. The Envoy "+
+					"spellings (`reset`, `connect-failure`, `gateway-error`, `deadline-exceeded`) and the uppercase `5XX` "+
+					"are rejected — `5xx` alone covers `reset`, `connect-failure` and `refused-stream`.",
+				docMeshRetry, ref)
+		}
 	}
 }
 
-func (a *auditor) addOtelEndpoint(typ, ref string) {
+// httpRetryOnConditions mirrors the MeshRetry HTTPRetryOn validation (identical
+// on 2.14 and 3.0): the named conditions, case-sensitively, plus any numeric
+// HTTP status code.
+var httpRetryOnConditions = map[string]bool{
+	"5xx": true, "GatewayError": true, "Reset": true, "Retriable4xx": true,
+	"ConnectFailure": true, "EnvoyRatelimited": true, "RefusedStream": true,
+	"Http3PostConnectFailure": true,
+	"HttpMethodConnect":       true, "HttpMethodDelete": true, "HttpMethodGet": true,
+	"HttpMethodHead": true, "HttpMethodOptions": true, "HttpMethodPatch": true,
+	"HttpMethodPost": true, "HttpMethodPut": true, "HttpMethodTrace": true,
+}
+
+// grpcRetryOnConditions mirrors the MeshRetry GRPCRetryOn validation.
+var grpcRetryOnConditions = map[string]bool{
+	"Canceled": true, "DeadlineExceeded": true, "Internal": true,
+	"ResourceExhausted": true, "Unavailable": true,
+}
+
+// invalidRetryOnItems returns the retryOn items MeshRetry's validator rejects,
+// mirroring its `unknown item` rule: a named condition from the set, or — for
+// HTTP only — any numeric HTTP status code. rawItems are the raw JSON array
+// elements, so a quoted string is unquoted and a bare number keeps its literal
+// text and is judged as a status code.
+func invalidRetryOnItems(rawItems []json.RawMessage, conditions map[string]bool, numericOK bool) []string {
+	var bad []string
+	for _, raw := range rawItems {
+		item := string(raw)
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			item = s
+		}
+		if conditions[item] {
+			continue
+		}
+		if code, err := strconv.Atoi(item); numericOK && err == nil && http.StatusText(code) != "" {
+			continue
+		}
+		bad = append(bad, item)
+	}
+	return bad
+}
+
+func (a *auditor) addOtelEndpoint(typ string, ref string) {
 	a.rep.addDoc(blocker, "OpenTelemetry endpoint", typ+" uses OpenTelemetry `endpoint`",
 		"The OpenTelemetry `endpoint` field is deprecated; use `backendRef` (MeshOpenTelemetryBackend).", docOtelCollector, ref)
 }
@@ -1273,7 +1533,7 @@ func (a *auditor) checkDataplaneNetworking(it resourceItem, spec dataplaneSpec, 
 		}
 		if tagged {
 			a.rep.addDoc(blocker, "Dataplane networking", "Dataplane uses networking.inbound[].tags",
-				"`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService, except `kuma.io/protocol`, which belongs in `networking.inbound[].protocol`. This pairs with `experimental.inboundTagsDisabled: true` on the control plane.",
+				"`networking.inbound[].tags` is removed in 3.0 (the proto field is reserved); move the tags to Dataplane labels and select proxies through MeshService, except `kuma.io/protocol`, which belongs in `networking.inbound[].protocol`. This pairs with `experimental.inboundTagsDisabled: true` on the control plane. Drop the tags only after the mesh runs `meshServices.mode: Exclusive` with mesh-scoped zone proxies: a standalone ZoneIngress on a non-Exclusive mesh cannot route to an inbound without `kuma.io/service`.",
 				docMeshService, qualified(it))
 		}
 		// 2.x fell back to the kuma.io/protocol tag when the protocol field was
@@ -1385,18 +1645,23 @@ func (o dpOverview) transparentProxy(labels map[string]string) bool {
 	return tp.RedirectPortInbound != 0 || tp.RedirectPortOutbound != 0
 }
 
-// checkOutboundDefaults flags the proxies 3.0 leaves with no outbounds at all.
-// Absence-triggered — the proxy that configures nothing is the one that breaks —
-// so it reports one "N of M" summary per outboundMode. Reads /dataplanes+insights
-// for kuma-dp's own transparent-proxy config, which /dataplanes cannot show.
+// checkOutboundDefaults reports the proxies 3.0 leaves with no outbounds at // EXC:FILE011:one-decision-two-remediations
+// all. Absence-triggered — the proxy that configures nothing is the one that // EXC:FILE011:one-decision-two-remediations
+// breaks — so the report carries one "N of M" summary per governing // EXC:FILE011:one-decision-two-remediations
+// outboundMode, with a per-environment breakdown in the detail and both // EXC:FILE011:one-decision-two-remediations
+// environments' fixes: the decision is one, only where the field is set // EXC:FILE011:one-decision-two-remediations
+// differs. Reads /dataplanes+insights for kuma-dp's own transparent-proxy // EXC:FILE011:one-decision-two-remediations
+// config, which /dataplanes cannot show. // EXC:FILE011:one-decision-two-remediations
 func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 	items, observed := a.listCollObserved(ctx, a.scopedPath("dataplanes+insights"))
 	if !observed {
 		return nil
 	}
-	total := 0
-	var denied [3]int
-	var refs [3][]string
+	// [0] = Universal, [1] = Kubernetes, indexed by the onK8s flag; denied and
+	// refs are further split by the governing control plane's outboundMode.
+	var total [2]int
+	var denied [2][3]int
+	var refs [2][3][]string
 	for _, it := range items {
 		var ov dpOverview
 		// Not a policy spec: a decode failure is skipped, not counted as a parse
@@ -1412,43 +1677,107 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 			continue
 		}
 		a.tpProxies = append(a.tpProxies, it)
-		total++
+		env := 0
+		if it.Labels[envLabel] == "kubernetes" {
+			env = 1
+		}
+		total[env]++
 		if ov.Dataplane.Networking.keepsOutbounds() {
 			continue
 		}
 		mode := a.outboundModeFor(it)
-		denied[mode]++
-		if len(refs[mode]) < ExampleCap {
-			refs[mode] = append(refs[mode], qualified(it))
+		denied[env][mode]++
+		if len(refs[env][mode]) < ExampleCap {
+			refs[env][mode] = append(refs[env][mode], qualified(it))
 		}
 	}
+	// One entry per outboundMode carries both environments: the decision is // EXC:FILE011:one-decision-two-remediations
+	// one, only where the field is set differs. // EXC:FILE011:one-decision-two-remediations
 	for _, mode := range []outboundMode{outboundUnset, outboundAllowed, outboundRestricted} {
-		a.addOutboundDenyFinding(mode, denied[mode], total, refs[mode])
+		a.addOutboundDenyFinding(mode, [2]envDeny{
+			{
+				subject: "Universal Dataplanes",
+				fix:     "On Universal, set `networking.transparentProxying.reachableBackends`, selecting MeshServices by `labels`",
+				denied:  denied[0][mode], total: total[0], refs: refs[0][mode],
+			},
+			{
+				subject: "Kubernetes dataplanes",
+				fix:     "On Kubernetes, set the Pod annotation `kuma.io/reachable-backends`, selecting MeshServices by `labels`",
+				denied:  denied[1][mode], total: total[1], refs: refs[1][mode],
+			},
+		})
 	}
 	return nil
 }
 
-// addOutboundDenyFinding reports the proxies without reachableBackends governed
-// by control planes in one outboundMode. Only an unset switch breaks on upgrade:
-// a pinned `false` keeps allow-all on 3.0, and `true` already denies today.
-func (a *auditor) addOutboundDenyFinding(mode outboundMode, denied, total int, refs []string) {
-	const fix = "Set `reachableBackends` (Pod annotation `kuma.io/reachable-backends` on Kubernetes, `networking.transparentProxying.reachableBackends` on Universal), selecting MeshServices by `labels`."
+// envDeny is one environment's slice of the proxies without reachableBackends: // EXC:FILE011:envDeny-shape
+// its N-of-M tally, examples and the fix naming where the field is set. // EXC:FILE011:envDeny-shape
+type envDeny struct {
+	subject string
+	fix     string
+	denied  int
+	total   int
+	refs    []string
+}
+
+// addOutboundDenyFinding reports the proxies without reachableBackends governed // EXC:FILE011:merged-entry-contract
+// by control planes in one outboundMode as one entry, with a per-environment // EXC:FILE011:merged-entry-contract
+// breakdown in the detail and each present environment's fix; an environment // EXC:FILE011:merged-entry-contract
+// absent from the estate gets no line. Only an unset switch breaks on // EXC:FILE011:merged-entry-contract
+// upgrade: a pinned `false` keeps allow-all on 3.0, and `true` already // EXC:FILE011:merged-entry-contract
+// denies today. // EXC:FILE011:merged-entry-contract
+func (a *auditor) addOutboundDenyFinding(mode outboundMode, envs [2]envDeny) {
+	denied, total := 0, 0
+	for _, e := range envs {
+		denied += e.denied
+		total += e.total
+	}
+	if denied == 0 {
+		return
+	}
+	// Interleave the environments' examples so the shared cap cannot crowd // EXC:FILE011:cap-must-not-crowd-minority-env
+	// the minority environment out entirely. // EXC:FILE011:cap-must-not-crowd-minority-env
+	var refs []string
+	for i := range ExampleCap {
+		for _, e := range envs {
+			if i < len(e.refs) {
+				refs = append(refs, e.refs[i])
+			}
+		}
+	}
+	if len(refs) > ExampleCap {
+		refs = refs[:ExampleCap]
+	}
+	var detail strings.Builder
+	fmt.Fprintf(&detail, "%d of %d transparent proxies have no `reachableBackends`", denied, total)
+	for _, e := range envs {
+		if e.total > 0 {
+			fmt.Fprintf(&detail, "; %s: %d of %d", e.subject, e.denied, e.total)
+		}
+	}
 	sev := info
-	var impact string
 	switch mode {
 	case outboundUnset:
 		sev = blocker
-		impact = "3.0 gives them no outbounds by default, so their in-mesh calls fail. " + fix + " " + restrictOutboundRemediation
+		detail.WriteString(". 3.0 gives them no outbounds by default, so their in-mesh calls fail. ")
 	case outboundAllowed:
-		impact = "`defaults.restrictOutbound: false` keeps them reaching every destination on 3.0. " + fix + " Required before switching to `true`."
+		detail.WriteString(". `defaults.restrictOutbound: false` keeps them reaching every destination on 3.0; `reachableBackends` is required before switching to `true`. ")
 	case outboundRestricted:
-		// The CP already denies what 3.0 will, so the upgrade changes nothing for
-		// these proxies; a proxy that calls nothing in the mesh is correct as is.
-		impact = "`defaults.restrictOutbound: true` already denies their outbounds; the upgrade changes nothing. " + fix
+		// The CP already denies what 3.0 will, so the upgrade changes nothing // EXC:FILE011:present-tense-framing
+		// for these proxies; a proxy that calls nothing in the mesh is correct // EXC:FILE011:present-tense-framing
+		// as is. // EXC:FILE011:present-tense-framing
+		detail.WriteString(". `defaults.restrictOutbound: true` already denies their outbounds; the upgrade changes nothing. ")
+	}
+	for _, e := range envs {
+		if e.denied > 0 {
+			detail.WriteString(e.fix + ". ")
+		}
+	}
+	if mode == outboundUnset {
+		detail.WriteString(restrictOutboundRemediation)
 	}
 	a.rep.addSummary(sev, "Outbound defaults", "Transparent proxies have no reachableBackends",
-		fmt.Sprintf("%d of %d transparent proxies have no `reachableBackends`. %s", denied, total, impact),
-		docReachableBackends, denied, refs)
+		strings.TrimRight(detail.String(), " "), docReachableBackends, denied, refs)
 }
 
 // checkPassthroughDefault flags transparent proxies that lose external egress
@@ -1545,7 +1874,7 @@ func (a *auditor) checkZoneProxies(ctx context.Context) error {
 				a.noteZoneProxy(zoneOf(it))
 			}
 			a.rep.addDoc(blocker, "Zone proxies", wsPath+" present",
-				"Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.", docZoneProxies, it.Name)
+				"Separate ZoneIngress/ZoneEgress resources are replaced by the unified Zone Proxy (Listener types embedded in the Dataplane), which functions only in `meshServices.mode: Exclusive`; plan the migration before upgrading to 3.0.", docZoneProxies, qualified(it))
 		}
 	}
 	return nil
@@ -1606,7 +1935,7 @@ func zoneOf(it resourceItem) string {
 // `multizone.zone.name` in checkControlPlaneConfig instead.
 func (a *auditor) checkZoneNames(ctx context.Context) error {
 	for _, it := range a.listIfServed(ctx, "/zones") {
-		a.addZoneNameFinding(displayName(it), it.Name)
+		a.addZoneNameFinding(displayName(it), qualified(it))
 	}
 	return nil
 }
@@ -1614,7 +1943,7 @@ func (a *auditor) checkZoneNames(ctx context.Context) error {
 // addZoneNameFinding records the non-RFC-1035 zone-name blocker for one zone. ref
 // names the zone as the report should show it (the resource name on a global, the
 // configured name on a directly audited zone CP).
-func (a *auditor) addZoneNameFinding(name, ref string) {
+func (a *auditor) addZoneNameFinding(name string, ref string) {
 	if name == "" || validRFC1035(name) {
 		return
 	}
@@ -1696,6 +2025,96 @@ func (a *auditor) requiredZoneAddresses() []string {
 	return required
 }
 
+// checkCrossZoneTrust flags a zone-spanning mesh whose MeshIdentity uses the
+// Bundled provider but that has no federated (global-origin) MeshTrust: each
+// zone's control plane auto-generates its own zone-local MeshTrust, and
+// zone-origin MeshTrusts do not propagate to the other zones, so cross-zone mTLS
+// dies with TLS verification failures once the zones run 3.0. This is an info,
+// not a blocker: whether the mesh needs cross-zone traffic is unknowable from
+// the control plane, and the federation may exist as zone-local MeshTrusts that
+// carry the peers' CAs — presence-only, the check cannot verify bundles. Four
+// preconditions keep it off estates that cannot be affected: a multi-zone global
+// (only the global sees every zone's MeshTrusts), a mesh with proxies in two or
+// more zones, a Bundled MeshIdentity in that mesh (Spire and Extension manage
+// trust differently), and the meshidentities list being served (a 404 is a
+// type the CP does not register — not applicable). An unreadable or
+// unregistered meshtrusts list is a coverage gap, never silence and never a
+// fire on absence.
+func (a *auditor) checkCrossZoneTrust(ctx context.Context) error {
+	if len(a.meshZones) == 0 {
+		return nil
+	}
+	zones, found, err := a.zoneInsights(ctx)
+	if err != nil || !found || len(zones) < 2 {
+		// EXC:FILE011:not-a-multizone-global — the same precondition checkMeshZoneAddresses applies; the zones overview already gapped out in checkControlPlaneConfig, which reports it once
+		return nil
+	}
+	ids, complete := a.listServed(ctx, a.scopedPath("meshidentities"))
+	if !complete {
+		return nil
+	}
+	bundled := map[string]bool{}
+	// EXC:FILE011:trust-creation-disabled — trust creation is per MeshIdentity, so a mesh fires the disabled-creation wording only when every Bundled identity in it sets meshTrustCreation: Disabled
+	enabled := map[string]bool{}
+	for _, id := range ids {
+		var spec struct {
+			Provider struct {
+				Type    string `json:"type"`
+				Bundled struct {
+					MeshTrustCreation string `json:"meshTrustCreation"`
+				} `json:"bundled"`
+			} `json:"provider"`
+		}
+		if err := json.Unmarshal(id.specBytes(), &spec); err != nil {
+			a.rep.parseErrors++
+			a.rep.add(blocker, "Unparseable resources", "MeshIdentity spec could not be parsed",
+				"Could not parse this resource; audit it manually before upgrading.", a.ref(id))
+			continue
+		}
+		if spec.Provider.Type == "Bundled" {
+			bundled[id.Mesh] = true
+			if spec.Provider.Bundled.MeshTrustCreation != "Disabled" {
+				enabled[id.Mesh] = true
+			}
+		}
+	}
+	if len(bundled) == 0 {
+		return nil
+	}
+	trusts, served, err := a.c.list(ctx, a.scopedPath("meshtrusts"))
+	if err != nil {
+		a.rep.addGap(a.scopedPath("meshtrusts"), collectionReadGapReason(err))
+		return nil
+	}
+	if !served {
+		// EXC:FILE011:not-observed-is-not-absent — a CP that serves MeshIdentity but has not registered MeshTrust can neither confirm nor deny federation, so this is a coverage gap like checkMeshZoneAddresses records, never silence and never a fire on absence
+		a.rep.addGap(a.scopedPath("meshtrusts"), "endpoint returned 404 — this control plane does not serve MeshTrust; cross-zone trust federation NOT audited")
+		return nil
+	}
+	a.stampZone(trusts)
+	federated := map[string]bool{}
+	// EXC:FILE011:global-origin-detection — a MeshTrust created on the global carries the CP-stamped kuma.io/origin: global (even when an operator added a zone label); a zone→global-synced copy carries kuma.io/origin: zone plus its zone label, so only origin:global (or, defensively, a missing zone label) marks the federation
+	for _, it := range trusts {
+		if it.Mesh != "" && (it.Labels[zoneLabel] == "" || it.Labels["kuma.io/origin"] == "global") {
+			federated[it.Mesh] = true
+		}
+	}
+	for _, mesh := range slices.Sorted(maps.Keys(a.meshZones)) {
+		if !bundled[mesh] || federated[mesh] || len(a.meshZones[mesh]) < 2 {
+			continue
+		}
+		zs := slices.Sorted(maps.Keys(a.meshZones[mesh]))
+		cause := "Each zone's control plane auto-generates its own zone-local MeshTrust from the mesh's Bundled MeshIdentity, and zone-origin MeshTrusts do not propagate to the other zones — so every zone trusts only its own CA."
+		if bundled[mesh] && !enabled[mesh] {
+			cause = "The mesh's Bundled MeshIdentity sets `meshTrustCreation: Disabled`, so no zone control plane generates a MeshTrust at all, and zone-origin MeshTrusts would not propagate to the other zones anyway."
+		}
+		a.rep.addDoc(info, "MeshIdentity coverage", "Zone-spanning mesh has no federated MeshTrust",
+			cause+" Cross-zone mTLS after the upgrade then fails with TLS verification errors (`ssl.fail_verify_error` climbing on cross-zone clusters). If this mesh needs cross-zone communication, create a federated MeshTrust on the global for each peer zone (trustDomain set to the peer zone's, `caBundles` carrying the peer zone's CA bundle): a global-origin MeshTrust syncs to every zone, and 2.14 already registers the type. If this mesh never carries cross-zone traffic, ignore this note. To see what each zone trusts: `kumactl get meshtrusts --mesh <mesh> -o json | jq -r '.items[] | [(.labels[\"kuma.io/zone\"] // \"global\"), .spec.trustDomain] | @tsv'`.",
+			docMeshIdentity, "mesh "+mesh+" (zones "+strings.Join(zs, ", ")+")")
+	}
+	return nil
+}
+
 // checkServiceResources flags MeshService, MeshExternalService and
 // MeshMultiZoneService names that are not valid RFC-1035 DNS labels (deprecated
 // in 3.0) and the spec fields 3.0 no longer reads. These resource types are newer
@@ -1758,6 +2177,32 @@ func (a *auditor) addUnsupportedAppProtocol(kind string, ports []servicePort, re
 	}
 }
 
+func (a *auditor) checkMeshMetricTLS(it resourceItem, ref string) {
+	var spec struct {
+		Default struct {
+			Backends []struct {
+				Type       string `json:"type"`
+				Prometheus *struct {
+					TLS *struct {
+						Mode string `json:"mode"`
+					} `json:"tls"`
+				} `json:"prometheus"`
+			} `json:"backends"`
+		} `json:"default"`
+	}
+	if !a.unmarshalSpec(it, &spec, ref) {
+		return
+	}
+	for _, backend := range spec.Default.Backends {
+		if backend.Type != "Prometheus" || backend.Prometheus == nil || backend.Prometheus.TLS == nil || backend.Prometheus.TLS.Mode != "ActiveMTLSBackend" {
+			continue
+		}
+		a.rep.addDoc(blocker, "Metric TLS", "MeshMetric ActiveMTLSBackend does not enable TLS",
+			"Do not use `ActiveMTLSBackend` to preserve client certificate checks. MeshMetric accepts this mode but creates a plaintext Prometheus listener. `ProvidedTLS` supplies server TLS only. Use a verified replacement that preserves the source access rules before the upgrade.", docMeshMetric, ref)
+		break
+	}
+}
+
 // checkMeshServiceSpec flags MeshService fields 3.0 removes. Generated
 // MeshServices (kuma.io/managed-by) are regenerated by the 3.0 control plane, so
 // only a Universal one still keyed on kuma.io/service needs attention: 3.0
@@ -1793,15 +2238,17 @@ func (a *auditor) checkMeshServiceSpec(it resourceItem) {
 				docMeshService, ref)
 		}
 	}
-	// 2.14 generators always emit a ServiceTag identity and 3.0 regenerates it
-	// SpiffeID-only, so only a hand-written MeshService needs the rewrite.
+	// Only hand-written MeshServices need the rewrite; generated ones are rewritten by their zone CP. // EXC:FILE011:documents-a-non-obvious-invariant
 	for _, id := range s.Identities {
-		if managedBy == "" && id.Type == "ServiceTag" {
+		if id.Type != "ServiceTag" {
+			continue
+		}
+		if managedBy == "" {
 			a.rep.addDoc(blocker, "MeshService identities", "MeshService declares a ServiceTag identity",
 				"3.0 accepts only `SpiffeID` entries in `spec.identities` and rejects a `ServiceTag` one on write. Replace it with the SPIFFE ID of the workload before upgrading.",
 				docMeshService, ref)
-			break
 		}
+		break
 	}
 	a.addUnsupportedAppProtocol("MeshService", s.Ports, ref)
 	if dl := s.Selector.DataplaneLabels; dl != nil {
@@ -1888,7 +2335,43 @@ type cpConfig struct {
 		Zone struct {
 			Name string `json:"name"`
 		} `json:"zone"`
+		Global struct {
+			Kds struct {
+				Auth struct {
+					ZoneToken struct {
+						EnableIssuer *bool `json:"enableIssuer"`
+					} `json:"zoneToken"`
+				} `json:"auth"`
+			} `json:"kds"`
+		} `json:"global"`
 	} `json:"multizone"`
+	// EXC:FILE011:2.14.6 mirrors the effective KDS auth values into both multizone.* and kmesh.multizone.*, so a set kmesh path does not prove the old KMESH_MULTIZONE_* name is in use; addKDSAuthFindings keys on these paths because they are the only /config signal the old names leave — 3.0 removes them (the env vars abort startup, the config keys are ignored, so a global left on them serves KDS unauthenticated and a zone presents no token).
+	KongMesh struct {
+		Multizone struct {
+			Global struct {
+				Kds struct {
+					Auth struct {
+						Type    string `json:"type"`
+						CpToken struct {
+							EnableIssuer *bool `json:"enableIssuer"`
+							Validator    struct {
+								UseSecrets *bool             `json:"useSecrets"`
+								PublicKeys []json.RawMessage `json:"publicKeys"`
+							} `json:"validator"`
+						} `json:"cpToken"`
+					} `json:"auth"`
+				} `json:"kds"`
+			} `json:"global"`
+			Zone struct {
+				Kds struct {
+					Auth struct {
+						CpTokenInline string `json:"cpTokenInline"`
+						CpTokenPath   string `json:"cpTokenPath"`
+					} `json:"auth"`
+				} `json:"kds"`
+			} `json:"zone"`
+		} `json:"multizone"`
+	} `json:"kmesh"`
 	// ApiServer carries the admin API authentication settings: 3.0 drops the
 	// adminClientCerts authn plugin (the CP refuses to start with it) and the
 	// auth.clientCertsDir field (silently ignored, so its client certs stop
@@ -2000,6 +2483,11 @@ func cpConfigDetail(field, from, to string) string {
 	return fmt.Sprintf("the field %s value has to be changed from %s to %s", field, from, to)
 }
 
+// inboundTagsDisabledDetail orders the remediation: a standalone ZoneIngress
+// exposes a non-Exclusive mesh only through inbound kuma.io/service tags.
+var inboundTagsDisabledDetail = cpConfigDetail("experimental.inboundTagsDisabled", "false", "true") +
+	". Turn it on only after every mesh runs `meshServices.mode: Exclusive` with mesh-scoped zone proxies: on Kubernetes it removes `kuma.io/service` from every inbound, and a standalone ZoneIngress on a non-Exclusive mesh cannot route to such an inbound, so cross-zone traffic into the zone breaks."
+
 // checkControlPlaneConfig audits the live CP settings exposed by GET /config for
 // 3.0 readiness. The data-plane-relevant settings (injector + experimental flags)
 // only govern the CP that actually runs proxies, so they are audited on the CP we
@@ -2059,6 +2547,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 		a.addAPIServerFindings(cfg, zoneRef(""))
 		a.addDroppedSettingFindings(cfg, zoneRef(""))
 		a.addZoneTokenIssuerFinding(cfg)
+		a.addKDSAuthFindings(cfg, zoneRef(""))
 		return a.checkZoneControlPlaneConfigs(ctx)
 	}
 	// Standalone or a directly-connected zone CP: audit the config we reached.
@@ -2077,8 +2566,8 @@ func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
 	}
 }
 
-// zoneRef qualifies a config example reference with the zone it came from; zone
-// is "" for the control plane the tool connected to.
+// zoneRef qualifies a config example with the zone it came from; zone is ""
+// for the control plane the tool connected to.
 func zoneRef(zone string) func(string) string {
 	return func(s string) string {
 		if zone != "" {
@@ -2125,10 +2614,9 @@ func (a *auditor) addDroppedSettingFindings(cfg cpConfig, ref func(string) strin
 			{"fullResyncInterval", wd.FullResyncInterval, time.Minute},
 		} {
 			if d, ok := setDuration(s.value); ok && d != s.def {
-				field := "experimental.kdsEventBasedWatchdog." + s.field
 				a.rep.addDoc(blocker, cpConfigCategory, "KDS watchdog timing moved to multizone.{global,zone}.kds.eventBasedWatchdog",
-					cpConfigDetail(field, s.value, "unset"),
-					docKumaCPReference, ref(field+"="+s.value))
+					"3.0 ignores experimental.kdsEventBasedWatchdog.{flushInterval,fullResyncInterval}, and their replacements multizone.{global,zone}.kds.eventBasedWatchdog.{flushInterval,fullResyncInterval} (KUMA_MULTIZONE_{GLOBAL,ZONE}_KDS_EVENT_BASED_WATCHDOG_{FLUSH_INTERVAL,FULL_RESYNC_INTERVAL}) do not exist on 2.x, so the intervals cannot be moved before the upgrade. Keep the current values and set the 3.0 keys as part of the 3.0 configuration.",
+					docKumaCPReference, ref("experimental.kdsEventBasedWatchdog."+s.field+"="+s.value))
 			}
 		}
 	}
@@ -2161,12 +2649,66 @@ func (a *auditor) addDroppedSettingFindings(cfg cpConfig, ref func(string) strin
 }
 
 // addZoneTokenIssuerFinding flags a global that turned the zone token issuer
-// off. 3.0 validates zone tokens on the global only, so a zone's value is inert.
+// off with the dpServer switch alone. 3.0 validates zone tokens on the global
+// only, so a zone's value is inert, and 3.0 drops the dpServer switch: with
+// only it set the issuer turns back on. The 2.14 cp-token switch under
+// multizone.global already opts out of 3.0's behavior, so an explicit false
+// there clears the finding. The two 2.14 switches gate disjoint token kinds
+// (dpServer: ingress/egress, multizone.global: cp), so the new key has to be
+// set in addition to the old one — removing the old key re-enables
+// ingress/egress issuance on 2.14.
 func (a *auditor) addZoneTokenIssuerFinding(cfg cpConfig) {
 	if e := cfg.DpServer.Authn.ZoneProxy.ZoneToken.EnableIssuer; e != nil && !*e {
+		if k := cfg.Multizone.Global.Kds.Auth.ZoneToken.EnableIssuer; k != nil && !*k {
+			return
+		}
 		a.rep.addDoc(blocker, cpConfigCategory, "Zone token issuer switch moved to multizone.global.kds.auth.zoneToken.enableIssuer",
-			"3.0 ignores dpServer.authn.zoneProxy.zoneToken.enableIssuer, so the issuer turns back on. Set multizone.global.kds.auth.zoneToken.enableIssuer to false on the global to keep it off.",
+			"3.0 ignores dpServer.authn.zoneProxy.zoneToken.enableIssuer, so the issuer turns back on. On 2.14 the old key still gates ingress/egress zone tokens, so set multizone.global.kds.auth.zoneToken.enableIssuer=false on the global in addition to it — swapping the keys re-enables their issuance.",
 			docKumaCPReference, "dpServer.authn.zoneProxy.zoneToken.enableIssuer=false")
+	}
+}
+
+// addKDSAuthFindings flags KDS authentication configured under the Kong Mesh
+// kmesh.multizone settings, which 3.0 removes together with the
+// KMESH_MULTIZONE_* environment variables. The conditions mirror the ones the
+// 2.14 control plane itself deprecates on (kdsAuthRenames in
+// pkg/config/app/kuma-cp/kds_auth.go): only values differing from the default
+// count, because an explicitly set default is indistinguishable from an unset
+// one in /config and needs no migration either.
+//
+// 2.14.6 mirrors the effective values into both the multizone.* and the
+// kmesh.multizone.* paths of /config, so the finding also fires on a control
+// plane already migrated to the KUMA_* names — the detail points at the
+// startup-log deprecation line, the only signal naming the settings that
+// actually still use the old names. The check runs on every audited config,
+// a global's fanned-out zone configs included: the zone token settings belong
+// to a zone, and the global settings of a zone CP are inert on 2.14 but their
+// KMESH_* environment variables abort the 3.0 startup there too.
+func (a *auditor) addKDSAuthFindings(cfg cpConfig, ref func(string) string) {
+	kmesh := cfg.KongMesh.Multizone
+	var examples []string
+	if t := kmesh.Global.Kds.Auth.Type; t != "" && t != "none" {
+		examples = append(examples, "kmesh.multizone.global.kds.auth.type="+t+" (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_TYPE)")
+	}
+	if e := kmesh.Global.Kds.Auth.CpToken.EnableIssuer; e != nil && !*e {
+		examples = append(examples, "kmesh.multizone.global.kds.auth.cpToken.enableIssuer=false (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_CP_TOKEN_ENABLE_ISSUER)")
+	}
+	if u := kmesh.Global.Kds.Auth.CpToken.Validator.UseSecrets; u != nil && !*u {
+		examples = append(examples, "kmesh.multizone.global.kds.auth.cpToken.validator.useSecrets=false (KMESH_MULTIZONE_GLOBAL_KDS_AUTH_CP_TOKEN_VALIDATOR_USE_SECRETS)")
+	}
+	if len(kmesh.Global.Kds.Auth.CpToken.Validator.PublicKeys) > 0 {
+		examples = append(examples, "kmesh.multizone.global.kds.auth.cpToken.validator.publicKeys set")
+	}
+	if kmesh.Zone.Kds.Auth.CpTokenInline != "" {
+		examples = append(examples, "kmesh.multizone.zone.kds.auth.cpTokenInline set (KMESH_MULTIZONE_ZONE_KDS_AUTH_CP_TOKEN_INLINE)")
+	}
+	if p := kmesh.Zone.Kds.Auth.CpTokenPath; p != "" {
+		examples = append(examples, "kmesh.multizone.zone.kds.auth.cpTokenPath="+p+" (KMESH_MULTIZONE_ZONE_KDS_AUTH_CP_TOKEN_PATH)")
+	}
+	for _, ex := range examples {
+		a.rep.addDoc(blocker, cpConfigCategory, "KDS auth set under the removed kmesh.multizone settings",
+			"3.0 removes the Kong Mesh kmesh.multizone KDS authentication settings and aborts at startup on the KMESH_MULTIZONE_* environment variables. A global left on them serves KDS without authentication (multizone.global.kds.auth.type defaults to none) and a zone presents no token, so the global rejects it. Set the KDS auth with the Kuma names instead — KUMA_MULTIZONE_GLOBAL_KDS_AUTH_TYPE (cpToken is called zoneToken there), KUMA_MULTIZONE_GLOBAL_KDS_AUTH_ZONE_TOKEN_ENABLE_ISSUER, KUMA_MULTIZONE_GLOBAL_KDS_AUTH_ZONE_TOKEN_VALIDATOR_USE_SECRETS, KUMA_MULTIZONE_ZONE_KDS_AUTH_TOKEN_INLINE and KUMA_MULTIZONE_ZONE_KDS_AUTH_TOKEN_PATH — and delete the KMESH_MULTIZONE_* variables: a leftover aborts the 3.0 startup even when the new variable is set too. 2.14.6 mirrors the effective values into both the multizone.* and kmesh.multizone.* paths of /config, so this finding can also fire on a zone or global already migrated to the new names: the control-plane startup log lines \"kmesh.multizone... is deprecated, use ... instead\" name the settings that actually still use the old names.",
+			docKumaCPReference, ref(ex))
 	}
 }
 
@@ -2230,6 +2772,7 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	// Settings the 3.0 control plane refuses to start with, or silently drops.
 	a.addAPIServerFindings(cfg, ref)
 	a.addDroppedSettingFindings(cfg, ref)
+	a.addKDSAuthFindings(cfg, ref)
 	// zoneProxy.type authenticated only the standalone zone proxies; 3.0 zone
 	// proxies are Dataplanes and authenticate like any other proxy. On Kubernetes
 	// that is the pod service-account token, issued without operator action.
@@ -2263,12 +2806,13 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 	}
 	if !cfg.Experimental.InboundTagsDisabled {
 		a.rep.addDoc(blocker, cpConfigCategory, "Inbound tags still enabled",
-			cpConfigDetail("experimental.inboundTagsDisabled", "false", "true"),
+			inboundTagsDisabledDetail,
 			docMeshService, ref("experimental.inboundTagsDisabled=false"))
 	}
 
 	// Settings that become the default in 3.0 — enable and validate before upgrading.
-	if !cfg.Experimental.DeltaXds {
+	// EXC:FILE011:experimental.deltaXds reaches pods only through the Kubernetes injector — on a Universal CP the setting is inert and the per-DP feature-delta-grpc check already flags those proxies, so the gate is onK8s
+	if onK8s && !cfg.Experimental.DeltaXds {
 		a.rep.addDoc(blocker, cpConfigCategory, "Delta xDS not enabled",
 			cpConfigDetail("experimental.deltaXds", "false", "true"),
 			docKumaCPReference, ref("experimental.deltaXds=false"))
@@ -2512,7 +3056,7 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 	detail := fmt.Sprintf("Upgrade to the latest 2.%d patch (%s) before upgrading to 3.0; an older 2.x patch or minor is not a supported upgrade source.", UpgradeTargetMinor, a.latestPatch)
 
 	if !a.skipAuditedCPVersion {
-		a.flagIfBehind(a.rep.cp.Version, "control plane", latestMin, latestPatch, detail)
+		a.flagIfBehind(a.rep.cp.Version, "", latestMin, latestPatch, detail)
 	}
 
 	// Fan out to connected zones unless we KNOW this CP is not a global. The Kuma
@@ -2528,15 +3072,24 @@ func (a *auditor) checkControlPlaneVersions(ctx context.Context) error {
 
 // flagIfBehind records a blocker when version is an older 2.x release than the
 // latest target patch. An unparseable version is a coverage gap (it cannot be
-// proven current), not a silent pass. origin labels the source in the example ref.
-func (a *auditor) flagIfBehind(version, origin string, latestMin, latestPatch int, detail string) {
+// proven current), not a silent pass. zone labels the source in the example
+// ("" for the control plane the tool connected to).
+func (a *auditor) flagIfBehind(version, zone string, latestMin, latestPatch int, detail string) {
 	maj, minor, patch, ok := ParseSemver(version)
 	if !ok {
+		origin := "control plane"
+		if zone != "" {
+			origin = "zone " + zone
+		}
 		a.rep.addGap("version ("+origin+")",
 			"reported version "+version+" is not valid semver — version currency NOT audited")
 		return
 	}
 	if behind(maj, minor, patch, latestMin, latestPatch) {
+		origin := "control plane"
+		if zone != "" {
+			origin = "zone " + zone
+		}
 		a.rep.addDoc(blocker, cpVersionCategory,
 			fmt.Sprintf("Control plane behind the latest 2.%d patch", UpgradeTargetMinor),
 			detail, docUpgrade, origin+" ("+version+")")
@@ -2579,7 +3132,7 @@ func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch 
 				"zone reported no control-plane version over KDS — version NOT audited")
 			continue
 		}
-		a.flagIfBehind(v, "zone "+it.Name, latestMin, latestPatch, detail)
+		a.flagIfBehind(v, it.Name, latestMin, latestPatch, detail)
 	}
 	return nil
 }
@@ -2653,7 +3206,7 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 		if kd.Version != "" && (kd.KumaCpCompatible == nil || !*kd.KumaCpCompatible) {
 			a.rep.addDoc(blocker, "Dataplane version", "Dataplane is version-incompatible with the control plane",
 				"The control plane reports this proxy's kuma-dp version as incompatible; bring it into the supported skew window before upgrading to 3.0.",
-				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
+				docUpgrade, qualifiedNote(it, "kuma-dp "+kd.Version))
 		}
 		// 3.0 upgrades only from 2.14, and older kuma-dp does not advertise the
 		// features checkDataplaneFeatures reads, so this comes before every other
@@ -2661,7 +3214,7 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 		if maj, minor, _, ok := ParseSemver(kd.Version); ok && maj == 2 && minor < UpgradeTargetMinor {
 			a.rep.addDoc(blocker, "Dataplane version", fmt.Sprintf("Dataplane runs kuma-dp older than 2.%d", UpgradeTargetMinor),
 				fmt.Sprintf("Upgrade kuma-dp to the latest 2.%d patch first, before acting on any other data plane finding for this proxy. 3.0 supports upgrading only from 2.%d, and older kuma-dp does not advertise the features the other data plane checks read (`feature-otel-via-kuma-dp`, and before 2.13 `feature-reuse-port` and `feature-strict-inbound-ports`), so re-run the audit once it runs 2.%d.", UpgradeTargetMinor, UpgradeTargetMinor, UpgradeTargetMinor),
-				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
+				docUpgrade, qualifiedNote(it, "kuma-dp "+kd.Version))
 		}
 		if ref, ok := legacyCoreDNSRef(it, ins, last.Dependencies["coredns"]); ok {
 			a.rep.addDoc(blocker, "Dataplane DNS", "Dataplane uses the legacy embedded CoreDNS",
@@ -2682,7 +3235,7 @@ func (a *auditor) checkDataplaneVersions(ctx context.Context) error {
 		if slices.Contains(ins.DataplaneInsight.Metadata.Features, featureReadinessUnixSocket) {
 			a.rep.addDoc(blocker, "Dataplane features", "Dataplane reports readiness over a Unix socket",
 				"This proxy advertises `feature-readiness-unix-socket`, which kuma-dp stopped sending in 2.14. A 3.0 control plane always points the readiness cluster at the TCP readiness port, so this proxy never reports ready. Upgrade its kuma-dp to 2.14 before upgrading the control plane.",
-				docUpgrade, qualified(it)+" (kuma-dp "+kd.Version+")")
+				docUpgrade, qualifiedNote(it, "kuma-dp "+kd.Version))
 		}
 		if feats := ins.DataplaneInsight.Metadata.Features; len(feats) > 0 {
 			a.checkDataplaneFeatures(it, ins, feats)
@@ -2843,18 +3396,72 @@ func (a *auditor) checkName(it resourceItem, kind string) {
 	}
 }
 
+// qualified is the example string of a flagged resource: its KRI (the
+// identifier Kuma 3.0 addresses it by) when the type has a 3.0 short name,
+// otherwise the legacy "mesh/name" display form — types removed in 3.0 are
+// not addressable by KRI, and neither are names containing "_" (Kuma decodes
+// a KRI by splitting on it). The zone comes from zoneOf: the kuma.io/zone
+// label a global CP stamps on KDS-synced resources, falling back to the
+// ZoneIngress/ZoneEgress spec field a zone CP serves without the label.
 func qualified(it resourceItem) string {
+	if kri := kriOf(it); kri != "" {
+		return kri
+	}
 	name := it.Name
 	if it.Mesh != "" {
 		name = it.Mesh + "/" + it.Name
 	}
-	// On a global CP, resources synced from zones carry kuma.io/zone. Append it as a
-	// parsable suffix so the report can attribute (and filter) the finding by zone.
-	// The mesh stays the leading segment, so mesh attribution is unaffected.
-	if z := it.Labels["kuma.io/zone"]; z != "" {
+	if z := zoneOf(it); z != "" {
 		name += " [zone:" + z + "]"
 	}
 	return name
+}
+
+// qualifiedNote is qualified with an annotation (the kuma-dp or CoreDNS
+// version, the field a Mesh setting lives in).
+func qualifiedNote(it resourceItem, note string) string {
+	return qualified(it) + " (" + note + ")"
+}
+
+// refNote annotates a resource example (the roles a binding grants, the
+// types a rule names).
+func refNote(ref, note string) string {
+	return ref + " (" + note + ")"
+}
+
+// mtlsProviders maps a 2.x `mesh.mtls` backend type to the MeshIdentity
+// provider that replaces it on 3.0.
+var mtlsProviders = map[string]string{
+	"builtin":     "Bundled",
+	"provided":    "Bundled with bundled.ca",
+	"vault":       "Extension vault",
+	"acmpca":      "Extension acmpca",
+	"certmanager": "Extension certmanager",
+}
+
+// mtlsNote is the `mtls` field annotation naming each backend and the
+// MeshIdentity provider it maps to. An undecodable backend is omitted; a backend
+// with an unknown type is listed without a mapping.
+func mtlsNote(backends []json.RawMessage) string {
+	parts := make([]string, 0, len(backends))
+	for _, raw := range backends {
+		var b struct {
+			Name string `json:"name"`
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(raw, &b) != nil {
+			continue
+		}
+		part := b.Name + " " + b.Type
+		if p, ok := mtlsProviders[b.Type]; ok {
+			part += " -> " + p
+		}
+		parts = append(parts, strings.TrimSpace(part))
+	}
+	if len(parts) == 0 {
+		return "mtls"
+	}
+	return "mtls: " + strings.Join(parts, ", ")
 }
 
 func hasJSON(raw json.RawMessage) bool {
@@ -2884,6 +3491,10 @@ type meshSpec struct {
 	MeshServices *struct {
 		Mode string `json:"mode"`
 	} `json:"meshServices"`
+	// SkipCreatingInitialPolicies is present-but-nil when the key is absent and
+	// non-nil (empty or populated) when the Mesh carries it: 3.0 removes the
+	// field, so any presence is flagged.
+	SkipCreatingInitialPolicies []string `json:"skipCreatingInitialPolicies"`
 }
 
 type policySpec struct {
@@ -3299,17 +3910,14 @@ grep -rnE 'KUMA_MODE=.?standalone|^\s*mode:\s*standalone' /etc/systemd/system /e
 			"created `mesh-timeout-*`, `mesh-circuit-breaker-all-*` and `mesh-retry-all-*`. " +
 			"Existing meshes keep theirs, and timeouts and circuit breakers keep the same values " +
 			"without them, but a mesh with no MeshRetry does not retry. Apply your own MeshRetry " +
-			"to meshes created after the upgrade, and drop `skipCreatingInitialPolicies` from Mesh " +
-			"manifests.",
+			"to meshes created after the upgrade (meshes still carrying " +
+			"`skipCreatingInitialPolicies` are flagged by the audit).",
 		Command: `# Add -H "Authorization: Bearer $TOKEN" when the API needs a token.
 # (1) "1s" means the CP follows the 2.x default
 curl -s http://<cp-address>:5681/config | jq -r '.xdsServer.dataplaneConfigurationRefreshInterval'
 
 # (3) Kubernetes: 0 or empty means no limit, so every sidecar without the annotation drops to 2 workers
-curl -s http://<cp-address>:5681/config | jq -r '.runtime.kubernetes.injector.sidecarContainer.resources.limits.cpu'
-
-# (4) Meshes still carrying skipCreatingInitialPolicies
-kumactl get meshes -o json | jq -r '.items[] | select(.skipCreatingInitialPolicies) | .name'`,
+curl -s http://<cp-address>:5681/config | jq -r '.runtime.kubernetes.injector.sidecarContainer.resources.limits.cpu'`,
 	},
 	{
 		Title: "Drop removed kuma-dp flags and settings",
@@ -3361,6 +3969,21 @@ done
 # For each certificate: needs "CA:TRUE" and "Certificate Sign", must not show "Key Agreement"
 openssl x509 -in ca.crt -noout -ext basicConstraints,keyUsage`,
 	},
+	{
+		Title: "Fix MeshRetry manifests carrying legacy Retry fields",
+		Detail: "3.0 rejects a policy write that carries a field outside its schema (`unknown field`), while 2.x " +
+			"silently dropped such fields. `MeshRetry` never had the legacy `Retry` conf fields, so a manifest that " +
+			"copied a Retry conf carries `http.retriableStatusCodes`, `http.retriableMethods` and/or " +
+			"`tcp.maxConnectAttempts`: it applies on 2.14 with the fields dropped (and no effect), and the first " +
+			"re-apply after the upgrade fails with `400`. The stored resources read back without the fields — the " +
+			"drop happens at write time — so this cannot be seen from the control-plane API and the tool cannot " +
+			"detect it for you; audit the manifests and GitOps sources instead. Replace the two `retriable*` fields " +
+			"with numeric `http.retryOn` items (`\"500\"`) and `HttpMethod<Method>` conditions, and spell the TCP " +
+			"field `maxConnectAttempt` (singular); renaming it makes the value apply, which changes behavior on 2.14 " +
+			"already, and a `tcp` section has to set it.",
+		Command: `# Find MeshRetry manifests still naming legacy Retry fields
+grep -rnE 'retriableStatusCodes|retriableMethods|maxConnectAttempts' --include='*.yaml' --include='*.yml' --include='*.json' .`,
+	},
 }
 
 // kubernetesManualChecks are appended only when the audit observed Kubernetes in
@@ -3369,16 +3992,17 @@ openssl x509 -in ca.crt -noout -ext basicConstraints,keyUsage`,
 var kubernetesManualChecks = []ManualCheck{
 	{
 		Title: "Replace the `kuma.io/mesh` annotation with the `kuma.io/mesh` label",
-		Detail: "On Kubernetes a Pod or Namespace is bound to a non-default mesh through " +
-			"`kuma.io/mesh`, which can be set as either an annotation or a label. Kuma 2.x " +
-			"still reads the annotation but logs a deprecation warning; 3.0 honors only the " +
-			"label. The control-plane API exposes only the resolved mesh name, not which " +
-			"metadata field set it, so the tool cannot detect this for you. You have to " +
-			"inspect the cluster objects directly. Move every `kuma.io/mesh` annotation to a " +
-			"label with the same value on Pods, Namespaces, and any other namespaced Kuma " +
-			"resource. The command below lists offenders; empty output means there is " +
-			"nothing left to fix.",
-		Command: `kubectl get ns,pods -A -o json | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != "")) | join("/")'`,
+		Detail: "On Kubernetes a Pod, Namespace, Service or Gateway API HTTPRoute is bound to a " +
+			"non-default mesh through `kuma.io/mesh`, which can be set as either an annotation " +
+			"or a label. Kuma 2.x still reads the annotation but logs a deprecation warning; " +
+			"3.0 honors only the label, so an annotated Service generates its MeshService in the " +
+			"wrong mesh and an annotated HTTPRoute is converted into the wrong mesh. The " +
+			"control-plane API exposes only the resolved mesh name, not which metadata field " +
+			"set it, so the tool cannot detect this for you. You have to inspect the cluster " +
+			"objects directly. Move every `kuma.io/mesh` annotation to a label with the same " +
+			"value. The command below lists offenders (the HTTPRoute query is skipped when the " +
+			"Gateway API CRDs are not installed); empty output means there is nothing left to fix.",
+		Command: `{ kubectl get ns,pods,services -A -o json; if kubectl api-resources --api-group=gateway.networking.k8s.io -o name | grep -Fxq 'httproutes.gateway.networking.k8s.io'; then kubectl get httproutes.gateway.networking.k8s.io -A -o json; fi; } | jq -r '.items[] | select(.metadata.annotations["kuma.io/mesh"]) | [.kind, .metadata.namespace, .metadata.name] | map(select(. != null and . != "")) | join("/")'`,
 	},
 	{
 		Title: "Drop the `kuma.io/tags` Pod annotation",
@@ -3536,7 +4160,7 @@ func (a *auditor) checkReservedLabels(it resourceItem, ref string) {
 	if keys := unknownReservedKeys(it.Labels, cpStampedLabels); len(keys) > 0 {
 		a.rep.addDoc(blocker, "Reserved labels", it.Type+" carries a reserved label 3.0 rejects",
 			"3.0 rejects creating or updating a resource with a `kuma.io/` or `k8s.kuma.io/` label it does not know (for example `kuma.io/service`, `kuma.io/protocol`, `kuma.io/instance`, `k8s.kuma.io/service-port`), through the API and the Kubernetes webhook alike. The stored resource keeps working, but re-applying it (GitOps, `kumactl apply`) fails. Remove the label, or move it outside the reserved prefixes.",
-			docPolicies, ref+" ("+strings.Join(keys, ", ")+")")
+			docPolicies, refNote(ref, strings.Join(keys, ", ")))
 	}
 }
 
@@ -3607,7 +4231,7 @@ func (s selectorSpec) labelSets() []map[string]string {
 
 // addSelectorOnRemovedLabel flags a resource whose selectors key on a reserved
 // label 3.0 no longer sets, which then matches nothing.
-func (a *auditor) addSelectorOnRemovedLabel(typ, ref string, sets ...map[string]string) {
+func (a *auditor) addSelectorOnRemovedLabel(typ string, ref string, sets ...map[string]string) {
 	merged := map[string]string{}
 	for _, s := range sets {
 		maps.Copy(merged, s)
@@ -3615,7 +4239,7 @@ func (a *auditor) addSelectorOnRemovedLabel(typ, ref string, sets ...map[string]
 	if keys := unknownReservedKeys(merged, nil); len(keys) > 0 {
 		a.rep.addDoc(blocker, "Reserved labels", typ+" selects on a label 3.0 no longer sets",
 			"3.0 no longer puts `kuma.io/service`, `kuma.io/proxy-type`, `kuma.io/gateway` or any other reserved label outside its registry on Dataplanes and services, so a selector keyed on one (targetRef or backendRef `labels`, MeshService `dataplaneLabels`, MeshMultiZoneService `meshService` labels, MeshLoadBalancingStrategy `affinityTags`) matches nothing after the upgrade. Select on your own labels, `kuma.io/workload` or `kuma.io/display-name` instead.",
-			docPolicies, ref+" ("+strings.Join(keys, ", ")+")")
+			docPolicies, refNote(ref, strings.Join(keys, ", ")))
 	}
 }
 
@@ -3658,10 +4282,123 @@ func (a *auditor) checkExternalServiceIdentity(ctx context.Context) error {
 	}
 	for _, m := range slices.Sorted(maps.Keys(a.externalServiceMeshes)) {
 		if !withIdentity[m] {
+			// EXC:FILE011:a synthetic Mesh must obey the same zone stamping/suppression the listed ones get
+			meshItem := []resourceItem{{Type: "Mesh", Name: m}}
+			a.stampZone(meshItem)
 			a.rep.addDoc(blocker, "MeshIdentity coverage", "Mesh has MeshExternalServices but no MeshIdentity",
 				"3.0 gives a client proxy without a workload identity no cluster for a MeshExternalService, so its requests fail locally with a 503 (`cluster_not_found`). Create a MeshIdentity in this mesh that selects every proxy calling a MeshExternalService before upgrading.",
-				docMeshIdentity, m)
+				docMeshIdentity, qualified(meshItem[0]))
 		}
 	}
 	return nil
+}
+
+type passthroughMatch struct {
+	Type     string `json:"type"`
+	Value    string `json:"value"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+}
+
+// passthroughChain identifies the filter chain a MeshPassthrough match resolves to on
+// 3.0 (kumahq/kuma release-3.0 meshpassthrough/api/v1alpha1/conflicts.go): tcp and
+// mysql share a chain class, as do http, http2, grpc and anything unrecognized; IPs
+// and CIDRs key on the canonical prefix, TLS domains on the SNI.
+type passthroughChain struct {
+	class   string
+	port    int
+	address string
+	ipv6    bool
+	sni     string
+}
+
+// passthroughChainConflict returns the first pair of matches 3.0 rejects because they
+// resolve to the same filter chain, or "" when there is none. Matches the generator
+// cannot build a chain from are skipped, other checks report them.
+func passthroughChainConflict(matches []passthroughMatch) string {
+	type owner struct{ protocol, value string }
+	owners := map[passthroughChain]owner{}
+	for _, m := range matches {
+		chain, ok := passthroughChainOf(m)
+		// L7 domains on one port merge as virtual hosts, and 2.14 already rejects
+		// mixed L7 protocols on a port, so they never conflict in a stored policy
+		if !ok || (m.Type == "Domain" && chain.class == "http") {
+			continue
+		}
+		candidate := owner{protocol: m.Protocol, value: m.Value}
+		first, used := owners[chain]
+		switch {
+		case !used:
+			owners[chain] = candidate
+		case first == candidate:
+		case first.protocol != candidate.protocol:
+			return fmt.Sprintf("protocols %s and %s produce the same filter chain for %s", first.protocol, candidate.protocol, chain)
+		default:
+			return fmt.Sprintf("matches %q and %q produce the same filter chain for %s", first.value, candidate.value, chain)
+		}
+	}
+	return ""
+}
+
+func passthroughChainOf(m passthroughMatch) (passthroughChain, bool) {
+	chain := passthroughChain{class: "http", port: m.Port}
+	switch m.Protocol {
+	case "tls":
+		chain.class = "tls"
+	case "tcp", "mysql":
+		chain.class = "tcp"
+	}
+	switch m.Type {
+	case "IP":
+		ip := net.ParseIP(m.Value)
+		if ip == nil {
+			return chain, false
+		}
+		// the value as written decides the listener, so an IPv4-mapped form stays IPv6
+		chain.ipv6 = strings.Contains(m.Value, ":")
+		bits := "/32"
+		if chain.ipv6 {
+			bits = "/128"
+		}
+		chain.address = canonicalCIDR(m.Value + bits)
+	case "CIDR":
+		if _, _, err := net.ParseCIDR(m.Value); err != nil {
+			return chain, false
+		}
+		chain.address = canonicalCIDR(m.Value)
+		chain.ipv6 = strings.Contains(chain.address, ":")
+	case "Domain":
+		if m.Port == 0 && !strings.HasPrefix(m.Value, "*") {
+			return chain, false
+		}
+		if chain.class == "tls" {
+			chain.sni = m.Value
+		}
+	default:
+		return chain, false
+	}
+	return chain, true
+}
+
+// canonicalCIDR drops host bits and collapses IPv4-mapped IPv6 to IPv4, the prefix
+// range Envoy matches on.
+func canonicalCIDR(value string) string {
+	if _, ipNet, err := net.ParseCIDR(value); err == nil {
+		return ipNet.String()
+	}
+	return value
+}
+
+func (c passthroughChain) String() string {
+	target := "domains"
+	switch {
+	case c.sni != "":
+		target = fmt.Sprintf("domain %q", c.sni)
+	case c.address != "":
+		target = c.address
+	}
+	if c.port == 0 {
+		return target + " on all ports"
+	}
+	return fmt.Sprintf("%s on port %d", target, c.port)
 }

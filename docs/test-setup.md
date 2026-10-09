@@ -1,7 +1,7 @@
-# `kuma3-preflight` — Real-CP Test Environment Setup
+# `kong-mesh-v3-preflight` — Real-CP Test Environment Setup
 
 Reproducible runbook to stand up the exact k3d Kuma CP + fixtures used to manually
-verify `cmd/kuma3-preflight` against a real control plane (see
+verify `cmd/kong-mesh-v3-preflight` against a real control plane (see
 `test-results.md` "Real control-plane execution" addendum).
 
 All manifests are embedded inline — no external files needed. Tested 2026-06-16 on the
@@ -16,7 +16,7 @@ still valid and detectable).
 ## 1. Build the binary
 
 ```bash
-go build -o /tmp/kuma3-preflight ./cmd/kuma3-preflight
+go build -o /tmp/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight
 ```
 
 ## 2. Cluster + CP
@@ -252,12 +252,12 @@ kubectl rollout status deploy/reachable-app -n k3pf-test
 
 ```bash
 # All meshes
-/tmp/kuma3-preflight --address http://localhost:5681 --timeout 30s --output /tmp/k3pf-all.md
+/tmp/kong-mesh-v3-preflight --address http://localhost:5681 --timeout 30s --output /tmp/k3pf-all.md
 echo "exit=$?"; cat /tmp/k3pf-all.md
 
 # Single mesh / edge cases
-/tmp/kuma3-preflight --address http://localhost:5681 --mesh clean --timeout 15s   # BUG-1 false positive
-/tmp/kuma3-preflight --address http://localhost:5681 --mesh ghost --timeout 15s   # exit 2, FAILED stamp
+/tmp/kong-mesh-v3-preflight --address http://localhost:5681 --mesh clean --timeout 15s   # BUG-1 false positive
+/tmp/kong-mesh-v3-preflight --address http://localhost:5681 --mesh ghost --timeout 15s   # exit 2, FAILED stamp
 ```
 
 ### Quick API-shape checks (root-cause evidence)
@@ -343,7 +343,7 @@ probes:
   endpoints: [{inboundPath: /health, inboundPort: 8080, path: /health}]
 EOF
 
-/tmp/kuma3-preflight --address http://localhost:5681 --output /tmp/uni-all.md; echo "exit=$?"
+/tmp/kong-mesh-v3-preflight --address http://localhost:5681 --output /tmp/uni-all.md; echo "exit=$?"
 ```
 
 **Universal vs Kubernetes differences (verified):**

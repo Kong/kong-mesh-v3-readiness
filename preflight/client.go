@@ -338,7 +338,9 @@ type resourceItem struct {
 	Name   string
 	Labels map[string]string
 	Spec   json.RawMessage
-	raw    json.RawMessage
+	// EXC:FILE011:local on a zone CP, no stored zone label, CP zone unreadable -> 3.0 mis-resolves its KRI, keep the legacy string
+	zoneUnknown bool
+	raw         json.RawMessage
 }
 
 // UnmarshalJSON captures the meta envelope, the nested spec (new policies), and

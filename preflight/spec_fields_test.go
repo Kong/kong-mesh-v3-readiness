@@ -1,6 +1,9 @@
 package preflight
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func policyBody(t *testing.T, typ string, spec map[string]any, labels map[string]any) string {
 	t.Helper()
@@ -131,6 +134,53 @@ func TestMeshPassthroughDomainPort(t *testing.T) {
 			m := auditResponses(t, map[string]string{"/meshpassthroughs": policyBody(t, "MeshPassthrough", spec, nil)})
 			if _, got := findFinding(m, "blocker", "MeshPassthrough", title); got != tc.want {
 				t.Errorf("flagged = %v, want %v\nfindings: %+v", got, tc.want, m.Findings)
+			}
+		})
+	}
+}
+
+// TestMeshPassthroughSameFilterChain mirrors the 3.0 duplicate-filter-chains
+// validation (kumahq/kuma release-3.0 meshpassthrough testdata).
+func TestMeshPassthroughSameFilterChain(t *testing.T) {
+	const title = "MeshPassthrough matches produce the same filter chain"
+	m := func(typ, value, protocol string, port int) map[string]any {
+		match := map[string]any{"type": typ, "value": value, "protocol": protocol}
+		if port != 0 {
+			match["port"] = port
+		}
+		return match
+	}
+	for _, tc := range []struct {
+		name    string
+		matches []any
+		want    string
+	}{
+		{"IP and its /32 CIDR", []any{m("IP", "10.0.0.1", "tcp", 8443), m("CIDR", "10.0.0.1/32", "tcp", 8443)}, `matches "10.0.0.1" and "10.0.0.1/32" produce the same filter chain for 10.0.0.1/32 on port 8443`},
+		{"IP tcp and CIDR mysql", []any{m("IP", "10.0.0.1", "tcp", 3306), m("CIDR", "10.0.0.1/32", "mysql", 3306)}, "protocols tcp and mysql produce the same filter chain for 10.0.0.1/32 on port 3306"},
+		{"tcp and mysql on one IP", []any{m("IP", "10.1.1.1", "tcp", 3306), m("IP", "10.1.1.1", "mysql", 3306)}, "protocols tcp and mysql produce the same filter chain"},
+		{"CIDRs with the same canonical prefix", []any{m("CIDR", "10.0.0.1/24", "http", 8080), m("CIDR", "10.0.0.0/24", "grpc", 8080)}, "protocols http and grpc produce the same filter chain for 10.0.0.0/24 on port 8080"},
+		{"IPv6 IP and /128 CIDR", []any{m("IP", "0:0:0:0:0:0:0:1", "tls", 443), m("CIDR", "::1/128", "tls", 443)}, "for ::1/128 on port 443"},
+		{"http and grpc domains on one port are left to 2.14 validation", []any{m("Domain", "a.example.com", "http", 80), m("Domain", "b.example.com", "grpc", 80)}, ""},
+		{"http domains on one port merge", []any{m("Domain", "a.example.com", "http", 80), m("Domain", "b.example.com", "http", 80)}, ""},
+		{"tls domains get a chain each", []any{m("Domain", "a.example.com", "tls", 443), m("Domain", "b.example.com", "tls", 443)}, ""},
+		{"same IP on different ports", []any{m("IP", "10.0.0.1", "tcp", 8443), m("CIDR", "10.0.0.1/32", "tcp", 9443)}, ""},
+		{"tls and tcp on one IP", []any{m("IP", "10.0.0.1", "tls", 443), m("IP", "10.0.0.1", "tcp", 443)}, ""},
+		{"IPv4-mapped IP stays IPv6", []any{m("IP", "::ffff:10.0.0.1", "tcp", 80), m("IP", "10.0.0.1", "tcp", 80)}, ""},
+		{"wider CIDR is a different chain", []any{m("IP", "10.0.0.1", "tcp", 80), m("CIDR", "10.0.0.0/24", "tcp", 80)}, ""},
+		{"invalid IP is skipped", []any{m("IP", "not-an-ip", "tcp", 80), m("IP", "not-an-ip", "mysql", 80)}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := map[string]any{
+				"targetRef": map[string]any{"kind": "Mesh"},
+				"default":   map[string]any{"passthroughMode": "Matched", "appendMatch": tc.matches},
+			}
+			r := auditResponses(t, map[string]string{"/meshpassthroughs": policyBody(t, "MeshPassthrough", spec, nil)})
+			f, got := findFinding(r, "blocker", "MeshPassthrough", title)
+			if got != (tc.want != "") {
+				t.Fatalf("flagged = %v, want %v\nfindings: %+v", got, tc.want != "", r.Findings)
+			}
+			if got && !strings.Contains(strings.Join(f.Examples, "\n"), tc.want) {
+				t.Errorf("examples %q, want substring %q", f.Examples, tc.want)
 			}
 		})
 	}

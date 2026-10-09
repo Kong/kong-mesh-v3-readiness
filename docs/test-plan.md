@@ -1,10 +1,10 @@
-# Manual Test Plan — `kuma3-preflight`
+# Manual Test Plan — `kong-mesh-v3-preflight`
 
 Produced via the three-persona method (Bach / Kaner / Hendrickson), drafted in parallel and merged. Manual verification only — these are run by a human (or a thin stub-server harness), not automated here.
 
 ## Scope
 
-`cmd/kuma3-preflight` (`main.go`, `client.go`, `audit.go`, `report.go`) — a stdlib-only Go CLI that audits a running Kuma control plane over its REST API (default `http://localhost:5681`) and emits a JSON or self-contained HTML pre-upgrade report for Kuma 3.0 (default HTML; Markdown is `--classify`-only). Exit codes: `0` clean · `1` blockers found · `2` operational error · `3` audit inconclusive (a collection could not be read, or a resource spec failed to parse). Flags: `--address`, `--token`, `--mesh`, `--output`, `--timeout`.
+`cmd/kong-mesh-v3-preflight` (`main.go`, `client.go`, `audit.go`, `report.go`) — a stdlib-only Go CLI that audits a running Kuma control plane over its REST API (default `http://localhost:5681`) and emits a JSON or self-contained HTML pre-upgrade report for Kuma 3.0 (default HTML; Markdown is `--classify`-only). Exit codes: `0` report produced (any status — findings live in the report) · `2` operational error. Flags: `--address`, `--token`, `--mesh`, `--output`, `--timeout`.
 
 Most cases use a **local stub HTTP server** that mimics the CP REST API (the cheapest way to drive edge responses); a few want a real Kuma 2.x CP.
 
@@ -12,7 +12,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 
 ## Pre-conditions
 
-- Built binary: `go build -o /tmp/kuma3-preflight ./cmd/kuma3-preflight`
+- Built binary: `go build -o /tmp/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight`
 - A scriptable stub HTTP server (any language) able to: serve `GET /`, `GET /meshes`, the legacy/new collection paths, `/dataplanes`, `/zoneingresses`, `/zoneegresses`; control status codes, bodies, delays, `next` cursors, content-type — and serialize spec per the fidelity note above (inline for core/legacy/Dataplane, nested `spec` for new policies).
 - For compatibility / serialization cases (TC-15, TC-23): a real Kuma 2.x CP (k3d setup: `docs/test-setup.md`).
 - The 3.0 migration source of truth: `docs/deprecated-features.md`.
@@ -24,7 +24,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-1: Wrong endpoint returns HTTP 200 with a non-Kuma body → false green
 **Setup:** Stub where `GET /` returns `200` with an HTML login page (or `{}`). All collections empty.
 **Steps:**
-1. Run `kuma3-preflight --address http://127.0.0.1:<port>`.
+1. Run `kong-mesh-v3-preflight --address http://127.0.0.1:<port>`.
 2. Inspect header, findings, exit code.
 **Expected:** Pointing at a non-CP/wrong path is an operational error (exit 2): "could not identify a Kuma control plane".
 **Oracle:** FAIL if it prints `Control plane: Kuma` (the default when `product` is empty), "Meshes scanned: all", 0 findings, ✅, exit 0. A preflight that green-lights a non-CP is worse than useless.
@@ -42,7 +42,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-3: Token never leaks to stderr/report/file
 **Setup:** (a) `--token SUPERSECRET` against a CP whose `GET /` returns `401` with body `{"error":"token SUPERSECRET rejected"}`; (b) a TLS handshake failure with token set.
 **Steps:**
-1. Run, capturing combined output: `kuma3-preflight ... --token SUPERSECRET 2>&1 | grep SUPERSECRET`.
+1. Run, capturing combined output: `kong-mesh-v3-preflight ... --token SUPERSECRET 2>&1 | grep SUPERSECRET`.
 2. Repeat writing to `--output r.md`; grep the file.
 **Expected:** Token appears nowhere — not stderr, not the report, not error strings.
 **Oracle:** `grep` must return empty. Note the real risk: `getJSON` echoes up to 512 bytes of the **response body** into the error; a CP that reflects the token in its 401 body would surface it. FAIL if the token (from header) ever shows, or a reflected-token body is printed unredacted.
@@ -68,7 +68,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 **Setup:** `/dataplanes` spans 3 pages; 40 dataplanes on later pages carry `reachableServices` (BLOCKER). Page 1 → 200; page 2 → 401 (or 500), or page 2 hangs past the timeout.
 **Steps:** Run; capture exit code and whether the report includes only page-1 data.
 **Expected:** Any non-200/404 (or timeout) *during* pagination aborts with exit 2 naming the collection/phase; the report does not present partial results as authoritative.
-**Oracle:** FAIL if page-1 findings are emitted with exit 0/1 as if the whole fleet was scanned. Verify the error fires from *inside* the loop, not only on the first request.
+**Oracle:** FAIL if page-1 findings are emitted with exit 0 as if the whole fleet was scanned. Verify the error fires from *inside* the loop, not only on the first request.
 **Source:** Kaner — reliability under partial failure; Hendrickson — paginating→stalled→abort transition.
 
 #### TC-7: Overall `--timeout` is authoritative
@@ -106,15 +106,15 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-11: 404 on a collection — "absent" vs "not audited" must be distinguishable
 **Setup:** Real or stub CP with 50 `TrafficPermission`s, but a proxy returns 404 for the `traffic-permissions` path only (auth rule, moved endpoint, or `--address` subpath typo). Compare against a genuinely empty CP.
 **Steps:** Run both; diff the reports and exit codes.
-**Expected:** The operator can tell `traffic-permissions` was not actually audited: the 404 run emits a `## Coverage gaps` section, a ⚠️ verdict, and **exit 3** (inconclusive); the empty run is ✅ exit 0.
-**Oracle:** FAIL if the 50-policies-behind-404 run and the genuinely-empty run produce byte-identical clean reports, or both exit 0. The audit's promise ("nothing blocks your upgrade") must not be asserted on evidence it never gathered. **This is the highest-harm false negative.**
+**Expected:** The operator can tell `traffic-permissions` was not actually audited: the 404 run emits a `## Coverage gaps` section and a ⚠️ verdict (report status `inconclusive`); the empty run is ✅ `clean`.
+**Oracle:** FAIL if the 50-policies-behind-404 run and the genuinely-empty run produce byte-identical clean reports. The audit's promise ("nothing blocks your upgrade") must not be asserted on evidence it never gathered. **This is the highest-harm false negative.**
 **Source:** Kaner — data integrity / false negative.
 
 #### TC-12: Malformed resource spec is not silently skipped
 **Setup:** Stub returns a policy whose `spec` is structurally valid JSON but a typed field is wrong (e.g. a `*bool` sent as `"true"`, or `from` sent as an object not array), so `json.Unmarshal` into the typed struct errors.
 **Steps:** Run; check whether that policy is flagged or silently dropped.
-**Expected:** A resource the tool fails to parse is surfaced under `Unparseable resources` (warning), counted in the header, and forces **exit 3** (inconclusive) — never silently omitted.
-**Oracle:** FAIL if the unparseable policy disappears from the report, or the run exits 0 despite an unparseable resource (it could hide a blocker).
+**Expected:** A resource the tool fails to parse is surfaced under `Unparseable resources` (warning), counted in the header, and marks the run **inconclusive** — never silently omitted.
+**Oracle:** FAIL if the unparseable policy disappears from the report, or the run reports `clean` despite an unparseable resource (it could hide a blocker).
 **Source:** Bach — Purpose oracle (silent false-negative on a gate); garbage-data coverage.
 
 #### TC-13: Presence-based settings detection across CP versions
@@ -134,7 +134,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-15: Happy-path coverage — a fully legacy mesh and a fully clean mesh
 **Setup:** (a) A mesh exercising every category: ≥1 of each legacy resource, inline mTLS + each `routing.*` + metrics/tracing/logging + constraints, a `from` policy, a bad targetRef, a dataplane with `reachableServices` and one with `networking.gateway`, plus ZoneIngress/Egress. (b) A mesh in `meshServices.mode: Exclusive` with only new policies, no legacy anything.
 **Steps:** Run against each.
-**Expected:** (a) Every check fires with correct severity; exit 1. (b) No blockers, only the manual-checks list and INFO; exit 0, ✅.
+**Expected:** (a) Every check fires with correct severity; report status `blockers`. (b) No blockers, only the manual-checks list and INFO; report status `clean`, ✅.
 **Oracle:** FAIL if any expected finding is missing/mis-severitied in (a), or any false blocker appears in (b). This is the primary feature tour.
 **Source:** Hendrickson — Feature/Data Tour; merge.
 
@@ -208,15 +208,15 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-25: `--address` path prefix is honored (behind an ingress)
 **Setup:** Stub serving the CP under a path prefix: `GET /kuma/`, `GET /kuma/meshes`, `GET /kuma/<collection>`. Run `--address http://127.0.0.1:<port>/kuma`. Log every request path the stub receives.
 **Steps:** Run a full audit; capture the request paths.
-**Expected:** Requests hit `/kuma/meshes`, `/kuma/dataplanes`, … (prefix preserved); pagination cursors are not double-prefixed. A wrong subpath now reaches the server and 404s → exit 2/3 rather than a false green.
+**Expected:** Requests hit `/kuma/meshes`, `/kuma/dataplanes`, … (prefix preserved); pagination cursors are not double-prefixed. A wrong subpath now reaches the server and 404s → exit 0 with status `inconclusive`, or exit 2 when `/meshes` itself 404s, rather than a false green.
 **Oracle:** FAIL if any request drops the `/kuma` prefix (hits host root), or a server cursor already carrying `/kuma/...` gets it prepended twice.
 **Source:** real-CP run (BUG-4).
 
 #### TC-26: Exit-code matrix
 **Setup:** Drive each terminal state: clean Exclusive mesh; a mesh with a blocker; an unreachable CP; a 404'd collection; an unparseable resource.
-**Steps:** Run each; record `$?`.
-**Expected:** `0` clean · `1` blockers · `2` operational error (unreachable / bad flag / write failure) · `3` inconclusive (coverage gap OR unparseable). Inconclusive (3) takes precedence over blockers (1) because a partial audit is not fully trustworthy.
-**Oracle:** FAIL if any state maps to the wrong code — especially a 404'd collection or unparseable resource yielding `0`, which a CI `$?` gate would read as success.
+**Steps:** Run each; record `$?` and the report's `status`.
+**Expected:** `0` whenever a report was produced — clean, blockers, or inconclusive (coverage gap OR unparseable); `2` operational error (unreachable / bad flag / write failure). Findings live in the report: inconclusive outranks blockers in `status` because a partial audit is not fully trustworthy.
+**Oracle:** FAIL if a terminal state maps to the wrong code — especially an unreachable CP, bad flag, or write failure yielding `0`, or a produced report yielding non-zero. Gate readiness on the report's `status` field, not `$?`.
 **Source:** merge; Kaner — exit-code trust for automation.
 
 ## Basic / smoke manual tests
@@ -225,12 +225,12 @@ Run these first — they confirm the tool works at all before the edge-case TCs.
 
 | # | Action | Expected |
 |---|--------|----------|
-| B-1 | `go build -o /tmp/kuma3-preflight ./cmd/kuma3-preflight` | Builds clean, no errors. |
-| B-2 | `kuma3-preflight --help` (or `-h`) | Usage lists `--address --token --mesh --output --timeout` with defaults; exit 0. |
-| B-3 | Port-forward CP, run with no flags (default `:5681`) | Connects, prints a report with the CP product/version header; exit 0/1/3 per content. |
-| B-4 | Run against a **clean** Exclusive mesh only (`--mesh clean`) | No `meshServices.mode` warning, no operator-authored blockers; `Meshes scanned: clean`. Note: the CP auto-creates `mesh-timeout-all-clean` defaults using `from`, so expect 2 system-marked blockers + exit 1 (see TC-24). A true `✅`/exit 0 requires a mesh with no CP-managed defaults. |
-| B-5 | Create one `TrafficPermission`, re-run | Exactly one `TrafficPermission (removed in 3.0)` blocker; exit 1. |
-| B-6 | Create one `MeshTrafficPermission` with `from`, re-run | One `… uses from` blocker; exit 1. |
+| B-1 | `go build -o /tmp/kong-mesh-v3-preflight ./cmd/kong-mesh-v3-preflight` | Builds clean, no errors. |
+| B-2 | `kong-mesh-v3-preflight --help` (or `-h`) | Usage lists `--address --token --mesh --output --timeout` with defaults; exit 0. |
+| B-3 | Port-forward CP, run with no flags (default `:5681`) | Connects, prints a report with the CP product/version header; exit 0 (report produced) or exit 2 on error. |
+| B-4 | Run against a **clean** Exclusive mesh only (`--mesh clean`) | No `meshServices.mode` warning, no operator-authored blockers; `Meshes scanned: clean`. Note: the CP auto-creates `mesh-timeout-all-clean` defaults using `from`, so expect 2 system-marked blockers in the report (see TC-24). A true `✅`/`clean` requires a mesh with no CP-managed defaults. |
+| B-5 | Create one `TrafficPermission`, re-run | Exactly one `TrafficPermission (removed in 3.0)` blocker in the report. |
+| B-6 | Create one `MeshTrafficPermission` with `from`, re-run | One `… uses from` blocker in the report. |
 | B-7 | Apply inline `mtls` on a mesh, re-run | `Inline mTLS on Mesh` blocker fires (validates inlined-spec parsing). |
 | B-8 | A mesh with `meshServices.mode` unset/Disabled | `meshServices.mode is not Exclusive` warning, current value shown. |
 | B-9 | `--output /tmp/report.html` | stderr `report written to /tmp/report.html`; file contains the same HTML as stdout. |
@@ -239,27 +239,27 @@ Run these first — they confirm the tool works at all before the edge-case TCs.
 | B-12 | Run twice, `diff` the two reports | Byte-identical (determinism). |
 | B-13 | Point `--address` at a closed port | exit 2, `connection refused`; no panic, no partial report. |
 | B-14 | Confirm the **manual checks** checklist renders | `## Manual checks` section present with the gateway-API / observability / inspect-API / pod-resources / HMAC-key / MES-zone-routing items. The **mesh-label** item (`kuma.io/mesh` annotation→label, with a `kubectl` validation command) is Kubernetes-only: it appears when the audit observed Kubernetes (a k8s standalone/zone/global, or a k8s zone behind a global) and is absent on a Universal-only run. (Unified-naming, inbound-tags, deltaXds, autoReachableServices, global-on-k8s, eBPF, Workload-grouping and legacy-CoreDNS moved to automated findings — see B-15/B-16/B-17.) |
-| B-15 | Confirm the **Control plane configuration** findings render from `GET /config` | Findings category `Control plane configuration`; blockers for global-on-k8s / autoReachableServices / eBPF, warnings for unified-naming / inbound-tags / deltaXds / KDS-watchdog / sidecar-containers off, and a **warning** when k8s `runtime.kubernetes.workloadLabels` is unset (kuma.io/workload falls back to the pod ServiceAccount). The warning does not gate CI (a fully-observed run with only warnings stays `clean`/exit 0). A CP that 404s `/config` yields a `/config` coverage gap, not a clean pass. The report's control-plane line shows the mode (read from `/config`). |
+| B-15 | Confirm the **Control plane configuration** findings render from `GET /config` | Findings category `Control plane configuration`; blockers for global-on-k8s / autoReachableServices / eBPF, warnings for unified-naming / inbound-tags / deltaXds / KDS-watchdog / sidecar-containers off, and a **warning** when k8s `runtime.kubernetes.workloadLabels` is unset (kuma.io/workload falls back to the pod ServiceAccount). The warning does not gate the report's verdict (a fully-observed run with only warnings stays `clean`). A CP that 404s `/config` yields a `/config` coverage gap, not a clean pass. The report's control-plane line shows the mode (read from `/config`). |
 | B-15b | Confirm **global CP fans out to zones** for the data-plane config checks | Against a `mode: global` CP, the audit keeps the global-on-k8s blocker for the global itself but sources the injector/experimental checks from each zone's config in `GET /zones+insights` (`ZoneInsight.subscriptions[].config`), so examples read `zone <name>: …`. A zone that reported no config (or a 404 on `/zones+insights`) is a coverage gap; a global with no zones emits an info finding. A directly-connected zone/standalone CP is audited from its own `/config` (examples unqualified). |
 | B-16 | Confirm **dataplane version** + **per-proxy metrics** + **workload-grouping** findings | `Dataplane version` warning for any proxy with `kumaCpCompatible: false` (from `/dataplanes+insights`); `Dataplane metrics` warning for any Dataplane with `spec.metrics`; `Workload grouping` blocker for any **Universal** Dataplane (`kuma.io/env != kubernetes`) missing the `kuma.io/workload` label. Preview/dev kuma-dp is reported compatible → no version warning. |
 | B-17 | Confirm **legacy-CoreDNS** detection (always-on + deep) | Always-on (no flag needed): the blocker `Dataplane uses the legacy embedded CoreDNS` fires for any connected dataplane in `/dataplanes+insights` that has `networking.transparentProxying` and a non-empty `dataplaneInsight.metadata.features` list without `feature-embedded-dns` (2.14 Universal kuma-dp on default config; Kubernetes sidecars advertise the feature by default and are not flagged unless the CP sets `builtinDNS.experimentalProxy: false`; an empty feature list is inconclusive and skipped), or that reports a `coredns` dependency (never persisted by 2.14; other CP versions may report it). One example per dataplane even when both signals match. Setting `KUMA_DNS_PROXY_PORT=15053` on the kuma-dp and restarting it clears the finding. Deep confirm: with `--inspect-dataplanes N` the audit fetches up to N config dumps and blocks on `envoy.filters.udp.dns_filter`; reports `Inspected … X of M` when sampled. With the flag at `0` (default) no config dumps are fetched and no Envoy-filter finding appears. Both signals are connected-proxy-only (a never-connected proxy has no insight); absence is not proof of a clean DNS path. |
 
 #### TC-27: Full expected-findings verification on a running cluster
 **Setup:** Provision the documented fixture cluster (`docs/test-setup.md`): on `default` — the 9 legacy resources, a `from` MeshTrafficPermission, a bad-targetRef MeshHTTPRoute, an injected Dataplane with `reachableServices`; Mesh `legacy` with all inline settings; Mesh `clean` in `meshServices.mode: Exclusive`. Note the CP also auto-creates `policy-role: system` defaults.
-**Steps:** Run `kuma3-preflight --output actual.md`; compare every finding against the expected set below (no missing, no extra, correct severity, correct mesh attribution). Re-run `--mesh legacy`, `--mesh clean`, `--mesh default` and confirm scoping isolates the right findings.
+**Steps:** Run `kong-mesh-v3-preflight --output actual.md`; compare every finding against the expected set below (no missing, no extra, correct severity, correct mesh attribution). Re-run `--mesh legacy`, `--mesh clean`, `--mesh default` and confirm scoping isolates the right findings.
 **Expected (golden finding-set):**
 - **Blockers** — each legacy resource on `default` (one per kind created); all 9 `legacy` Mesh-object settings (mTLS, metrics, tracing, logging, constraints, localityAwareLoadBalancing, routing.zoneEgress, defaultForbidMeshExternalServiceAccess, passthrough); the `from` MTP; the top-level `targetRef.kind=MeshService` MeshHTTPRoute; the Dataplane `reachableServices`; ZoneIngress/ZoneEgress if present; plus the CP system defaults' `from` (marked `(system …)`).
 - **Warnings** — `meshServices.mode is not Exclusive` for `default` and `legacy` (NOT `clean`); `to[].targetRef.kind=Mesh` and `proxyTypes` where present (incl. system defaults).
 - **Info** — sampled-dataplane inspection coverage; no zones connected (global CP).
-- **Header** — correct CP version; `Includes N CP-managed (policy-role: system) resource(s)`; exit 1.
-- **`clean` in isolation** — 0 *operator-authored* blockers and NO `meshServices.mode` warning. The CP-generated system defaults (`mesh-timeout-all-clean`, `mesh-gateways-timeout-all-clean`) use `from`/`to: Mesh`/`proxyTypes`, so `clean` still reports 2 system-marked blockers + warnings and **exit 1** (per the TC-24 decision: system policies are flagged, not skipped — the operator must update them before 3.0). A genuine exit-0/✅ is only reachable on a mesh with no CP-managed defaults.
+- **Header** — correct CP version; `Includes N CP-managed (policy-role: system) resource(s)`.
+- **`clean` in isolation** — 0 *operator-authored* blockers and NO `meshServices.mode` warning. The CP-generated system defaults (`mesh-timeout-all-clean`, `mesh-gateways-timeout-all-clean`) use `from`/`to: Mesh`/`proxyTypes`, so `clean` still reports 2 system-marked blockers + warnings (per the TC-24 decision: system policies are flagged, not skipped — the operator must update them before 3.0). A genuine `clean`/✅ is only reachable on a mesh with no CP-managed defaults.
 **Oracle:** Build the expected list explicitly from the fixtures and diff against `actual.md`. FAIL on any **missing** finding (false negative — the dangerous direction), any **extra/wrong-severity** finding (false positive / cry-wolf), any **mis-attributed mesh**, or `clean` being flagged `meshServices.mode is not Exclusive`. Do NOT treat `clean`'s system-default blockers as a failure — those are the decided TC-24 behavior. This is the end-to-end correctness gate the stub cannot fully provide.
 **Source:** real-CP run; merge — the user requirement to verify the complete finding-set on a live cluster.
 
 ## Risk areas (where bugs most likely hide)
 
 1. **Spec serialization split (TC-23) — highest harm, already bit once.** Core/legacy/Dataplane inline spec; new policies nest under `spec`. A check that reads only `spec` is a silent no-op against half the resources, and a `spec`-wrapping stub will pass it anyway. Any new check MUST be exercised against both encodings (prefer a real CP).
-2. **Failure-to-observe rendered as clean (TC-1, TC-6, TC-11, TC-12).** A non-CP, a mid-pagination failure, a 404'd collection, or an unparseable resource must never read as a clean pass — these now drive exit 2/3, not 0. For a gate whose whole job is "did I miss a blocker?", this is the dominant risk class.
+2. **Failure-to-observe rendered as clean (TC-1, TC-6, TC-11, TC-12).** A non-CP, a mid-pagination failure, a 404'd collection, or an unparseable resource must never read as a clean pass — these now drive exit 2, or exit 0 with report status `inconclusive`, never a false green. For a gate whose whole job is "did I miss a blocker?", this is the dominant risk class.
 3. **Server-controlled exhaustion / non-authoritative limits (TC-5, TC-7, TC-21).** Cursor cycle guard + page cap, `--timeout`-derived client timeout, and the 64 MiB body cap must hold; a hostile/large CP must not hang or OOM the client.
 4. **Untrusted input & output side-effects (TC-9, TC-19, TC-20).** `--mesh` path escaping, symlink refusal + atomic write, and the FAILED-stamp on a failed run.
 
@@ -272,13 +272,13 @@ Run these first — they confirm the tool works at all before the edge-case TCs.
 
 ## Resolved decisions (were open questions; now implemented)
 
-- **404 handling:** recorded as a Coverage gap and marked inconclusive (exit 3) — not silently zeroed. (TC-11)
+- **404 handling:** recorded as a Coverage gap and marked inconclusive — not silently zeroed. (TC-11)
 - **Index validation:** the tool asserts `GET /` returns a non-empty `version`; otherwise exit 2. (TC-1)
 - **`--mesh` not found:** hard error, exit 2. (TC-8)
 - **`--timeout` semantics:** authoritative; `http.Client.Timeout` is derived from it (no hidden 30s cap). (TC-7)
 - **System policies:** flagged and marked (operator must update before v3), not skipped. (TC-24)
 - **Output atomicity:** write-temp-then-rename, refuse symlinks, FAILED-stamp on failure. (TC-19, TC-20)
-- **Inconclusive exit code:** coverage gaps / unparseable resources → exit 3. (TC-26)
+- **Inconclusive report status:** coverage gaps / unparseable resources → report status `inconclusive`; the exit code stays `0` — findings and gaps live in the report, the exit code only reports execution. (TC-26)
 
 ## Open questions (still need a decision)
 
