@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -300,4 +301,58 @@ func TestValidAddress(t *testing.T) {
 func writeJSON(w http.ResponseWriter, body []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
+}
+
+func TestRunVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		wantExit int
+		wantOut  string
+	}{
+		{name: "subcommand", args: []string{"version"}, wantExit: 0, wantOut: "kong-mesh-v3-preflight dev\n"},
+		{name: "flag", args: []string{"--version"}, wantExit: 0, wantOut: "kong-mesh-v3-preflight dev\n"},
+		{name: "unknown positional", args: []string{"report"}, wantExit: 2, wantOut: ""},
+		{name: "extra positional", args: []string{"version", "now"}, wantExit: 2, wantOut: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldArgs, oldFlags, oldStdout := os.Args, flag.CommandLine, os.Stdout
+			t.Cleanup(func() {
+				os.Args, flag.CommandLine, os.Stdout = oldArgs, oldFlags, oldStdout
+			})
+
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatalf("os.Pipe: %v", err)
+			}
+			os.Stdout = w
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+			flag.CommandLine.SetOutput(os.Stderr)
+			os.Args = append([]string{"kong-mesh-v3-preflight"}, tc.args...)
+
+			got := run()
+			_ = w.Close()
+			out, err := io.ReadAll(r)
+			if err != nil {
+				t.Fatalf("reading stdout: %v", err)
+			}
+
+			if got != tc.wantExit {
+				t.Errorf("run() exit = %d, want %d", got, tc.wantExit)
+			}
+			if string(out) != tc.wantOut {
+				t.Errorf("stdout = %q, want %q", out, tc.wantOut)
+			}
+		})
+	}
+}
+
+func TestToolVersionPrefersReleaseStamp(t *testing.T) {
+	old := version
+	t.Cleanup(func() { version = old })
+
+	version = "1.2.3"
+	if got := toolVersion(); got != "1.2.3" {
+		t.Errorf("toolVersion() = %q, want %q", got, "1.2.3")
+	}
 }
