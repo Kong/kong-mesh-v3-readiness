@@ -160,7 +160,7 @@ func TestMeshPassthroughSameFilterChain(t *testing.T) {
 		{"tcp and mysql on one IP", []any{m("IP", "10.1.1.1", "tcp", 3306), m("IP", "10.1.1.1", "mysql", 3306)}, "protocols tcp and mysql produce the same filter chain"},
 		{"CIDRs with the same canonical prefix", []any{m("CIDR", "10.0.0.1/24", "http", 8080), m("CIDR", "10.0.0.0/24", "grpc", 8080)}, "protocols http and grpc produce the same filter chain for 10.0.0.0/24 on port 8080"},
 		{"IPv6 IP and /128 CIDR", []any{m("IP", "0:0:0:0:0:0:0:1", "tls", 443), m("CIDR", "::1/128", "tls", 443)}, "for ::1/128 on port 443"},
-		{"http and grpc domains on one port", []any{m("Domain", "a.example.com", "http", 80), m("Domain", "b.example.com", "grpc", 80)}, "protocols http and grpc produce the same filter chain for domains on port 80"},
+		{"http and grpc domains on one port are left to 2.14 validation", []any{m("Domain", "a.example.com", "http", 80), m("Domain", "b.example.com", "grpc", 80)}, ""},
 		{"http domains on one port merge", []any{m("Domain", "a.example.com", "http", 80), m("Domain", "b.example.com", "http", 80)}, ""},
 		{"tls domains get a chain each", []any{m("Domain", "a.example.com", "tls", 443), m("Domain", "b.example.com", "tls", 443)}, ""},
 		{"same IP on different ports", []any{m("IP", "10.0.0.1", "tcp", 8443), m("CIDR", "10.0.0.1/32", "tcp", 9443)}, ""},
