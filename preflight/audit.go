@@ -2592,7 +2592,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 		a.rep.k8sObserved = true
 	}
 
-	if a.knownGlobal || strings.EqualFold(cfg.Mode, globalControlPlaneMode) {
+	if a.controlPlaneIsGlobal(cfg) {
 		// The global's own injector/experimental flags govern no proxies; audit
 		// each zone's config instead, which the global aggregates in ZoneInsight.
 		// The API server does run on a global, so its startup-breaking settings
@@ -2623,14 +2623,21 @@ func (a *auditor) auditZoneConfigsOnly(ctx context.Context) error {
 }
 
 // addGlobalOnK8sFinding flags a Global CP running on Kubernetes, a deployment
-// mode dropped in 3.0. It fires only for mode=global on k8s, so it is safe to
-// call on any CP's config.
+// mode dropped in 3.0. It fires for a global on k8s - an observed one or the
+// caller's assertion - so it is safe to call on any CP's config.
 func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
-	if strings.EqualFold(cfg.Environment, "kubernetes") && strings.EqualFold(cfg.Mode, "global") {
+	if strings.EqualFold(cfg.Environment, "kubernetes") && a.controlPlaneIsGlobal(cfg) {
 		a.rep.addDoc(blocker, cpConfigCategory, "Global control plane on Kubernetes",
 			cpConfigDetail("environment", "kubernetes", "universal"),
 			docUniversal, "mode=global")
 	}
+}
+
+// controlPlaneIsGlobal reports whether the audit treats the connected control
+// plane as a global. The caller's assertion is authoritative, so a /config
+// response that disagrees cannot drop the global checks the report claims ran.
+func (a *auditor) controlPlaneIsGlobal(cfg cpConfig) bool {
+	return a.knownGlobal || strings.EqualFold(cfg.Mode, globalControlPlaneMode)
 }
 
 // zoneRef qualifies a config example with the zone it came from; zone is ""

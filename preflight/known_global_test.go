@@ -208,6 +208,20 @@ func TestKnownGlobalAssertionSkipsModeDetectionRead(t *testing.T) {
 	}
 }
 
+func TestKnownGlobalAppliesAssertedModeToGlobalOnlyChecks(t *testing.T) {
+	counter := newRequestCounter()
+	m := auditWithOptionsAndCounter(t, auditOptions{knownGlobal: true}, counter, map[string]string{
+		"/config": `{"mode":"zone","environment":"kubernetes"}`,
+	})
+
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Global control plane on Kubernetes"); !ok {
+		t.Errorf("an asserted global on Kubernetes must keep the global-on-k8s blocker even when /config disagrees; findings: %+v", m.Findings)
+	}
+	if _, ok := findFinding(m, "info", cpConfigCategory, "Control plane mode differs from the caller's assertion"); !ok {
+		t.Errorf("the disagreement must still be reported; findings: %+v", m.Findings)
+	}
+}
+
 func TestKnownGlobalReportsModeWhenConfigIsUnreadable(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusInternalServerError} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
