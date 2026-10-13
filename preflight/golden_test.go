@@ -239,7 +239,9 @@ func loadNotFound(t *testing.T, dir string) map[string]bool {
 // "known-global" marker file opts the scenario into Options.KnownGlobalControlPlane
 // plus Options.SkipAuditedControlPlaneConfig. Such a scenario must not ship
 // responses/config.json and must list /config in 404.txt, so an accidental
-// /config read surfaces as a coverage-gap diff instead of passing silently.
+// settings read surfaces as a coverage-gap diff instead of passing silently. The
+// mode-detection read is not covered here: a failure there records no gap, so the
+// request-counter tests in known_global_test.go prove that one.
 func readScenarioKnownGlobal(t *testing.T, dir string) bool {
 	t.Helper()
 	_, err := os.Stat(filepath.Join(dir, "known-global"))

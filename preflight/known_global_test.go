@@ -207,3 +207,34 @@ func TestKnownGlobalAssertionSkipsModeDetectionRead(t *testing.T) {
 		t.Errorf("mode = %q, want %q", got, "global")
 	}
 }
+
+func TestKnownGlobalReportsModeWhenConfigIsUnreadable(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/":
+					_, _ = io.WriteString(w, `{"product":"Kuma","version":"2.9.0","mode":"global"}`)
+				case "/config":
+					http.Error(w, "unreadable", status)
+				default:
+					_, _ = io.WriteString(w, `{"total":0,"items":[],"next":null}`)
+				}
+			}))
+			t.Cleanup(srv.Close)
+
+			c, err := newClientWithHTTP(srv.URL, "", &http.Client{Timeout: 30 * time.Second}, nil)
+			if err != nil {
+				t.Fatalf("newClient: %v", err)
+			}
+			rep, err := audit(context.Background(), c, auditOptions{knownGlobal: true})
+			if err != nil {
+				t.Fatalf("audit: %v", err)
+			}
+			if got := rep.toModel("").ControlPlane.Mode; got != "global" {
+				t.Errorf("mode = %q, want %q even when /config cannot be read", got, "global")
+			}
+		})
+	}
+}

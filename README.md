@@ -105,7 +105,9 @@ reader cannot act on, so it skips them (Kubernetes deployment mode, API server a
 settings, dropped settings, zone token issuer, KDS auth), still audits every connected zone's
 settings from ZoneInsight, and records an info finding
 naming the skipped scope. The skip is a caller-chosen scope, so it is an info finding rather
-than a coverage gap: the run is not inconclusive for it.
+than a coverage gap: the run is not inconclusive for it. Because the global's own config is
+not read, the Kubernetes-only manual checklist items are included only when the audit observes
+Kubernetes elsewhere — a `kuma.io/env=kubernetes` dataplane, for example.
 
 The report types are also re-exported as aliases from
 [`reportmodel`](reportmodel) (which additionally owns the `--classify`

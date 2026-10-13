@@ -2532,6 +2532,9 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 	if a.skipAuditedConfig {
 		return a.auditZoneConfigsOnly(ctx)
 	}
+	if a.knownGlobal {
+		a.rep.cp.Mode = globalControlPlaneMode
+	}
 
 	var cfg cpConfig
 	status, err := a.c.getJSON(ctx, "/config", &cfg)
@@ -2570,7 +2573,6 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 	// which mode) it audited.
 	switch {
 	case a.knownGlobal:
-		a.rep.cp.Mode = globalControlPlaneMode
 		if cfg.Mode != "" && !strings.EqualFold(cfg.Mode, globalControlPlaneMode) {
 			a.rep.add(info, cpConfigCategory, "Control plane mode differs from the caller's assertion",
 				fmt.Sprintf("this scan was told the audited control plane is a global, but GET /config reports mode %q; the assertion is reported and the global checks ran", cfg.Mode),
