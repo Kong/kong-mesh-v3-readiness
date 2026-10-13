@@ -223,6 +223,10 @@ type auditOptions struct {
 	// skipAuditedCPVersion excludes only the audited control plane's own patch
 	// level from the version-currency check; connected zones are still checked.
 	skipAuditedCPVersion bool
+	// EXC:FILE011:the caller asserts the audited control plane runs as a global, so no /config read discovers its mode
+	knownGlobal bool
+	// EXC:FILE011:the caller asserts the audited global's own settings are not the reader's to audit, so no /config read audits them
+	skipAuditedConfig bool
 }
 
 type auditor struct {
@@ -236,6 +240,10 @@ type auditor struct {
 	checkVersionCurrency bool
 	latestPatch          string
 	skipAuditedCPVersion bool
+	// EXC:FILE011:whether the caller asserted the audited control plane is a global, so no /config read discovers its mode
+	knownGlobal bool
+	// EXC:FILE011:whether the caller asserted the audited global's own settings are out of scope, so no /config read audits them
+	skipAuditedConfig bool
 	// EXC:FILE011:the connected zone CP's own name; fills the KRI zone segment of label-less local resources (3.0 materializes the zone on read)
 	cpZone string
 	// EXC:FILE011:/config was readable early; when it was not, the CP's mode is unknown and a label-less resource might be zone-local
@@ -306,6 +314,8 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		c: c, meshFilter: opts.meshFilter, inspectDataplanes: opts.inspectDataplanes,
 		checkVersionCurrency: opts.checkVersionCurrency, latestPatch: opts.latestPatch,
 		skipAuditedCPVersion: opts.skipAuditedCPVersion,
+		knownGlobal:          opts.knownGlobal,
+		skipAuditedConfig:    opts.skipAuditedConfig,
 		rep:                  &collector{cp: idx},
 	}
 
@@ -318,7 +328,10 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 			} `json:"zone"`
 		} `json:"multizone"`
 	}
-	if status, err := a.c.getJSON(ctx, "/config", &zoneCfg); err == nil && status == http.StatusOK {
+	if opts.knownGlobal {
+		// EXC:FILE011:an asserted global produces the same state an observed global does, so KRI zone stamping is unchanged
+		a.configKnown = true
+	} else if status, err := a.c.getJSON(ctx, "/config", &zoneCfg); err == nil && status == http.StatusOK {
 		a.configKnown = true
 		// 3.0 removes the standalone mode, and such a CP upgrades to a zone
 		// with the same configured (or "default") name, so both stamp.
@@ -2489,6 +2502,10 @@ type cpConfig struct {
 
 const cpConfigCategory = "Control plane configuration"
 
+// globalControlPlaneMode is the mode string a global control plane reports in
+// GET /config and the mode this audit publishes for an asserted global.
+const globalControlPlaneMode = "global"
+
 // cpConfigDetail renders every Control plane configuration finding as one fixed
 // sentence, so the report reads the same way for an operator and stays parseable
 // for downstream consumers (e.g. the Konnect console) instead of each check
@@ -2512,6 +2529,13 @@ var inboundTagsDisabledDetail = cpConfigDetail("experimental.inboundTagsDisabled
 // then covers the whole multizone estate). A CP that does not serve /config (404,
 // older builds) is a coverage gap, never a clean pass.
 func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
+	if a.skipAuditedConfig {
+		return a.auditZoneConfigsOnly(ctx)
+	}
+	if a.knownGlobal {
+		a.rep.cp.Mode = globalControlPlaneMode
+	}
+
 	var cfg cpConfig
 	status, err := a.c.getJSON(ctx, "/config", &cfg)
 	switch {
@@ -2523,23 +2547,38 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 		// Zone configs come from ZoneInsight, which RBAC does not gate the same
 		// way. Only a global serves it: a 404 means a zone or standalone CP (nothing
 		// more to audit), while an unreadable one is its own gap.
-		if _, served, zerr := a.zoneInsights(ctx); zerr == nil && !served {
-			return nil
+		if !a.knownGlobal {
+			if _, served, zerr := a.zoneInsights(ctx); zerr == nil && !served {
+				return nil
+			}
 		}
 		return a.checkZoneControlPlaneConfigs(ctx)
 	case err != nil:
 		// Any other read failure (timeout, decode, non-2xx) is a /config-specific
 		// coverage gap, not a dead CP: earlier checks already reached the CP.
 		a.rep.addGap("/config", "could not read /config — control-plane settings NOT audited")
+		if a.knownGlobal {
+			return a.checkZoneControlPlaneConfigs(ctx)
+		}
 		return nil
 	case status == http.StatusNotFound:
 		a.rep.addGap("/config", "endpoint returned 404 — control-plane settings NOT audited")
+		if a.knownGlobal {
+			return a.checkZoneControlPlaneConfigs(ctx)
+		}
 		return nil
 	}
 	// GET / does not expose the CP mode on most builds; /config is authoritative,
 	// so stamp the report with it — otherwise a report can't say which CP (or
 	// which mode) it audited.
-	if cfg.Mode != "" {
+	switch {
+	case a.knownGlobal:
+		if cfg.Mode != "" && !strings.EqualFold(cfg.Mode, globalControlPlaneMode) {
+			a.rep.add(info, cpConfigCategory, "Control plane mode differs from the caller's assertion",
+				fmt.Sprintf("this scan was told the audited control plane is a global, but GET /config reports mode %q; the assertion is reported and the global checks ran", cfg.Mode),
+				"mode="+cfg.Mode)
+		}
+	case cfg.Mode != "":
 		a.rep.cp.Mode = cfg.Mode
 	}
 
@@ -2553,7 +2592,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 		a.rep.k8sObserved = true
 	}
 
-	if strings.EqualFold(cfg.Mode, "global") {
+	if a.controlPlaneIsGlobal(cfg) {
 		// The global's own injector/experimental flags govern no proxies; audit
 		// each zone's config instead, which the global aggregates in ZoneInsight.
 		// The API server does run on a global, so its startup-breaking settings
@@ -2569,15 +2608,36 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 	return nil
 }
 
+// auditZoneConfigsOnly audits a global's per-zone settings without reading the
+// global's own config: the caller asserted the audited control plane is a global
+// whose own settings are shared infrastructure the reader cannot act on. The
+// skipped scope is an info finding rather than a coverage gap - the caller chose
+// it, so the run is not inconclusive for it - and every zone's settings are
+// still audited from ZoneInsight, the part of a global a tenant owns.
+func (a *auditor) auditZoneConfigsOnly(ctx context.Context) error {
+	a.rep.cp.Mode = globalControlPlaneMode
+	a.rep.add(info, cpConfigCategory, "Audited control plane settings not audited",
+		"this scan was told the audited control plane is a global whose own settings are not the reader's to audit, so it read no GET /config and the global's own checks did NOT run (Kubernetes deployment mode, API server authn and settings, dropped settings, zone token issuer, KDS auth). Per-zone control-plane settings are still audited from each zone's ZoneInsight.",
+		"mode="+globalControlPlaneMode)
+	return a.checkZoneControlPlaneConfigs(ctx)
+}
+
 // addGlobalOnK8sFinding flags a Global CP running on Kubernetes, a deployment
-// mode dropped in 3.0. It fires only for mode=global on k8s, so it is safe to
-// call on any CP's config.
+// mode dropped in 3.0. It fires for a global on k8s - an observed one or the
+// caller's assertion - so it is safe to call on any CP's config.
 func (a *auditor) addGlobalOnK8sFinding(cfg cpConfig) {
-	if strings.EqualFold(cfg.Environment, "kubernetes") && strings.EqualFold(cfg.Mode, "global") {
+	if strings.EqualFold(cfg.Environment, "kubernetes") && a.controlPlaneIsGlobal(cfg) {
 		a.rep.addDoc(blocker, cpConfigCategory, "Global control plane on Kubernetes",
 			cpConfigDetail("environment", "kubernetes", "universal"),
 			docUniversal, "mode=global")
 	}
+}
+
+// controlPlaneIsGlobal reports whether the audit treats the connected control
+// plane as a global. The caller's assertion is authoritative, so a /config
+// response that disagrees cannot drop the global checks the report claims ran.
+func (a *auditor) controlPlaneIsGlobal(cfg cpConfig) bool {
+	return a.knownGlobal || strings.EqualFold(cfg.Mode, globalControlPlaneMode)
 }
 
 // zoneRef qualifies a config example with the zone it came from; zone is ""

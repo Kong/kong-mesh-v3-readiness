@@ -95,6 +95,20 @@ own patch level from the version-currency check — connected zone control plane
 checked, and the report records an info finding noting the exclusion so its absence is never
 read as a pass.
 
+`Options.KnownGlobalControlPlane` declares that the addressed control plane runs as a global,
+so the audit does not read `GET /config` to discover its mode: the report carries
+`mode: global` and KRI zone stamping behaves exactly as for an observed global. Use it when the
+mode is already known, for example a multi-tenant global control plane fronting tenant zone
+control planes. Combined with `Options.SkipAuditedControlPlaneConfig` — which requires it — the
+audit reads no `GET /config` at all: the global's own settings are shared infrastructure the
+reader cannot act on, so it skips them (Kubernetes deployment mode, API server authn and
+settings, dropped settings, zone token issuer, KDS auth), still audits every connected zone's
+settings from ZoneInsight, and records an info finding
+naming the skipped scope. The skip is a caller-chosen scope, so it is an info finding rather
+than a coverage gap: the run is not inconclusive for it. Because the global's own config is
+not read, the Kubernetes-only manual checklist items are included only when the audit observes
+Kubernetes elsewhere — a `kuma.io/env=kubernetes` dataplane, for example.
+
 The report types are also re-exported as aliases from
 [`reportmodel`](reportmodel) (which additionally owns the `--classify`
 `Classification` contract), so code written against that import path still compiles.
