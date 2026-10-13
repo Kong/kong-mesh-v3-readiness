@@ -52,9 +52,12 @@ func TestGoldenReports(t *testing.T) {
 			// A scenario opts into the version-currency check by dropping a
 			// latest-version.txt (one patch string). Scenarios without it skip the
 			// check, so unrelated goldens stay untouched and offline/deterministic.
+			knownGlobal := readScenarioKnownGlobal(t, dir)
 			latest, hasLatest := readScenarioLatest(t, dir)
 			rep, err := audit(context.Background(), c, auditOptions{
 				checkVersionCurrency: hasLatest, latestPatch: latest,
+				knownGlobal:       knownGlobal,
+				skipAuditedConfig: knownGlobal,
 			})
 			if err != nil {
 				t.Fatalf("audit: %v", err)
@@ -229,4 +232,16 @@ func loadNotFound(t *testing.T, dir string) map[string]bool {
 		}
 	}
 	return m
+}
+
+// readScenarioKnownGlobal reports whether a scenario asserts the audited control
+// plane is a global whose own config is out of scope: the presence of a
+// "known-global" marker file opts the scenario into Options.KnownGlobalControlPlane
+// plus Options.SkipAuditedControlPlaneConfig. Such a scenario must not ship
+// responses/config.json and must list /config in 404.txt, so an accidental
+// /config read surfaces as a coverage-gap diff instead of passing silently.
+func readScenarioKnownGlobal(t *testing.T, dir string) bool {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(dir, "known-global"))
+	return err == nil
 }

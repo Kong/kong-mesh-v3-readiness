@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -412,4 +413,116 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+// TestAuditKnownGlobalSkipsAuditedConfig proves the public options let a caller
+// that already knows the audited control plane is a global run a full audit
+// without one GET /config request, while every zone's config is still audited.
+func TestAuditKnownGlobalSkipsAuditedConfig(t *testing.T) {
+	var mu sync.Mutex
+	configRequests := 0
+	zoneConfig := `{\"mode\":\"zone\",\"environment\":\"kubernetes\",\"experimental\":{\"deltaXds\":false,\"sidecarContainers\":false,\"inboundTagsDisabled\":false,\"kdsEventBasedWatchdog\":{\"enabled\":false}},\"runtime\":{\"kubernetes\":{\"injector\":{\"unifiedResourceNamingEnabled\":false,\"ebpf\":{\"enabled\":false}}}}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/":
+			_, _ = io.WriteString(w, `{"product":"Kuma","version":"2.14.0","mode":"global"}`)
+		case "/config":
+			mu.Lock()
+			configRequests++
+			mu.Unlock()
+			http.Error(w, "the audit must not read the audited control plane's own config", http.StatusInternalServerError)
+		case "/meshes":
+			_, _ = io.WriteString(w, `{"total":1,"items":[{"type":"Mesh","name":"default","meshServices":{"mode":"Exclusive"}}],"next":null}`)
+		case "/zones+insights":
+			_, _ = io.WriteString(w, `{"total":1,"items":[{"type":"ZoneOverview","name":"east","zoneInsight":{"subscriptions":[{"config":"`+zoneConfig+`","version":{"kumaCp":{"version":"2.14.0"}}}]}}],"next":null}`)
+		default:
+			_, _ = io.WriteString(w, `{"total":0,"items":[],"next":null}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	rep, err := preflight.Audit(context.Background(), preflight.Options{
+		Address:                       srv.URL,
+		LatestPatch:                   "2.14.0",
+		KnownGlobalControlPlane:       true,
+		SkipAuditedControlPlaneConfig: true,
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+
+	mu.Lock()
+	got := configRequests
+	mu.Unlock()
+	if got != 0 {
+		t.Errorf("GET /config requests = %d, want 0", got)
+	}
+	if rep.Status != preflight.StatusBlockers {
+		t.Errorf("status = %q, want %q (the zone's Delta xDS blocker)", rep.Status, preflight.StatusBlockers)
+	}
+	if len(rep.Coverage) != 0 {
+		t.Errorf("coverage = %+v, want none", rep.Coverage)
+	}
+	if rep.ControlPlane.Mode != "global" {
+		t.Errorf("mode = %q, want %q", rep.ControlPlane.Mode, "global")
+	}
+	var skipped, zoneBlocker bool
+	for _, f := range rep.Findings {
+		if f.Title == "Audited control plane settings not audited" && f.Severity == preflight.SeverityInfo {
+			skipped = true
+		}
+		if f.Title == "Unified resource naming not enabled" && f.Severity == preflight.SeverityBlocker {
+			zoneBlocker = true
+		}
+	}
+	if !skipped {
+		t.Errorf("missing the info finding naming the skipped scope; findings: %+v", rep.Findings)
+	}
+	if !zoneBlocker {
+		t.Errorf("the zone's own config was not audited; findings: %+v", rep.Findings)
+	}
+}
+
+// TestAuditSkipAuditedConfigRequiresKnownGlobal proves the guard: skipping the
+// audited control plane's own settings is rejected without the mode assertion,
+// and no request is made.
+func TestAuditSkipAuditedConfigRequiresKnownGlobal(t *testing.T) {
+	srv := mockCleanCP(t)
+
+	_, err := preflight.Audit(context.Background(), preflight.Options{
+		Address:                       srv.URL,
+		SkipAuditedControlPlaneConfig: true,
+	})
+	if err == nil {
+		t.Fatalf("Audit must reject SkipAuditedControlPlaneConfig without KnownGlobalControlPlane")
+	}
+	if !strings.Contains(err.Error(), "KnownGlobalControlPlane") {
+		t.Errorf("error = %v, want it to name Options.KnownGlobalControlPlane", err)
+	}
+}
+
+// TestAuditKnownGlobalWithoutSkipReadsConfig proves the mode assertion alone
+// still reads and audits the control plane's own settings.
+func TestAuditKnownGlobalWithoutSkipReadsConfig(t *testing.T) {
+	rep, err := preflight.Audit(context.Background(), preflight.Options{
+		Address:                 mockCleanCP(t).URL,
+		LatestPatch:             "2.14.0",
+		KnownGlobalControlPlane: true,
+	})
+	if err != nil {
+		t.Fatalf("Audit: %v", err)
+	}
+	if rep.ControlPlane.Mode != "global" {
+		t.Errorf("mode = %q, want the asserted %q", rep.ControlPlane.Mode, "global")
+	}
+	var noted bool
+	for _, f := range rep.Findings {
+		if f.Title == "Control plane mode differs from the caller's assertion" {
+			noted = true
+		}
+	}
+	if !noted {
+		t.Errorf("a /config mode that disagrees with the assertion must be reported; findings: %+v", rep.Findings)
+	}
 }

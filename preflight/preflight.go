@@ -56,6 +56,10 @@ type Options struct {
 	// info finding, so its absence is never read as a pass. Default false keeps
 	// today's behavior of flagging the audited control plane.
 	SkipAuditedControlPlaneVersionCheck bool
+	// EXC:FILE011:the caller knows the audited control plane is a global, so the audit reads no /config to discover the mode and reports mode=global with global KRI zone stamping
+	KnownGlobalControlPlane bool
+	// EXC:FILE011:the global's own settings are shared infrastructure the reader cannot act on; skipped checks (Kubernetes mode, API server authn/settings, dropped settings, zone token issuer, KDS auth) are named in an info finding and per-zone settings are still audited
+	SkipAuditedControlPlaneConfig bool
 }
 
 // Audit runs a full readiness audit against the control plane described by opts
@@ -67,6 +71,9 @@ type Options struct {
 func Audit(ctx context.Context, opts Options) (Report, error) {
 	if opts.Address == "" {
 		return Report{}, fmt.Errorf("preflight: Options.Address is required")
+	}
+	if opts.SkipAuditedControlPlaneConfig && !opts.KnownGlobalControlPlane {
+		return Report{}, fmt.Errorf("preflight: Options.SkipAuditedControlPlaneConfig requires Options.KnownGlobalControlPlane")
 	}
 	hc := opts.HTTPClient
 	if hc == nil {
@@ -86,6 +93,8 @@ func Audit(ctx context.Context, opts Options) (Report, error) {
 		checkVersionCurrency: true,
 		latestPatch:          opts.LatestPatch,
 		skipAuditedCPVersion: opts.SkipAuditedControlPlaneVersionCheck,
+		knownGlobal:          opts.KnownGlobalControlPlane,
+		skipAuditedConfig:    opts.SkipAuditedControlPlaneConfig,
 	})
 	if err != nil {
 		return Report{}, err
