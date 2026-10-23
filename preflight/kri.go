@@ -53,7 +53,8 @@ var shortNames = map[string]string{
 // A Mesh is stored under NoMesh, so its mesh segment is empty — anything
 // else makes the KRI unresolvable on a 3.0 CP. Returns "" when the type
 // has no 3.0 short name, or any segment contains "_" (Kuma decodes a KRI
-// by splitting on it, so such an identifier would resolve elsewhere).
+// by splitting on it, so such an identifier would resolve elsewhere), or a
+// space, "/" or parenthesis (never valid in a resource name).
 func kriOf(it resourceItem) string {
 	if it.zoneUnknown {
 		return ""
@@ -69,9 +70,9 @@ func kriOf(it resourceItem) string {
 	if name == "" {
 		return ""
 	}
-	// EXC:FILE011:Kuma splits a KRI on "_", so a segment containing one would resolve to a different resource
+	// EXC:FILE011:Kuma splits a KRI on "_", so a segment containing one would resolve to a different resource; a space, "/" or parenthesis is no valid resource name and would break isKRI's shape check
 	for _, seg := range []string{it.Mesh, it.Labels[zoneLabel], it.Labels[kubeNamespaceLabel], name} {
-		if strings.Contains(seg, "_") {
+		if strings.ContainsAny(seg, "_/ ()") {
 			return ""
 		}
 	}

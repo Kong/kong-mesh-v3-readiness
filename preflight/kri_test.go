@@ -56,6 +56,21 @@ func TestKriOf(t *testing.T) {
 			want: "",
 		},
 		{
+			name: "name with a space is not KRI-addressable",
+			item: resourceItem{Type: "MeshTimeout", Mesh: "default", Name: "a name"},
+			want: "",
+		},
+		{
+			name: "name with a slash is not KRI-addressable",
+			item: resourceItem{Type: "MeshTimeout", Mesh: "default", Name: "a/b"},
+			want: "",
+		},
+		{
+			name: "name with a parenthesis is not KRI-addressable",
+			item: resourceItem{Type: "MeshTimeout", Mesh: "default", Name: "paren(name)"},
+			want: "",
+		},
+		{
 			name: "type removed in 3.0 has no KRI",
 			item: resourceItem{Type: "TrafficRoute", Mesh: "default", Name: "route-1"},
 			want: "",
@@ -203,6 +218,12 @@ func TestExampleAnnotations(t *testing.T) {
 			item:         resourceItem{Type: "Dataplane", Mesh: "default", Name: "dp_1"},
 			wantRef:      "default/dp_1",
 			wantQualNote: "default/dp_1 (kuma-dp 2.5.0)",
+		},
+		{
+			name:         "system resource with a space in its name is a legacy string",
+			item:         resourceItem{Type: "MeshTimeout", Mesh: "default", Name: "a name", Labels: system},
+			wantRef:      "default/a name (system — CP-managed, update before 3.0)",
+			wantQualNote: "default/a name (kuma-dp 2.5.0)",
 		},
 		{
 			name:         "system legacy display string keeps the tag",
