@@ -93,7 +93,9 @@ type Finding struct {
 	// finding with a higher count has occurrences outside the sample. A type
 	// removed in 3.0, a name containing "_", and a non-resource example
 	// (a control-plane config setting, a zone version, a coverage ratio)
-	// have no KRI and keep the legacy display string.
+	// have no KRI and keep the legacy display string. A KRI is always the
+	// whole string: notes and system tags never follow it, so a consumer can
+	// resolve the example as is.
 	Examples []string `json:"example_resources" jsonschema:"maxItems=10"`
 }
 

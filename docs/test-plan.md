@@ -127,7 +127,7 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 #### TC-14: Every BLOCKER is genuinely a 3.0 break (no cry-wolf)
 **Setup:** Apply current-valid configs that the tool flags: a new policy using `from`, a top-level `targetRef.kind` ≠ Mesh/Dataplane, `to[]` ≠ Mesh*Service, `proxyTypes`.
 **Steps:** For each flagged construct, cross-check `docs/deprecated-features.md` (and 3.0 migration docs) that it genuinely breaks/changes in 3.0, per policy type.
-**Expected:** No false positives; each blocker maps to a real, documented 3.0 change. CP-managed default policies (`kuma.io/policy-role: system`, e.g. `mesh-timeout-all-<mesh>`) use the same deprecated constructs and **are intentionally flagged** — marked `(system — CP-managed, update before 3.0)` and counted in the header — because the operator must update them before upgrading. This is decided behavior, not cry-wolf (see TC-24).
+**Expected:** No false positives; each blocker maps to a real, documented 3.0 change. CP-managed default policies (`kuma.io/policy-role: system`, e.g. `mesh-timeout-all-<mesh>`) use the same deprecated constructs and **are intentionally flagged** — counted in `summary.system_findings` (and tagged `(system — CP-managed, update before 3.0)` on a legacy non-KRI example) — because the operator must update them before upgrading. This is decided behavior, not cry-wolf (see TC-24).
 **Oracle:** FAIL if `from` (or any construct) is flagged where 3.0 retains it for some policy types, OR if system policies are silently skipped (an operator would miss config they must update). The 3.0 spec is the authority; the tester must cite it.
 **Source:** Kaner — quality-is-value / false positive; external-authority oracle.
 
@@ -198,11 +198,11 @@ Most cases use a **local stub HTTP server** that mimics the CP REST API (the che
 **Oracle:** FAIL if any Mesh/Dataplane check produces zero findings against inlined data (the silent no-op that a `spec`-wrapping stub hides), or if Exclusive is reported as not-Exclusive. `resourceItem.specBytes()` must fall back to the whole object when there is no `spec` envelope.
 **Source:** real-CP run; merge (root cause: dual REST serialization).
 
-#### TC-24: CP-managed (system) policies are flagged and marked, not skipped
+#### TC-24: CP-managed (system) policies are flagged and counted, not skipped
 **Setup:** A pristine, untouched mesh — its CP-generated defaults (`mesh-timeout-all-<mesh>`, `mesh-circuit-breaker-all-<mesh>`, …) carry `kuma.io/policy-role: system` and use `from` / `to: Mesh` / `proxyTypes`. Add one user-authored policy with `from`.
-**Steps:** Run; inspect blockers, the header, and example markers.
-**Expected:** System policies ARE flagged (e.g. `from` → blocker), each example marked `(system — CP-managed, update before 3.0)`; header shows `Includes N CP-managed (policy-role: system) resource(s) — update these before upgrading`. The user policy is flagged unmarked.
-**Oracle:** FAIL if system policies are silently skipped (operator would miss config they must update before v3), or if user policies are wrongly marked system, or if the marker/header is absent.
+**Steps:** Run; inspect blockers and `summary.system_findings`.
+**Expected:** System policies ARE flagged (e.g. `from` → blocker), each system policy is counted in `summary.system_findings` (the HTML shows the "System-managed" chip). A KRI example stays the bare KRI; only a legacy non-KRI example is tagged `(system — CP-managed, update before 3.0)`.
+**Oracle:** FAIL if system policies are silently skipped (operator would miss config they must update before v3), or if user policies are wrongly counted as system, or if `summary.system_findings` is absent.
 **Source:** merge (operator requirement: system policies must be updated before migrating).
 
 #### TC-25: `--address` path prefix is honored (behind an ingress)
@@ -276,7 +276,7 @@ Run these first — they confirm the tool works at all before the edge-case TCs.
 - **Index validation:** the tool asserts `GET /` returns a non-empty `version`; otherwise exit 2. (TC-1)
 - **`--mesh` not found:** hard error, exit 2. (TC-8)
 - **`--timeout` semantics:** authoritative; `http.Client.Timeout` is derived from it (no hidden 30s cap). (TC-7)
-- **System policies:** flagged and marked (operator must update before v3), not skipped. (TC-24)
+- **System policies:** flagged and counted in `summary.system_findings` (operator must update before v3), not skipped. (TC-24)
 - **Output atomicity:** write-temp-then-rename, refuse symlinks, FAILED-stamp on failure. (TC-19, TC-20)
 - **Inconclusive report status:** coverage gaps / unparseable resources → report status `inconclusive`; the exit code stays `0` — findings and gaps live in the report, the exit code only reports execution. (TC-26)
 
