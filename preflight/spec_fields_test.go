@@ -1,6 +1,8 @@
 package preflight
 
 import (
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -179,8 +181,19 @@ func TestMeshPassthroughSameFilterChain(t *testing.T) {
 			if got != (tc.want != "") {
 				t.Fatalf("flagged = %v, want %v\nfindings: %+v", got, tc.want != "", r.Findings)
 			}
-			if got && !strings.Contains(strings.Join(f.Examples, "\n"), tc.want) {
-				t.Errorf("examples %q, want substring %q", f.Examples, tc.want)
+			if got && !slices.Equal(f.Examples, []string{"kri_mp_default_default__p-1_"}) {
+				t.Errorf("examples = %q, want the bare KRI", f.Examples)
+			}
+			var ms []passthroughMatch
+			raw, err := json.Marshal(tc.matches)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(raw, &ms); err != nil {
+				t.Fatal(err)
+			}
+			if c := passthroughChainConflict(ms); !strings.Contains(c, tc.want) {
+				t.Errorf("conflict = %q, want substring %q", c, tc.want)
 			}
 		})
 	}

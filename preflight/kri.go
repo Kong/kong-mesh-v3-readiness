@@ -78,3 +78,10 @@ func kriOf(it resourceItem) string {
 	return fmt.Sprintf("kri_%s_%s_%s_%s_%s_", short, it.Mesh,
 		it.Labels[zoneLabel], it.Labels[kubeNamespaceLabel], name)
 }
+
+// isKRI reports whether s is a KRI as kriOf builds it: six "_" and none inside
+// a segment, so a legacy display string is never mistaken for one.
+func isKRI(s string) bool {
+	return strings.HasPrefix(s, "kri_") && strings.HasSuffix(s, "_") &&
+		strings.Count(s, "_") == 6 && !strings.ContainsAny(s, "/ ")
+}

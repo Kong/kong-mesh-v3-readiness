@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -34,10 +35,8 @@ func TestDataplaneVersionIncompatibleReported(t *testing.T) {
 		t.Errorf("count = %d, want 2 (old-dp and omitted-dp)", f.Count)
 	}
 	got := strings.Join(f.Examples, " ")
-	for _, want := range []string{"kri_dp_default_default__old-dp_ (kuma-dp 2.5.0)", "kri_dp_default_default__omitted-dp_ (kuma-dp 2.11.19)"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("examples %v missing %q", f.Examples, want)
-		}
+	if want := []string{"kri_dp_default_default__old-dp_", "kri_dp_default_default__omitted-dp_"}; !slices.Equal(f.Examples, want) {
+		t.Errorf("examples = %v, want bare KRIs %v", f.Examples, want)
 	}
 	for _, clean := range []string{"new-dp", "no-version-dp"} {
 		if strings.Contains(got, clean) {
@@ -98,9 +97,14 @@ func TestDataplaneEmbeddedDNSFeatureMissingReported(t *testing.T) {
 		t.Errorf("count = %d, want 2 (coredns-dp and both-dp, once each), examples %+v", f.Count, f.Examples)
 	}
 	joined := strings.Join(f.Examples, "\n")
-	for _, want := range []string{"coredns-dp", "both-dp", "(coredns 1.11.1)"} {
+	for _, want := range []string{"coredns-dp", "both-dp"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("examples should contain %q, got %+v", want, f.Examples)
+		}
+	}
+	for _, e := range f.Examples {
+		if !isKRI(e) {
+			t.Errorf("example %q should be a bare KRI", e)
 		}
 	}
 	for _, unwanted := range []string{"embedded-dp", "no-metadata-dp", "no-tp-dp"} {

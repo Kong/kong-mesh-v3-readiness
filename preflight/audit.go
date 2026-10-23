@@ -563,17 +563,19 @@ func (a *auditor) unmarshalSpec(it resourceItem, v any, ref string) bool {
 	return true
 }
 
-// ref formats the example of a flagged resource, marking CP-managed
-// (policy-role: system) ones so the operator knows which defaults to update.
+// ref formats the example of a flagged resource. A KRI stays bare; a legacy
+// display string marks CP-managed (policy-role: system) resources so the
+// operator knows which defaults to update.
 // It is side-effect free: the system tally is kept by countSystem, which
 // counts a resource only when it actually yields a finding (ref is computed
 // eagerly, before the checks run, so counting here would over-report
 // resources that turn out clean).
 func (a *auditor) ref(it resourceItem) string {
-	if isSystem(it) {
-		return qualified(it) + " (system — CP-managed, update before 3.0)"
+	ref := qualified(it)
+	if isSystem(it) && !isKRI(ref) {
+		return ref + " (system — CP-managed, update before 3.0)"
 	}
-	return qualified(it)
+	return ref
 }
 
 // countSystem records a CP-managed (policy-role: system) resource in the system
@@ -605,8 +607,7 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 				"`provided` -> `type: Bundled` with your CA under `bundled.ca` (a self-signed CA "+
 				"requires `bundled.insecureAllowSelfSigned: true`), "+
 				"`vault`/`acmpca`/`certmanager` -> `type: Extension` "+
-				"with `extension.name` set to the same value (Kong Mesh only). Each example resource "+
-				"names the backends that mesh carries. In a multizone mesh, a Bundled provider's "+
+				"with `extension.name` set to the same value (Kong Mesh only). In a multizone mesh, a Bundled provider's "+
 				"zone-origin MeshTrusts do not propagate to the other zones — create a federated "+
 				"MeshTrust on the global per peer zone (carrying the peer zone's CA bundle) or "+
 				"cross-zone mTLS dies after the upgrade.",
@@ -665,13 +666,12 @@ func (a *auditor) checkMeshSettings(m resourceItem) {
 			"3.0 requires `meshServices.mode: Exclusive` (it gates Zone Proxy, MeshIdentity and disables legacy kuma.io/service routing); migrate before upgrading (current: "+shown+").", docMeshServiceExclusive, qualified(m))
 	}
 	if spec.SkipCreatingInitialPolicies != nil {
-		// EXC:FILE011:the-collector-merges-findings-by-category-and-title-keeping-only-the-first-detail — the per-mesh list lives in the per-resource annotation, not the shared detail, or it would survive only for the first mesh audited.
 		skipped := strings.Join(spec.SkipCreatingInitialPolicies, ", ")
 		if skipped == "" {
 			skipped = "[] (empty list skips nothing)"
 		}
 		a.rep.addDoc(blocker, "Mesh object settings", "skipCreatingInitialPolicies on Mesh",
-			"3.0 removes `mesh.skipCreatingInitialPolicies` (kumahq/kuma#18661): it stops creating default policies for new Meshes altogether, so the field does nothing on the upgraded control plane — it is ignored, the stored Mesh keeps loading and a manifest that still sets it applies without an error, but the first write to the Mesh drops the field. Remove it from every Mesh manifest (GitOps included) before upgrading. Mind the rollback: after that first write, rolling the mesh's control plane back to 2.14 creates the default policies (`mesh-timeout-all-<mesh>`, `mesh-timeout-to-all-<mesh>`, `mesh-circuit-breaker-all-<mesh>`, `mesh-retry-all-<mesh>`) again — including for a mesh whose list deliberately suppressed them. Each example resource names the list that mesh carries.",
+			"3.0 removes `mesh.skipCreatingInitialPolicies` (kumahq/kuma#18661): it stops creating default policies for new Meshes altogether, so the field does nothing on the upgraded control plane — it is ignored, the stored Mesh keeps loading and a manifest that still sets it applies without an error, but the first write to the Mesh drops the field. Remove it from every Mesh manifest (GitOps included) before upgrading. Mind the rollback: after that first write, rolling the mesh's control plane back to 2.14 creates the default policies (`mesh-timeout-all-<mesh>`, `mesh-timeout-to-all-<mesh>`, `mesh-circuit-breaker-all-<mesh>`, `mesh-retry-all-<mesh>`) again — including for a mesh whose list deliberately suppressed them.",
 			docUpgrade, refNote(qualified(m), "skipCreatingInitialPolicies: "+skipped))
 	}
 }
@@ -3369,7 +3369,7 @@ func (a *auditor) cniFor(it resourceItem) bool {
 
 func legacyCoreDNSRef(it resourceItem, ins dpInsight, corednsVersion string) (string, bool) {
 	if corednsVersion != "" {
-		return qualified(it) + " (coredns " + corednsVersion + ")", true
+		return qualifiedNote(it, "coredns "+corednsVersion), true
 	}
 	feats := ins.DataplaneInsight.Metadata.Features
 	net := ins.Dataplane.Networking
@@ -3492,14 +3492,18 @@ func qualified(it resourceItem) string {
 }
 
 // qualifiedNote is qualified with an annotation (the kuma-dp or CoreDNS
-// version, the field a Mesh setting lives in).
+// version, the field a Mesh setting lives in). A KRI stays bare so a consumer
+// can resolve it as is; only a legacy display string carries the note.
 func qualifiedNote(it resourceItem, note string) string {
-	return qualified(it) + " (" + note + ")"
+	return refNote(qualified(it), note)
 }
 
 // refNote annotates a resource example (the roles a binding grants, the
-// types a rule names).
+// types a rule names), leaving a KRI untouched.
 func refNote(ref, note string) string {
+	if isKRI(ref) {
+		return ref
+	}
 	return ref + " (" + note + ")"
 }
 
