@@ -174,3 +174,68 @@ func TestKriOfFromRESTItem(t *testing.T) {
 		t.Errorf("kriOf = %q, want %q", got, want)
 	}
 }
+
+// TestExampleAnnotations pins that an example holding a KRI is exactly the KRI,
+// whatever note or system tag the check offers, while a legacy display string
+// (a name with "_" has no KRI) keeps its note.
+func TestExampleAnnotations(t *testing.T) {
+	system := map[string]string{policyRoleLabel: "system"}
+	tests := []struct {
+		name         string
+		item         resourceItem
+		wantRef      string
+		wantQualNote string
+	}{
+		{
+			name:         "KRI stays bare",
+			item:         resourceItem{Type: "Dataplane", Mesh: "default", Name: "dp-1"},
+			wantRef:      "kri_dp_default___dp-1_",
+			wantQualNote: "kri_dp_default___dp-1_",
+		},
+		{
+			name:         "system KRI stays bare",
+			item:         resourceItem{Type: "MeshTimeout", Mesh: "default", Name: "mesh-timeout-all-default", Labels: system},
+			wantRef:      "kri_mt_default___mesh-timeout-all-default_",
+			wantQualNote: "kri_mt_default___mesh-timeout-all-default_",
+		},
+		{
+			name:         "legacy display string keeps the note",
+			item:         resourceItem{Type: "Dataplane", Mesh: "default", Name: "dp_1"},
+			wantRef:      "default/dp_1",
+			wantQualNote: "default/dp_1 (kuma-dp 2.5.0)",
+		},
+		{
+			name:         "system legacy display string keeps the tag",
+			item:         resourceItem{Type: "TrafficPermission", Mesh: "default", Name: "allow-all", Labels: system},
+			wantRef:      "default/allow-all (system — CP-managed, update before 3.0)",
+			wantQualNote: "default/allow-all (kuma-dp 2.5.0)",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := (&auditor{}).ref(tc.item); got != tc.wantRef {
+				t.Errorf("ref = %q, want %q", got, tc.wantRef)
+			}
+			if got := qualifiedNote(tc.item, "kuma-dp 2.5.0"); got != tc.wantQualNote {
+				t.Errorf("qualifiedNote = %q, want %q", got, tc.wantQualNote)
+			}
+		})
+	}
+}
+
+func TestIsKRI(t *testing.T) {
+	for s, want := range map[string]bool{
+		"kri_dp_default___dp-1_":     true,
+		"kri_m____default_":          true,
+		"kri_m___default_":           false,
+		"kri_dp_default___dp-1":      false,
+		"default/kri_dp_a_b_c_d_":    false,
+		"kri_x":                      false,
+		"kri_dp_default___dp-1_ (n)": false,
+		"control plane (2.14.6)":     false,
+	} {
+		if got := isKRI(s); got != want {
+			t.Errorf("isKRI(%q) = %v, want %v", s, got, want)
+		}
+	}
+}

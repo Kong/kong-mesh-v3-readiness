@@ -289,7 +289,7 @@ current binary:
 | `meshServices.mode` Exclusive | ✅ yes | `clean` correctly NOT flagged |
 | Dataplane reachableServices / gateway / probes | ✅ yes | `probes` is Universal-only (see §7) |
 | OTel `endpoint`, LB hashPolicies/SourceIP, healthyPanicThreshold, RFC-1035 names | ✅ yes | warnings |
-| CP `policy-role: system` defaults | ✅ flagged + marked | header `Includes N CP-managed…` (**K8s only** — see §7) |
+| CP `policy-role: system` defaults | ✅ flagged + counted | `summary.system_findings` (**K8s only** — see §7) |
 | Control-plane config (`GET /config`) | ✅ yes | `checkControlPlaneConfig`: blockers global-on-k8s / autoReachableServices / eBPF; warnings unified-naming / inbound-tags / deltaXds / KDS-watchdog / sidecar-containers off. Injector + global checks gated on `environment: kubernetes`. 404 → coverage gap. Mode stamped on the report from `/config`. |
 | Multizone global fan-out | ✅ yes | Against `mode: global`, the data-plane config checks run **per zone** from `GET /zones+insights` (`ZoneInsight.subscriptions[].config`, the zone's own sanitized config shipped over KDS) — examples read `zone <name>: …`. Global keeps only the global-on-k8s blocker; a zone with no reported config (or `/zones+insights` 404) → coverage gap; no zones → info. A directly-connected zone/standalone CP is unchanged (audited from its own `/config`). |
 | Dataplane version compatibility | ✅ yes | `checkDataplaneVersions` from `/dataplanes+insights`: warns on proxies with `kumaCpCompatible: false`. (preview/dev kuma-dp is bypassed by the CP → no warning on the preview fixture) |

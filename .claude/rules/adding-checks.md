@@ -38,7 +38,7 @@ the identifier Kuma 3.0 addresses it by); `qualified(it)`/`qualifiedNote(it, not
 `zoneRef(zone)` for per-zone config. **A KRI example is always the bare KRI** — notes
 and the `(system — CP-managed, update before 3.0)` tag are appended only to the legacy
 display string (`isKRI` tells them apart), so a consumer can resolve the example as is;
-never put per-resource information that only a note carries into a KRI example. A type
+a new check must not rely on a note to carry per-resource information (existing checks accept that loss). A type
 without a 3.0 KRI (removed kinds, names containing `_`) falls back to the legacy
 `mesh/name [zone:z]` display string — don't hand-build KRI strings; `qualified` owns the
 fallback.
