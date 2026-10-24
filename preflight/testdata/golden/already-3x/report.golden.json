@@ -1,0 +1,34 @@
+{
+  "tool_schema": "kong-mesh-v3-preflight/v6",
+  "tool": "kong-mesh-v3-preflight",
+  "status": "clean",
+  "control_plane": {
+    "product": "Kong Mesh",
+    "version": "3.0.0-preview.v6bcf212e8",
+    "mode": "global"
+  },
+  "meshes": [],
+  "summary": {
+    "blockers": 0,
+    "warnings": 0,
+    "info": 1,
+    "coverage_gaps": 0,
+    "parse_errors": 0,
+    "system_findings": 0
+  },
+  "findings": [
+    {
+      "severity": "info",
+      "group": "upgrade_path",
+      "category": "Control plane version",
+      "title": "Control plane already runs 3.x",
+      "detail": "This control plane already runs 3.x, so there is nothing to prepare for the 3.0 upgrade and no other check was run. To audit control planes still on 2.x, such as zones not upgraded yet, point the tool at each of them directly.",
+      "count": 1,
+      "example_resources": [
+        "control plane (3.0.0-preview.v6bcf212e8)"
+      ]
+    }
+  ],
+  "coverage_gaps": [],
+  "manual_checks": []
+}
