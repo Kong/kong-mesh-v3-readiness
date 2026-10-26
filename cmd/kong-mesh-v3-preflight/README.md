@@ -138,17 +138,16 @@ cat report.json | ./bin/kong-mesh-v3-preflight --from-json - --format html > rep
   round-trips. If the latest patch can't be determined, or a connected zone reported no version, it is a
   coverage gap — never a silent pass. A zone with no open KDS subscription is offline: it is
   reported as one **blocker** whose examples name up to 10 such zones (the count carries
-  the total), and its last known config and version are not audited (they describe a
-  control plane that is not running). Only its `defaults.restrictOutbound` is read, so its
-  proxies keep the verdict that mode implies; a zone that never reported a config leaves its
-  proxies unjudged rather than blaming them for a config nobody saw. A zone the operator
-  disabled (`zone.enabled: false`) that is unreachable gets the `Zone control plane disabled`
-  blocker instead of the offline one; a disabled zone still holding an open subscription is
-  audited like any other. Liveness comes from the health check as well as the subscriptions, because the global
-  persists subscriptions on a 10s ticker: a heartbeat newer than the newest `disconnectTime`
-  (or, with no subscriptions at all, a heartbeat inside the last 30 minutes) means the zone is
-  connected and is a coverage gap, not offline. Bring the zone online and re-run, or audit it
-  directly.
+  the total), and neither its config nor its version is audited (they describe a control
+  plane that is not running), nor are the outbound defaults of its proxies — the zone blocker
+  covers them. An unreachable zone with `zone.enabled: false` gets the `Zone control plane
+  disabled` blocker instead of the offline one; a disabled zone still holding an open
+  subscription is audited like any other. Liveness comes from the health check as well as the
+  subscriptions, because the global persists subscriptions on a 10s ticker and an ungraceful
+  stop leaves one open: a ping within the control plane's configured
+  `multizone.global.kds.zoneHealthCheck` timeout (30 minutes when it advertises none) means the
+  zone is connected and is a coverage gap, not offline. Bring the zone online and re-run, or
+  audit it directly.
 - **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
   eBPF transparent proxy, unified resource naming, inbound-tags-disabled, delta
   xDS, KDS event-based watchdog, native sidecar containers not yet enabled, settings the 3.0

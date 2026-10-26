@@ -278,6 +278,8 @@ type auditor struct {
 
 	reportedUnreachableZones map[string]bool
 
+	zoneHeartbeatMaxAge time.Duration
+
 	// cniEnabled records, keyed like outboundModes, the Kubernetes control planes
 	// that run the CNI, so checkDataplaneFeatures flags only pods the 3.0 CNI
 	// plugin will refuse.
@@ -2380,6 +2382,10 @@ type cpConfig struct {
 						EnableIssuer *bool `json:"enableIssuer"`
 					} `json:"zoneToken"`
 				} `json:"auth"`
+				ZoneHealthCheck struct {
+					PollInterval string `json:"pollInterval"`
+					Timeout      string `json:"timeout"`
+				} `json:"zoneHealthCheck"`
 			} `json:"kds"`
 		} `json:"global"`
 	} `json:"multizone"`
@@ -2582,6 +2588,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 	// GET / does not expose the CP mode on most builds; /config is authoritative,
 	// so stamp the report with it — otherwise a report can't say which CP (or
 	// which mode) it audited.
+	a.zoneHeartbeatMaxAge = heartbeatMaxAge(cfg)
 	switch {
 	case a.knownGlobal:
 		if cfg.Mode != "" && !strings.EqualFold(cfg.Mode, globalControlPlaneMode) {
@@ -3093,10 +3100,7 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 			a.rep.addGap("/zones+insights ("+it.Name+")", "zone insight could not be parsed — config NOT audited")
 			continue
 		}
-		if zoneKDSClosed(zo, a.now) {
-			if cfg, ok := latestZoneConfig(zo); ok {
-				a.noteOutboundMode(cfg, it.Name)
-			}
+		if zoneKDSClosed(zo, a.now, a.zoneHeartbeatMaxAge) {
 			a.flagUnreachableZone(it.Name, zoneDisabled(zo))
 			continue
 		}
@@ -3111,11 +3115,26 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 	return nil
 }
 
-// zoneHeartbeatMaxAge bounds how long a recorded health check counts as evidence
-// that a zone is alive. The zone CP pings immediately on connect and then every
-// poll interval (5 minutes unless the global configures one), so this leaves room
-// for a slow ping while still settling a zone that stopped reporting.
-const zoneHeartbeatMaxAge = 30 * time.Minute
+// defaultZoneHeartbeatMaxAge bounds how long a recorded health check counts as
+// evidence that a zone is alive when the audited control plane does not advertise its
+// own health-check cadence. The zone CP pings immediately on connect and then every
+// poll interval (5 minutes unless the global configures one), so this leaves room for
+// a slow ping while still settling a zone that stopped reporting.
+const defaultZoneHeartbeatMaxAge = 30 * time.Minute
+
+// heartbeatMaxAge derives the same bound from the global's configuration: the
+// configured timeout is Kuma's own definition of when a zone stops counting as
+// online, and the poll interval is the cadence a missing ping would break.
+func heartbeatMaxAge(cfg cpConfig) time.Duration {
+	check := cfg.Multizone.Global.Kds.ZoneHealthCheck
+	if d, err := time.ParseDuration(check.Timeout); err == nil && d > 0 {
+		return d
+	}
+	if d, err := time.ParseDuration(check.PollInterval); err == nil && d > 0 {
+		return 3 * d
+	}
+	return defaultZoneHeartbeatMaxAge
+}
 
 func scanTime(now func() time.Time) time.Time {
 	if now == nil {
@@ -3141,25 +3160,32 @@ func parseZoneTimestamp(value string) (time.Time, bool) {
 // zoneKDSClosed reports whether the zone is disconnected right now. Kuma persists a
 // subscription from the global's status sink on a ticker (10s by default) and only
 // when a stream closes, while the zone pings health immediately on connect and then
-// on the poll interval, so the health check is the fresher signal: a heartbeat after
-// the newest disconnect means the zone reconnected and only its new subscription has
-// not flushed yet. With no subscription at all, a stale heartbeat is the only trace a
-// global configured to stop retaining subscriptions leaves, so it expires.
-func zoneKDSClosed(zo zoneOverview, now time.Time) bool {
+// on the poll interval, so the heartbeat is the fresher signal: it dates a reconnect
+// the sink has not flushed yet, and it expires a stream an ungraceful stop left open.
+// A zone CP that never pings (no health check at all) leaves the stream state as the
+// only evidence, so an open subscription counts as connected.
+func zoneKDSClosed(zo zoneOverview, now time.Time, maxAge time.Duration) bool {
 	newestDisconnect := time.Time{}
+	open := false
 	for _, s := range zo.ZoneInsight.Subscriptions {
 		if s.DisconnectTime == "" {
-			return false
+			open = true
+			continue
 		}
 		if t, ok := parseZoneTimestamp(s.DisconnectTime); ok && t.After(newestDisconnect) {
 			newestDisconnect = t
 		}
 	}
 	heartbeat, hasHeartbeat := parseZoneTimestamp(zo.ZoneInsight.HealthCheck.Time)
-	if len(zo.ZoneInsight.Subscriptions) == 0 {
-		return !hasHeartbeat || now.Sub(heartbeat) > zoneHeartbeatMaxAge
+	fresh := hasHeartbeat && now.Sub(heartbeat) <= maxAge
+	switch {
+	case len(zo.ZoneInsight.Subscriptions) == 0:
+		return !fresh
+	case open:
+		return hasHeartbeat && !fresh
+	default:
+		return !fresh || !heartbeat.After(newestDisconnect)
 	}
-	return !hasHeartbeat || !heartbeat.After(newestDisconnect)
 }
 
 // zoneDisabled reports whether the operator turned the zone off (`zone.enabled:
@@ -3323,7 +3349,7 @@ func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch 
 				"zone insight could not be parsed — version NOT audited")
 			continue
 		}
-		if zoneKDSClosed(zo, a.now) {
+		if zoneKDSClosed(zo, a.now, a.zoneHeartbeatMaxAge) {
 			a.flagUnreachableZone(it.Name, zoneDisabled(zo))
 			continue
 		}

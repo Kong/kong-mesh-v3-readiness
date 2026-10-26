@@ -206,34 +206,87 @@ func TestOfflineZoneWithNoRetainedConfigSkipsItsProxies(t *testing.T) {
 	}
 }
 
-// TestOfflineZoneProxiesKeepTheirOutboundVerdict guards the skip from miscounting a
-// zone's proxies: with the zone's config unaudited, outboundModeFor must still read
-// the retained defaults.restrictOutbound, or every proxy in the zone flips from the
-// pinned-config info to the "3.0 gives them no outbounds" blocker.
-func TestOfflineZoneProxiesKeepTheirOutboundVerdict(t *testing.T) {
-	pinned := `{"mode": "zone", "environment": "universal", "defaults": {"restrictOutbound": true}, ` +
-		`"experimental": {"deltaXds": true, "sidecarContainers": true, "inboundTagsDisabled": true, ` +
-		`"kdsEventBasedWatchdog": {"enabled": true}}}`
-	m := auditResponses(t, map[string]string{
-		"/config": globalConfigJSON,
-		"/zones+insights": listBody(t,
-			zoneOverviewItem("hellozone", []any{closedSubscription(map[string]any{"config": pinned})}),
-		),
-		"/meshes": listBody(t, meshItem(nil)),
-		"/dataplanes+insights": listBody(t,
-			overview("dp-hell", map[string]any{"kuma.io/env": "universal", "kuma.io/zone": "hellozone"}, tproxySpec(nil), nil),
-		),
-	})
-
-	if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends); ok {
-		t.Errorf("a pinned zone's offline proxies were judged as unset\nfindings: %+v", m.Findings)
+// TestOfflineZoneProxiesAreNotJudged: the outbound verdict needs the zone's
+// restrictOutbound, and an offline zone's config is not audited, so its proxies are
+// left unjudged whatever the retained config says — the zone blocker carries them.
+func TestOfflineZoneProxiesAreNotJudged(t *testing.T) {
+	configs := map[string]string{
+		"pinned":    `{"mode": "zone", "environment": "universal", "defaults": {"restrictOutbound": true}}`,
+		"unset":     `{"mode": "zone", "environment": "universal", "defaults": {"restrictOutbound": null}}`,
+		"no config": "",
 	}
-	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); !ok {
-		t.Errorf("offline zone not reported\nfindings: %+v", m.Findings)
+	for name, zoneCfg := range configs {
+		t.Run(name, func(t *testing.T) {
+			m := auditResponses(t, map[string]string{
+				"/config": globalConfigJSON,
+				"/zones+insights": listBody(t,
+					zoneOverviewItem("hellozone", []any{closedSubscription(map[string]any{"config": zoneCfg})}),
+				),
+				"/meshes": listBody(t, meshItem(nil)),
+				"/dataplanes+insights": listBody(t,
+					overview("dp-hell", map[string]any{"kuma.io/env": "universal", "kuma.io/zone": "hellozone"}, tproxySpec(nil), nil),
+				),
+			})
+
+			for _, title := range []string{titleNoReachableBackends, titleNoMeshPassthrough} {
+				for _, sev := range []string{"blocker", SeverityInfo} {
+					if f, ok := findFinding(m, sev, categoryOutboundDefaults, title); ok {
+						t.Errorf("judged a proxy of an offline zone (%s/%s): %+v", sev, title, f)
+					}
+				}
+			}
+			if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); !ok {
+				t.Errorf("offline zone not reported\nfindings: %+v", m.Findings)
+			}
+		})
 	}
 }
 
-// TestZoneWithUnflushedSubscriptionIsNotOffline: Kuma persists subscriptions from the
+// TestOpenSubscriptionWithoutHeartbeatIsOffline covers an ungraceful global stop: Kuma
+// leaves the subscription without a disconnectTime, so only the stalled heartbeat shows
+// the zone is gone.
+func TestOpenSubscriptionWithoutHeartbeatIsOffline(t *testing.T) {
+	zo := zoneOverviewItem("hellozone", []any{openSubscription(map[string]any{
+		"config": `{"mode": "zone", "environment": "kubernetes", "experimental": {"inboundTagsDisabled": false}}`,
+	})})
+	zo["zoneInsight"].(map[string]any)["healthCheck"] = map[string]any{"time": "2026-10-26T09:00:00Z"}
+	m := auditAt(t, time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC), map[string]string{
+		"/config":         globalConfigJSON,
+		"/zones+insights": listBody(t, zo),
+	})
+
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); !ok {
+		t.Fatalf("a zone whose ping stopped was audited as live\nfindings: %+v", m.Findings)
+	}
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Inbound tags still enabled"); ok {
+		t.Errorf("audited a dead zone's stale config as current\nfindings: %+v", m.Findings)
+	}
+}
+
+// TestHeartbeatBoundFollowsControlPlaneConfig keeps the liveness bound in step with a
+// global that configures its own health-check cadence, so a long interval is not read
+// as a dead zone.
+func TestHeartbeatBoundFollowsControlPlaneConfig(t *testing.T) {
+	globalCfg := `{"mode": "global", "environment": "universal", "multizone": {"global": {"kds": {"zoneHealthCheck": {"pollInterval": "1h", "timeout": "2h"}}}}}`
+	zo := zoneOverviewItem("east", []any{openSubscription(map[string]any{"config": readyConfigJSON})})
+	zo["zoneInsight"].(map[string]any)["healthCheck"] = map[string]any{"time": "2026-10-26T09:30:00Z"}
+	responses := map[string]string{
+		"/config":         globalCfg,
+		"/zones+insights": listBody(t, zo),
+	}
+
+	m := auditAt(t, time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC), responses)
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); ok {
+		t.Errorf("a live zone on an hourly ping was called offline\nfindings: %+v", m.Findings)
+	}
+
+	m = auditAt(t, time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC), responses)
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); !ok {
+		t.Errorf("past the configured timeout the zone was still audited as live\nfindings: %+v", m.Findings)
+	}
+}
+
+// TestZoneEnabledDefaultsToTrue keeps an absent zone.enabled (a nullable BoolValue)
 // global's status sink on a ticker, so a zone that just (re)connected shows none yet
 // while its healthCheck is already updated. That zone is unknowable, not offline.
 func TestZoneWithUnflushedSubscriptionIsNotOffline(t *testing.T) {
