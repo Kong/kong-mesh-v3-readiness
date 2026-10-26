@@ -12,10 +12,10 @@
     "other"
   ],
   "summary": {
-    "blockers": 96,
+    "blockers": 97,
     "warnings": 0,
     "info": 3,
-    "coverage_gaps": 3,
+    "coverage_gaps": 1,
     "parse_errors": 0,
     "system_findings": 3
   },
@@ -288,6 +288,18 @@
       "count": 1,
       "example_resources": [
         "zone zone-1: runtime.kubernetes.injector.unifiedResourceNamingEnabled=false"
+      ]
+    },
+    {
+      "severity": "blocker",
+      "group": "control_plane",
+      "category": "Control plane configuration",
+      "title": "Zone control plane offline",
+      "detail": "The global control plane holds no open KDS subscription for this zone, so the zone's own control-plane config and version were not audited. Bring the zone online and re-run before upgrading, or audit the zone control plane directly.",
+      "doc_url": "https://developer.konghq.com/mesh/upgrade/",
+      "count": 1,
+      "example_resources": [
+        "zone zone-2"
       ]
     },
     {
@@ -959,14 +971,6 @@
   "coverage_gaps": [
     {
       "path": "/zones+insights (zone-1, version)",
-      "reason": "zone reported no control-plane version over KDS — version NOT audited"
-    },
-    {
-      "path": "/zones+insights (zone-2)",
-      "reason": "zone reported no control-plane config over KDS — config NOT audited (upgrade the zone CP or audit the zone directly)"
-    },
-    {
-      "path": "/zones+insights (zone-2, version)",
       "reason": "zone reported no control-plane version over KDS — version NOT audited"
     }
   ],

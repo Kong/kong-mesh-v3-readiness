@@ -227,6 +227,7 @@ type auditOptions struct {
 	knownGlobal bool
 	// EXC:FILE011:the caller asserts the audited global's own settings are not the reader's to audit, so no /config read audits them
 	skipAuditedConfig bool
+	now               func() time.Time
 }
 
 type auditor struct {
@@ -251,6 +252,7 @@ type auditor struct {
 	// EXC:FILE011:the connected CP is a zone or standalone, not a global; a Mesh KRI resolves only at the global
 	cpNotGlobal bool
 	rep         *collector
+	now         time.Time
 
 	// /zones+insights is read by both the config and version fan-outs on a global;
 	// memoize the (single) fetch so one global audit makes one round-trip for it.
@@ -273,6 +275,10 @@ type auditor struct {
 	// plane: key "" for the audited CP, a zone name for each zone behind a global.
 	// See outboundModeFor.
 	outboundModes map[string]outboundMode
+
+	reportedUnreachableZones map[string]bool
+
+	zoneHeartbeatMaxAge time.Duration
 
 	// cniEnabled records, keyed like outboundModes, the Kubernetes control planes
 	// that run the CNI, so checkDataplaneFeatures flags only pods the 3.0 CNI
@@ -317,6 +323,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		knownGlobal:          opts.knownGlobal,
 		skipAuditedConfig:    opts.skipAuditedConfig,
 		rep:                  &collector{cp: idx},
+		now:                  scanTime(opts.now),
 	}
 
 	// EXC:FILE011:the CP's own zone name fills the KRI zone segment of label-less local resources (3.0 materializes the zone on read)
@@ -1694,11 +1701,14 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 		if it.Labels[envLabel] == "kubernetes" {
 			env = 1
 		}
+		mode, known := a.outboundModeFor(it)
+		if !known {
+			continue
+		}
 		total[env]++
 		if ov.Dataplane.Networking.keepsOutbounds() {
 			continue
 		}
-		mode := a.outboundModeFor(it)
 		denied[env][mode]++
 		if len(refs[env][mode]) < ExampleCap {
 			refs[env][mode] = append(refs[env][mode], qualified(it))
@@ -1843,11 +1853,14 @@ func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
 		if !affectedMeshes[it.Mesh] || unresolved[it.Mesh] {
 			continue
 		}
+		mode, known := a.outboundModeFor(it)
+		if !known {
+			continue
+		}
 		eligible++
 		if selected[it.Mesh+"/"+it.Name] {
 			continue
 		}
-		mode := a.outboundModeFor(it)
 		affected[mode]++
 		if len(refs[mode]) < ExampleCap {
 			refs[mode] = append(refs[mode], qualified(it))
@@ -2369,6 +2382,10 @@ type cpConfig struct {
 						EnableIssuer *bool `json:"enableIssuer"`
 					} `json:"zoneToken"`
 				} `json:"auth"`
+				ZoneHealthCheck struct {
+					PollInterval string `json:"pollInterval"`
+					Timeout      string `json:"timeout"`
+				} `json:"zoneHealthCheck"`
 			} `json:"kds"`
 		} `json:"global"`
 	} `json:"multizone"`
@@ -2571,6 +2588,7 @@ func (a *auditor) checkControlPlaneConfig(ctx context.Context) error {
 	// GET / does not expose the CP mode on most builds; /config is authoritative,
 	// so stamp the report with it — otherwise a report can't say which CP (or
 	// which mode) it audited.
+	a.zoneHeartbeatMaxAge = heartbeatMaxAge(cfg)
 	switch {
 	case a.knownGlobal:
 		if cfg.Mode != "" && !strings.EqualFold(cfg.Mode, globalControlPlaneMode) {
@@ -2913,8 +2931,14 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 // KDS subscriptions, which carry the zone CP's own config (the zone sends it on
 // every (re)connect).
 type zoneOverview struct {
+	Zone struct {
+		Enabled *bool `json:"enabled"`
+	} `json:"zone"`
 	ZoneInsight struct {
 		Subscriptions []zoneSubscription `json:"subscriptions"`
+		HealthCheck   struct {
+			Time string `json:"time"`
+		} `json:"healthCheck"`
 	} `json:"zoneInsight"`
 }
 
@@ -2924,6 +2948,8 @@ type zoneOverview struct {
 // to read here and carries the exact fields addCPConfigFindings inspects. Version
 // carries the zone CP's own reported version (kumaCp.version), letting a global
 // audit read every connected zone's version with no extra round-trips.
+// DisconnectTime marks when the zone's KDS stream closed, so zoneKDSClosed can tell
+// a zone that is connected right now from one that dropped off.
 type zoneSubscription struct {
 	Config  string `json:"config"`
 	Version struct {
@@ -2931,6 +2957,7 @@ type zoneSubscription struct {
 			Version string `json:"version"`
 		} `json:"kumaCp"`
 	} `json:"version"`
+	DisconnectTime string `json:"disconnectTime"`
 }
 
 // latestZoneVersion returns the most recent subscription's reported zone CP
@@ -2982,17 +3009,24 @@ func (m outboundMode) String() string {
 	}
 }
 
+// noteOutboundMode records the defaults.restrictOutbound mode of the control plane
+// governing zone's proxies ("" for the audited CP) without reporting on it, so a
+// zone whose config is not audited still classifies its proxies correctly.
+func (a *auditor) noteOutboundMode(cfg cpConfig, zone string) {
+	if a.outboundModes == nil {
+		a.outboundModes = map[string]outboundMode{}
+	}
+	a.outboundModes[zone] = outboundModeOf(cfg.Defaults.RestrictOutbound)
+}
+
 // noteOutboundDefault records the defaults.restrictOutbound mode of the control
 // plane governing zone's proxies ("" for the audited CP) and reports what the
 // upgrade does to it. Unset and pinned `false` are info: the per-proxy and
 // per-mesh consequences are gated by checkOutboundDefaults and
 // checkPassthroughDefault, which read the mode recorded here.
 func (a *auditor) noteOutboundDefault(cfg cpConfig, zone string, ref func(string) string) {
+	a.noteOutboundMode(cfg, zone)
 	mode := outboundModeOf(cfg.Defaults.RestrictOutbound)
-	if a.outboundModes == nil {
-		a.outboundModes = map[string]outboundMode{}
-	}
-	a.outboundModes[zone] = mode
 	switch mode {
 	case outboundUnset:
 		a.rep.addDoc(info, cpConfigCategory, "Default outbound changes in 3.0",
@@ -3006,16 +3040,23 @@ func (a *auditor) noteOutboundDefault(cfg cpConfig, zone string, ref func(string
 	}
 }
 
-// outboundModeFor returns the defaults.restrictOutbound mode of the control
-// plane governing it: the audited CP when that runs proxies, otherwise its zone's
-// as reported to the global. A zone whose config was not observed (a coverage gap
-// recorded by checkZoneControlPlaneConfigs) is treated as unset, the case the
-// upgrade breaks.
-func (a *auditor) outboundModeFor(it resourceItem) outboundMode {
+// outboundModeFor returns the defaults.restrictOutbound mode of the control plane
+// governing it and whether that mode is known: the audited CP when that runs
+// proxies, otherwise its zone's as reported to the global. A zone that reported no
+// config and is disconnected has no mode to read — asserting the 3.0 default there
+// would blame the operator for a config nobody saw, and the zone's own blocker
+// already says it was not audited. A connected zone whose config could not be read
+// (a coverage gap recorded by checkZoneControlPlaneConfigs) is treated as unset, the
+// case the upgrade breaks.
+func (a *auditor) outboundModeFor(it resourceItem) (outboundMode, bool) {
 	if m, ok := a.outboundModes[""]; ok {
-		return m
+		return m, true
 	}
-	return a.outboundModes[zoneOf(it)]
+	zone := zoneOf(it)
+	if m, ok := a.outboundModes[zone]; ok {
+		return m, true
+	}
+	return outboundUnset, !a.reportedUnreachableZones[zone]
 }
 
 // checkZoneControlPlaneConfigs audits the data-plane-relevant CP settings of
@@ -3059,6 +3100,10 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 			a.rep.addGap("/zones+insights ("+it.Name+")", "zone insight could not be parsed — config NOT audited")
 			continue
 		}
+		if zoneKDSClosed(zo, a.now, a.zoneHeartbeatMaxAge) {
+			a.flagUnreachableZone(it.Name, zoneDisabled(zo))
+			continue
+		}
 		cfg, ok := latestZoneConfig(zo)
 		if !ok {
 			a.rep.addGap("/zones+insights ("+it.Name+")",
@@ -3068,6 +3113,110 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 		a.addCPConfigFindings(cfg, it.Name)
 	}
 	return nil
+}
+
+// defaultZoneHeartbeatMaxAge bounds how long a recorded health check counts as
+// evidence that a zone is alive when the audited control plane does not advertise its
+// own health-check cadence. The zone CP pings immediately on connect and then every
+// poll interval (5 minutes unless the global configures one), so this leaves room for
+// a slow ping while still settling a zone that stopped reporting.
+const defaultZoneHeartbeatMaxAge = 30 * time.Minute
+
+// heartbeatMaxAge derives the same bound from the global's configuration: the
+// configured timeout is Kuma's own definition of when a zone stops counting as
+// online, and the poll interval is the cadence a missing ping would break.
+func heartbeatMaxAge(cfg cpConfig) time.Duration {
+	check := cfg.Multizone.Global.Kds.ZoneHealthCheck
+	if d, err := time.ParseDuration(check.Timeout); err == nil && d > 0 {
+		return d
+	}
+	if d, err := time.ParseDuration(check.PollInterval); err == nil && d > 0 {
+		return 3 * d
+	}
+	return defaultZoneHeartbeatMaxAge
+}
+
+func scanTime(now func() time.Time) time.Time {
+	if now == nil {
+		return time.Now()
+	}
+	return now()
+}
+
+// parseZoneTimestamp reads a protojson timestamp; a malformed or empty value is
+// unknown rather than an error, since a zone's liveness check must not fail the
+// whole audit.
+func parseZoneTimestamp(value string) (time.Time, bool) {
+	if value == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// zoneKDSClosed reports whether the zone is disconnected right now. Kuma persists a
+// subscription from the global's status sink on a ticker (10s by default) and only
+// when a stream closes, while the zone pings health immediately on connect and then
+// on the poll interval, so the heartbeat is the fresher signal: it dates a reconnect
+// the sink has not flushed yet, and it expires a stream an ungraceful stop left open.
+// A zone CP that never pings (no health check at all) leaves the stream state as the
+// only evidence, so an open subscription counts as connected.
+func zoneKDSClosed(zo zoneOverview, now time.Time, maxAge time.Duration) bool {
+	newestDisconnect := time.Time{}
+	open := false
+	for _, s := range zo.ZoneInsight.Subscriptions {
+		if s.DisconnectTime == "" {
+			open = true
+			continue
+		}
+		if t, ok := parseZoneTimestamp(s.DisconnectTime); ok && t.After(newestDisconnect) {
+			newestDisconnect = t
+		}
+	}
+	heartbeat, hasHeartbeat := parseZoneTimestamp(zo.ZoneInsight.HealthCheck.Time)
+	fresh := hasHeartbeat && now.Sub(heartbeat) <= maxAge
+	switch {
+	case len(zo.ZoneInsight.Subscriptions) == 0:
+		return !fresh
+	case open:
+		return hasHeartbeat && !fresh
+	default:
+		return !fresh || !heartbeat.After(newestDisconnect)
+	}
+}
+
+// zoneDisabled reports whether the operator turned the zone off (`zone.enabled:
+// false`). The field is a nullable BoolValue, so an absent value means enabled.
+func zoneDisabled(zo zoneOverview) bool {
+	return zo.Zone.Enabled != nil && !*zo.Zone.Enabled
+}
+
+// flagUnreachableZone records the blocker for a zone whose control plane is not
+// reachable, so its own config and version cannot be audited. Its last known config
+// is stale and skipped; only its outbound default is carried over, since judging its
+// proxies as unset would assert a flip for a config nobody read. An offline zone is a
+// fact the operator must act on before upgrading, not an unreadable collection:
+// recording it as a coverage gap would make the whole report inconclusive and hide
+// every other finding. Both fan-outs call this, so the first call records the finding
+// and the second is a no-op.
+func (a *auditor) flagUnreachableZone(zone string, disabled bool) {
+	if a.reportedUnreachableZones[zone] {
+		return
+	}
+	if a.reportedUnreachableZones == nil {
+		a.reportedUnreachableZones = make(map[string]bool, 1)
+	}
+	a.reportedUnreachableZones[zone] = true
+	title := "Zone control plane offline"
+	detail := "The global control plane holds no open KDS subscription for this zone, so the zone's own control-plane config and version were not audited. Bring the zone online and re-run before upgrading, or audit the zone control plane directly."
+	if disabled {
+		title = "Zone control plane disabled"
+		detail = "The zone is disabled (`zone.enabled: false`), so it reported no control-plane config or version to audit. Enable the zone and re-run before upgrading, or audit the zone control plane directly."
+	}
+	a.rep.addDoc(blocker, cpConfigCategory, title, detail, docUpgrade, "zone "+zone)
 }
 
 // latestZoneConfig returns the most recent subscription's parsed config (zones
@@ -3198,6 +3347,10 @@ func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch 
 		if err := json.Unmarshal(it.specBytes(), &zo); err != nil {
 			a.rep.addGap("/zones+insights ("+it.Name+", version)",
 				"zone insight could not be parsed — version NOT audited")
+			continue
+		}
+		if zoneKDSClosed(zo, a.now, a.zoneHeartbeatMaxAge) {
+			a.flagUnreachableZone(it.Name, zoneDisabled(zo))
 			continue
 		}
 		v, ok := latestZoneVersion(zo)

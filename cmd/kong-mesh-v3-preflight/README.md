@@ -135,8 +135,19 @@ cat report.json | ./bin/kong-mesh-v3-preflight --from-json - --format html > rep
   tracks the same patch numbers); pass `--latest-version 2.14.x` to set it explicitly and skip
   the network call (offline/deterministic runs). On a **global** the zone versions come from
   the same `GET /zones+insights` payload — one global audit covers every zone with no extra
-  round-trips. If the latest patch can't be determined, or a zone reported no version, it is a
-  coverage gap — never a silent pass.
+  round-trips. If the latest patch can't be determined, or a connected zone reported no version, it is a
+  coverage gap — never a silent pass. A zone with no open KDS subscription is offline: it is
+  reported as one **blocker** whose examples name up to 10 such zones (the count carries
+  the total), and neither its config nor its version is audited (they describe a control
+  plane that is not running), nor are the outbound defaults of its proxies — the zone blocker
+  covers them. An unreachable zone with `zone.enabled: false` gets the `Zone control plane
+  disabled` blocker instead of the offline one; a disabled zone still holding an open
+  subscription is audited like any other. Liveness comes from the health check as well as the
+  subscriptions, because the global persists subscriptions on a 10s ticker and an ungraceful
+  stop leaves one open: a ping within the control plane's configured
+  `multizone.global.kds.zoneHealthCheck` timeout (30 minutes when it advertises none) means the
+  zone is connected and is a coverage gap, not offline. Bring the zone online and re-run, or
+  audit it directly.
 - **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
   eBPF transparent proxy, unified resource naming, inbound-tags-disabled, delta
   xDS, KDS event-based watchdog, native sidecar containers not yet enabled, settings the 3.0
@@ -148,7 +159,10 @@ cat report.json | ./bin/kong-mesh-v3-preflight --from-json - --format html > rep
   report's control-plane line shows the CP mode (read from `/config`). Against a **global**
   CP the data-plane-relevant checks run **per zone**, sourced from each zone's config in
   `GET /zones+insights` (examples read `zone <name>: …`); the global keeps only the
-  global-on-Kubernetes and API server authentication blockers. A zone that reported no config, or an unreadable/auth-gated
+  global-on-Kubernetes and API server authentication blockers. An offline zone (one with no open
+  KDS subscription) or a zone the operator disabled is a `Zone control plane offline` /
+  `Zone control plane disabled` blocker and its last known config is not audited; a connected
+  zone that reported no config, or an unreadable/auth-gated
   `/config`/`/zones+insights`, is a coverage gap — never a silent pass.
 - **Resource names** — Mesh/MeshService/MeshExternalService/MeshMultiZoneService names that
   are not valid RFC-1035 DNS labels.
