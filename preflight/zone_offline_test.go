@@ -338,6 +338,29 @@ func TestDisabledZoneIsNotReportedAsOffline(t *testing.T) {
 	}
 }
 
+// TestConnectedDisabledZoneIsAudited: disabling a zone keeps its KDS streams open, so a
+// disabled zone that is still connected reports a config that can be audited. Telling the
+// operator it was not audited would be false.
+func TestConnectedDisabledZoneIsAudited(t *testing.T) {
+	zo := zoneOverviewItem("retired", []any{openSubscription(map[string]any{
+		"config": `{"mode": "zone", "environment": "kubernetes", "experimental": {"inboundTagsDisabled": false}}`,
+	})})
+	zo["zone"] = map[string]any{"enabled": false}
+	m := auditResponses(t, map[string]string{
+		"/config":         globalConfigJSON,
+		"/zones+insights": listBody(t, zo),
+	})
+
+	for _, title := range []string{offlineZoneTitle, "Zone control plane disabled"} {
+		if _, ok := findFinding(m, "blocker", cpConfigCategory, title); ok {
+			t.Errorf("connected disabled zone reported as %q\nfindings: %+v", title, m.Findings)
+		}
+	}
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Inbound tags still enabled"); !ok {
+		t.Errorf("connected disabled zone's config was not audited\nfindings: %+v", m.Findings)
+	}
+}
+
 // TestZoneEnabledDefaultsToTrue keeps an absent zone.enabled (a nullable BoolValue)
 // from reading as disabled.
 func TestZoneEnabledDefaultsToTrue(t *testing.T) {
