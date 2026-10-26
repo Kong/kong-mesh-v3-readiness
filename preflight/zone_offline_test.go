@@ -1,11 +1,13 @@
 package preflight
 
 import (
+	"encoding/json"
 	"maps"
 	"net/http"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 const offlineZoneTitle = "Zone control plane offline"
@@ -176,6 +178,34 @@ func TestOnlineZoneWithoutConfigStaysCoverageGap(t *testing.T) {
 	}
 }
 
+// TestOfflineZoneWithNoRetainedConfigSkipsItsProxies: the outbound verdict needs the
+// zone's restrictOutbound, and when the offline zone never reported a config there is
+// none to read. Blaming its proxies for a config nobody saw would put a second,
+// unsubstantiated blocker next to the zone's own.
+func TestOfflineZoneWithNoRetainedConfigSkipsItsProxies(t *testing.T) {
+	m := auditResponses(t, map[string]string{
+		"/config": globalConfigJSON,
+		"/zones+insights": listBody(t,
+			zoneOverviewItem("hellozone", []any{closedSubscription(map[string]any{"config": ""})}),
+		),
+		"/meshes": listBody(t, meshItem(nil)),
+		"/dataplanes+insights": listBody(t,
+			overview("dp-hell", map[string]any{"kuma.io/env": "universal", "kuma.io/zone": "hellozone"}, tproxySpec(nil), nil),
+		),
+	})
+
+	for _, title := range []string{titleNoReachableBackends, titleNoMeshPassthrough} {
+		for _, sev := range []string{"blocker", SeverityInfo} {
+			if f, ok := findFinding(m, sev, categoryOutboundDefaults, title); ok {
+				t.Errorf("judged a proxy of a zone whose config was never read (%s/%s): %+v", sev, title, f)
+			}
+		}
+	}
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); !ok {
+		t.Errorf("offline zone not reported\nfindings: %+v", m.Findings)
+	}
+}
+
 // TestOfflineZoneProxiesKeepTheirOutboundVerdict guards the skip from miscounting a
 // zone's proxies: with the zone's config unaudited, outboundModeFor must still read
 // the retained defaults.restrictOutbound, or every proxy in the zone flips from the
@@ -209,7 +239,7 @@ func TestOfflineZoneProxiesKeepTheirOutboundVerdict(t *testing.T) {
 func TestZoneWithUnflushedSubscriptionIsNotOffline(t *testing.T) {
 	zo := zoneOverviewItem("hellozone", []any{})
 	zo["zoneInsight"].(map[string]any)["healthCheck"] = map[string]any{"time": "2026-10-26T10:00:00Z"}
-	m := auditResponses(t, map[string]string{
+	m := auditAt(t, time.Date(2026, 10, 26, 10, 5, 0, 0, time.UTC), map[string]string{
 		"/config":         globalConfigJSON,
 		"/zones+insights": listBody(t, zo),
 	})
@@ -226,6 +256,64 @@ func TestZoneWithUnflushedSubscriptionIsNotOffline(t *testing.T) {
 	if !gapped {
 		t.Errorf("no coverage gap for a zone with no flushed subscription: %+v", m.Coverage)
 	}
+}
+
+// TestZoneWithExpiredHeartbeatIsOffline closes the remaining hole: a global that
+// retains no subscriptions leaves only the heartbeat, so one that stopped pinging
+// must still be reported rather than read as connected forever.
+func TestZoneWithExpiredHeartbeatIsOffline(t *testing.T) {
+	zo := zoneOverviewItem("hellozone", []any{})
+	zo["zoneInsight"].(map[string]any)["healthCheck"] = map[string]any{"time": "2026-10-26T10:00:00Z"}
+	m := auditAt(t, time.Date(2026, 10, 26, 10, 45, 0, 0, time.UTC), map[string]string{
+		"/config":         globalConfigJSON,
+		"/zones+insights": listBody(t, zo),
+	})
+
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); !ok {
+		t.Fatalf("a zone whose heartbeat expired was not reported offline\nfindings: %+v", m.Findings)
+	}
+}
+
+// TestReconnectedZoneIsNotOffline covers the flush window on the other side: the
+// global still holds only the closed subscription while the zone has already pinged
+// again, so its retained config must be audited rather than dropped.
+func TestReconnectedZoneIsNotOffline(t *testing.T) {
+	stale := `{"mode": "zone", "environment": "kubernetes", "experimental": {"inboundTagsDisabled": false}}`
+	zo := zoneOverviewItem("east", []any{closedSubscription(map[string]any{"config": stale})})
+	zo["zoneInsight"].(map[string]any)["healthCheck"] = map[string]any{"time": "2026-10-26T10:00:03Z"}
+	m := auditAt(t, time.Date(2026, 10, 26, 10, 0, 10, 0, time.UTC), map[string]string{
+		"/config":         globalConfigJSON,
+		"/zones+insights": listBody(t, zo),
+	})
+
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); ok {
+		t.Errorf("a zone that reconnected inside the flush window was called offline\nfindings: %+v", m.Findings)
+	}
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Inbound tags still enabled"); !ok {
+		t.Errorf("the reconnected zone's config was not audited\nfindings: %+v", m.Findings)
+	}
+}
+
+// auditAt audits a mock CP with the scan clock pinned, so zone liveness decisions
+// do not depend on when the test runs.
+func auditAt(t *testing.T, now time.Time, responses map[string]string) Report {
+	t.Helper()
+	handlers := make(map[string]http.HandlerFunc, len(responses))
+	for path, body := range responses {
+		handlers[path] = func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, []byte(body))
+		}
+	}
+	rep := auditVersionOpts(t, auditOptions{now: func() time.Time { return now }}, handlers)
+	out, err := rep.toModel("").RenderJSON()
+	if err != nil {
+		t.Fatalf("renderJSON: %v", err)
+	}
+	var m Report
+	if err := json.Unmarshal([]byte(out), &m); err != nil {
+		t.Fatalf("unmarshal rendered JSON: %v", err)
+	}
+	return m
 }
 
 // TestDisabledZoneIsNotReportedAsOffline: an operator-disabled zone is off on

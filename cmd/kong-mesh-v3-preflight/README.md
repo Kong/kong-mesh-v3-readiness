@@ -139,11 +139,14 @@ cat report.json | ./bin/kong-mesh-v3-preflight --from-json - --format html > rep
   coverage gap — never a silent pass. A zone with no open KDS subscription is offline: it is
   reported as one **blocker** whose examples name up to 10 such zones (the count carries
   the total), and its last known config and version are not audited (they describe a
-  control plane that is not running); only its `defaults.restrictOutbound` is read, so its
-  proxies are still judged by the mode the zone last reported. A zone the operator disabled
-  (`zone.enabled: false`) gets the `Zone control plane disabled` blocker instead, and a zone
-  that has not yet flushed its KDS subscription to the global (the status sink flushes on a
-  10s ticker) is a coverage gap, not offline. Bring the zone online and re-run, or audit it
+  control plane that is not running). Only its `defaults.restrictOutbound` is read, so its
+  proxies keep the verdict that mode implies; a zone that never reported a config leaves its
+  proxies unjudged rather than blaming them for a config nobody saw. A zone the operator
+  disabled (`zone.enabled: false`) gets the `Zone control plane disabled` blocker instead.
+  Liveness comes from the health check as well as the subscriptions, because the global
+  persists subscriptions on a 10s ticker: a heartbeat newer than the newest `disconnectTime`
+  (or, with no subscriptions at all, a heartbeat inside the last 30 minutes) means the zone is
+  connected and is a coverage gap, not offline. Bring the zone online and re-run, or audit it
   directly.
 - **Control plane config** (`GET /config`) — global-on-Kubernetes mode, `autoReachableServices`,
   eBPF transparent proxy, unified resource naming, inbound-tags-disabled, delta

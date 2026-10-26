@@ -227,6 +227,7 @@ type auditOptions struct {
 	knownGlobal bool
 	// EXC:FILE011:the caller asserts the audited global's own settings are not the reader's to audit, so no /config read audits them
 	skipAuditedConfig bool
+	now               func() time.Time
 }
 
 type auditor struct {
@@ -251,6 +252,7 @@ type auditor struct {
 	// EXC:FILE011:the connected CP is a zone or standalone, not a global; a Mesh KRI resolves only at the global
 	cpNotGlobal bool
 	rep         *collector
+	now         time.Time
 
 	// /zones+insights is read by both the config and version fan-outs on a global;
 	// memoize the (single) fetch so one global audit makes one round-trip for it.
@@ -319,6 +321,7 @@ func audit(ctx context.Context, c *client, opts auditOptions) (*collector, error
 		knownGlobal:          opts.knownGlobal,
 		skipAuditedConfig:    opts.skipAuditedConfig,
 		rep:                  &collector{cp: idx},
+		now:                  scanTime(opts.now),
 	}
 
 	// EXC:FILE011:the CP's own zone name fills the KRI zone segment of label-less local resources (3.0 materializes the zone on read)
@@ -1696,11 +1699,14 @@ func (a *auditor) checkOutboundDefaults(ctx context.Context) error {
 		if it.Labels[envLabel] == "kubernetes" {
 			env = 1
 		}
+		mode, known := a.outboundModeFor(it)
+		if !known {
+			continue
+		}
 		total[env]++
 		if ov.Dataplane.Networking.keepsOutbounds() {
 			continue
 		}
-		mode := a.outboundModeFor(it)
 		denied[env][mode]++
 		if len(refs[env][mode]) < ExampleCap {
 			refs[env][mode] = append(refs[env][mode], qualified(it))
@@ -1845,11 +1851,14 @@ func (a *auditor) checkPassthroughDefault(ctx context.Context) error {
 		if !affectedMeshes[it.Mesh] || unresolved[it.Mesh] {
 			continue
 		}
+		mode, known := a.outboundModeFor(it)
+		if !known {
+			continue
+		}
 		eligible++
 		if selected[it.Mesh+"/"+it.Name] {
 			continue
 		}
-		mode := a.outboundModeFor(it)
 		affected[mode]++
 		if len(refs[mode]) < ExampleCap {
 			refs[mode] = append(refs[mode], qualified(it))
@@ -3024,16 +3033,23 @@ func (a *auditor) noteOutboundDefault(cfg cpConfig, zone string, ref func(string
 	}
 }
 
-// outboundModeFor returns the defaults.restrictOutbound mode of the control
-// plane governing it: the audited CP when that runs proxies, otherwise its zone's
-// as reported to the global. A zone whose config was not observed (a coverage gap
-// recorded by checkZoneControlPlaneConfigs) is treated as unset, the case the
-// upgrade breaks.
-func (a *auditor) outboundModeFor(it resourceItem) outboundMode {
+// outboundModeFor returns the defaults.restrictOutbound mode of the control plane
+// governing it and whether that mode is known: the audited CP when that runs
+// proxies, otherwise its zone's as reported to the global. A zone that reported no
+// config and is disconnected has no mode to read — asserting the 3.0 default there
+// would blame the operator for a config nobody saw, and the zone's own blocker
+// already says it was not audited. A connected zone whose config could not be read
+// (a coverage gap recorded by checkZoneControlPlaneConfigs) is treated as unset, the
+// case the upgrade breaks.
+func (a *auditor) outboundModeFor(it resourceItem) (outboundMode, bool) {
 	if m, ok := a.outboundModes[""]; ok {
-		return m
+		return m, true
 	}
-	return a.outboundModes[zoneOf(it)]
+	zone := zoneOf(it)
+	if m, ok := a.outboundModes[zone]; ok {
+		return m, true
+	}
+	return outboundUnset, !a.reportedUnreachableZones[zone]
 }
 
 // checkZoneControlPlaneConfigs audits the data-plane-relevant CP settings of
@@ -3077,7 +3093,7 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 			a.rep.addGap("/zones+insights ("+it.Name+")", "zone insight could not be parsed — config NOT audited")
 			continue
 		}
-		if zoneKDSClosed(zo) {
+		if zoneKDSClosed(zo, a.now) {
 			if cfg, ok := latestZoneConfig(zo); ok {
 				a.noteOutboundMode(cfg, it.Name)
 			}
@@ -3095,23 +3111,55 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 	return nil
 }
 
-// zoneKDSClosed reports whether the zone is disconnected right now. A zone whose
-// subscriptions all carry a DisconnectTime is closed. With no subscriptions at all
-// the payload is ambiguous: Kuma persists them from the global's status sink on a
-// ticker (KUMA_MULTIZONE_GLOBAL_KDS_ZONE_INSIGHT_FLUSH_INTERVAL, 10s by default), so
-// a zone that connected or reconnected within that window also shows none. The
-// status sink updates healthCheck on every heartbeat, so a recorded heartbeat means
-// the zone has reached the global and only its subscription has not flushed yet.
-func zoneKDSClosed(zo zoneOverview) bool {
-	if len(zo.ZoneInsight.Subscriptions) == 0 {
-		return zo.ZoneInsight.HealthCheck.Time == ""
+// zoneHeartbeatMaxAge bounds how long a recorded health check counts as evidence
+// that a zone is alive. The zone CP pings immediately on connect and then every
+// poll interval (5 minutes unless the global configures one), so this leaves room
+// for a slow ping while still settling a zone that stopped reporting.
+const zoneHeartbeatMaxAge = 30 * time.Minute
+
+func scanTime(now func() time.Time) time.Time {
+	if now == nil {
+		return time.Now()
 	}
+	return now()
+}
+
+// parseZoneTimestamp reads a protojson timestamp; a malformed or empty value is
+// unknown rather than an error, since a zone's liveness check must not fail the
+// whole audit.
+func parseZoneTimestamp(value string) (time.Time, bool) {
+	if value == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// zoneKDSClosed reports whether the zone is disconnected right now. Kuma persists a
+// subscription from the global's status sink on a ticker (10s by default) and only
+// when a stream closes, while the zone pings health immediately on connect and then
+// on the poll interval, so the health check is the fresher signal: a heartbeat after
+// the newest disconnect means the zone reconnected and only its new subscription has
+// not flushed yet. With no subscription at all, a stale heartbeat is the only trace a
+// global configured to stop retaining subscriptions leaves, so it expires.
+func zoneKDSClosed(zo zoneOverview, now time.Time) bool {
+	newestDisconnect := time.Time{}
 	for _, s := range zo.ZoneInsight.Subscriptions {
 		if s.DisconnectTime == "" {
 			return false
 		}
+		if t, ok := parseZoneTimestamp(s.DisconnectTime); ok && t.After(newestDisconnect) {
+			newestDisconnect = t
+		}
 	}
-	return true
+	heartbeat, hasHeartbeat := parseZoneTimestamp(zo.ZoneInsight.HealthCheck.Time)
+	if len(zo.ZoneInsight.Subscriptions) == 0 {
+		return !hasHeartbeat || now.Sub(heartbeat) > zoneHeartbeatMaxAge
+	}
+	return !hasHeartbeat || !heartbeat.After(newestDisconnect)
 }
 
 // zoneDisabled reports whether the operator turned the zone off (`zone.enabled:
@@ -3275,7 +3323,7 @@ func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch 
 				"zone insight could not be parsed — version NOT audited")
 			continue
 		}
-		if zoneKDSClosed(zo) {
+		if zoneKDSClosed(zo, a.now) {
 			a.flagUnreachableZone(it.Name, zoneDisabled(zo))
 			continue
 		}
