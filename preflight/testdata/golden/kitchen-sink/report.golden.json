@@ -295,7 +295,7 @@
       "group": "control_plane",
       "category": "Control plane configuration",
       "title": "Zone control plane offline",
-      "detail": "The global control plane reports this zone's KDS connection as closed, so the zone's own control-plane config and version could not be audited reliably. Bring the zone online and re-run before upgrading, or audit the zone control plane directly.",
+      "detail": "The global control plane holds no open KDS subscription for this zone, so the zone's own control-plane config and version were not audited. Bring the zone online and re-run before upgrading, or audit the zone control plane directly.",
       "doc_url": "https://developer.konghq.com/mesh/upgrade/",
       "count": 1,
       "example_resources": [

@@ -176,6 +176,94 @@ func TestOnlineZoneWithoutConfigStaysCoverageGap(t *testing.T) {
 	}
 }
 
+// TestOfflineZoneProxiesKeepTheirOutboundVerdict guards the skip from miscounting a
+// zone's proxies: with the zone's config unaudited, outboundModeFor must still read
+// the retained defaults.restrictOutbound, or every proxy in the zone flips from the
+// pinned-config info to the "3.0 gives them no outbounds" blocker.
+func TestOfflineZoneProxiesKeepTheirOutboundVerdict(t *testing.T) {
+	pinned := `{"mode": "zone", "environment": "universal", "defaults": {"restrictOutbound": true}, ` +
+		`"experimental": {"deltaXds": true, "sidecarContainers": true, "inboundTagsDisabled": true, ` +
+		`"kdsEventBasedWatchdog": {"enabled": true}}}`
+	m := auditResponses(t, map[string]string{
+		"/config": globalConfigJSON,
+		"/zones+insights": listBody(t,
+			zoneOverviewItem("hellozone", []any{closedSubscription(map[string]any{"config": pinned})}),
+		),
+		"/meshes": listBody(t, meshItem(nil)),
+		"/dataplanes+insights": listBody(t,
+			overview("dp-hell", map[string]any{"kuma.io/env": "universal", "kuma.io/zone": "hellozone"}, tproxySpec(nil), nil),
+		),
+	})
+
+	if _, ok := findFinding(m, "blocker", categoryOutboundDefaults, titleNoReachableBackends); ok {
+		t.Errorf("a pinned zone's offline proxies were judged as unset\nfindings: %+v", m.Findings)
+	}
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); !ok {
+		t.Errorf("offline zone not reported\nfindings: %+v", m.Findings)
+	}
+}
+
+// TestZoneWithUnflushedSubscriptionIsNotOffline: Kuma persists subscriptions from the
+// global's status sink on a ticker, so a zone that just (re)connected shows none yet
+// while its healthCheck is already updated. That zone is unknowable, not offline.
+func TestZoneWithUnflushedSubscriptionIsNotOffline(t *testing.T) {
+	zo := zoneOverviewItem("hellozone", []any{})
+	zo["zoneInsight"].(map[string]any)["healthCheck"] = map[string]any{"time": "2026-10-26T10:00:00Z"}
+	m := auditResponses(t, map[string]string{
+		"/config":         globalConfigJSON,
+		"/zones+insights": listBody(t, zo),
+	})
+
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); ok {
+		t.Errorf("a zone that has not flushed its subscription yet was called offline\nfindings: %+v", m.Findings)
+	}
+	var gapped bool
+	for _, g := range m.Coverage {
+		if g.Path == "/zones+insights (hellozone)" {
+			gapped = true
+		}
+	}
+	if !gapped {
+		t.Errorf("no coverage gap for a zone with no flushed subscription: %+v", m.Coverage)
+	}
+}
+
+// TestDisabledZoneIsNotReportedAsOffline: an operator-disabled zone is off on
+// purpose, so telling them to bring it online is the wrong remediation.
+func TestDisabledZoneIsNotReportedAsOffline(t *testing.T) {
+	zo := zoneOverviewItem("retired", []any{closedSubscription(nil)})
+	zo["zone"] = map[string]any{"enabled": false}
+	m := auditResponses(t, map[string]string{
+		"/config":         globalConfigJSON,
+		"/zones+insights": listBody(t, zo),
+	})
+
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, offlineZoneTitle); ok {
+		t.Errorf("disabled zone reported as offline\nfindings: %+v", m.Findings)
+	}
+	f, ok := findFinding(m, "blocker", cpConfigCategory, "Zone control plane disabled")
+	if !ok {
+		t.Fatalf("disabled zone not reported\nfindings: %+v", m.Findings)
+	}
+	if !slices.Equal(f.Examples, []string{"zone retired"}) {
+		t.Errorf("examples = %v, want [zone retired]", f.Examples)
+	}
+}
+
+// TestZoneEnabledDefaultsToTrue keeps an absent zone.enabled (a nullable BoolValue)
+// from reading as disabled.
+func TestZoneEnabledDefaultsToTrue(t *testing.T) {
+	m := auditResponses(t, map[string]string{
+		"/config": globalConfigJSON,
+		"/zones+insights": listBody(t,
+			zoneOverviewItem("east", []any{openSubscription(map[string]any{"config": readyConfigJSON})}),
+		),
+	})
+	if _, ok := findFinding(m, "blocker", cpConfigCategory, "Zone control plane disabled"); ok {
+		t.Errorf("a zone without zone.enabled was reported disabled: %+v", m.Findings)
+	}
+}
+
 // TestOfflineZonesAccumulateInOneFinding keeps one finding with one example per
 // offline zone rather than a finding per zone.
 func TestOfflineZonesAccumulateInOneFinding(t *testing.T) {

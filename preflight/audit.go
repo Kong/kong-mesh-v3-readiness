@@ -274,7 +274,7 @@ type auditor struct {
 	// See outboundModeFor.
 	outboundModes map[string]outboundMode
 
-	reportedOfflineZones map[string]bool
+	reportedUnreachableZones map[string]bool
 
 	// cniEnabled records, keyed like outboundModes, the Kubernetes control planes
 	// that run the CNI, so checkDataplaneFeatures flags only pods the 3.0 CNI
@@ -2915,8 +2915,14 @@ func (a *auditor) addCPConfigFindings(cfg cpConfig, zone string) {
 // KDS subscriptions, which carry the zone CP's own config (the zone sends it on
 // every (re)connect).
 type zoneOverview struct {
+	Zone struct {
+		Enabled *bool `json:"enabled"`
+	} `json:"zone"`
 	ZoneInsight struct {
 		Subscriptions []zoneSubscription `json:"subscriptions"`
+		HealthCheck   struct {
+			Time string `json:"time"`
+		} `json:"healthCheck"`
 	} `json:"zoneInsight"`
 }
 
@@ -2987,17 +2993,24 @@ func (m outboundMode) String() string {
 	}
 }
 
+// noteOutboundMode records the defaults.restrictOutbound mode of the control plane
+// governing zone's proxies ("" for the audited CP) without reporting on it, so a
+// zone whose config is not audited still classifies its proxies correctly.
+func (a *auditor) noteOutboundMode(cfg cpConfig, zone string) {
+	if a.outboundModes == nil {
+		a.outboundModes = map[string]outboundMode{}
+	}
+	a.outboundModes[zone] = outboundModeOf(cfg.Defaults.RestrictOutbound)
+}
+
 // noteOutboundDefault records the defaults.restrictOutbound mode of the control
 // plane governing zone's proxies ("" for the audited CP) and reports what the
 // upgrade does to it. Unset and pinned `false` are info: the per-proxy and
 // per-mesh consequences are gated by checkOutboundDefaults and
 // checkPassthroughDefault, which read the mode recorded here.
 func (a *auditor) noteOutboundDefault(cfg cpConfig, zone string, ref func(string) string) {
+	a.noteOutboundMode(cfg, zone)
 	mode := outboundModeOf(cfg.Defaults.RestrictOutbound)
-	if a.outboundModes == nil {
-		a.outboundModes = map[string]outboundMode{}
-	}
-	a.outboundModes[zone] = mode
 	switch mode {
 	case outboundUnset:
 		a.rep.addDoc(info, cpConfigCategory, "Default outbound changes in 3.0",
@@ -3065,7 +3078,10 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 			continue
 		}
 		if zoneKDSClosed(zo) {
-			a.flagOfflineZone(it.Name)
+			if cfg, ok := latestZoneConfig(zo); ok {
+				a.noteOutboundMode(cfg, it.Name)
+			}
+			a.flagUnreachableZone(it.Name, zoneDisabled(zo))
 			continue
 		}
 		cfg, ok := latestZoneConfig(zo)
@@ -3079,12 +3095,17 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 	return nil
 }
 
-// zoneKDSClosed reports whether the zone is disconnected right now: every KDS
-// subscription the global holds for it has a DisconnectTime, or it holds none at
-// all. Kuma stamps DisconnectTime when a stream closes, so an absent value means
-// the zone still has a connection — including a payload that omits the timestamps
-// entirely, which must not read as offline.
+// zoneKDSClosed reports whether the zone is disconnected right now. A zone whose
+// subscriptions all carry a DisconnectTime is closed. With no subscriptions at all
+// the payload is ambiguous: Kuma persists them from the global's status sink on a
+// ticker (KUMA_MULTIZONE_GLOBAL_KDS_ZONE_INSIGHT_FLUSH_INTERVAL, 10s by default), so
+// a zone that connected or reconnected within that window also shows none. The
+// status sink updates healthCheck on every heartbeat, so a recorded heartbeat means
+// the zone has reached the global and only its subscription has not flushed yet.
 func zoneKDSClosed(zo zoneOverview) bool {
+	if len(zo.ZoneInsight.Subscriptions) == 0 {
+		return zo.ZoneInsight.HealthCheck.Time == ""
+	}
 	for _, s := range zo.ZoneInsight.Subscriptions {
 		if s.DisconnectTime == "" {
 			return false
@@ -3093,24 +3114,35 @@ func zoneKDSClosed(zo zoneOverview) bool {
 	return true
 }
 
-// flagOfflineZone records the blocker for a zone that holds no open KDS
-// subscription. Its last known config and version are stale, so the fan-outs skip
-// it rather than audit a snapshot of a zone that is not running. An offline zone is
-// a fact the operator must act on before upgrading, not an unreadable collection:
+// zoneDisabled reports whether the operator turned the zone off (`zone.enabled:
+// false`). The field is a nullable BoolValue, so an absent value means enabled.
+func zoneDisabled(zo zoneOverview) bool {
+	return zo.Zone.Enabled != nil && !*zo.Zone.Enabled
+}
+
+// flagUnreachableZone records the blocker for a zone whose control plane is not
+// reachable, so its own config and version cannot be audited. Its last known config
+// is stale and skipped; only its outbound default is carried over, since judging its
+// proxies as unset would assert a flip for a config nobody read. An offline zone is a
+// fact the operator must act on before upgrading, not an unreadable collection:
 // recording it as a coverage gap would make the whole report inconclusive and hide
-// every other finding. Both fan-outs call this, so the first call records the
-// finding and the second is a no-op.
-func (a *auditor) flagOfflineZone(zone string) {
-	if a.reportedOfflineZones[zone] {
+// every other finding. Both fan-outs call this, so the first call records the finding
+// and the second is a no-op.
+func (a *auditor) flagUnreachableZone(zone string, disabled bool) {
+	if a.reportedUnreachableZones[zone] {
 		return
 	}
-	if a.reportedOfflineZones == nil {
-		a.reportedOfflineZones = make(map[string]bool, 1)
+	if a.reportedUnreachableZones == nil {
+		a.reportedUnreachableZones = make(map[string]bool, 1)
 	}
-	a.reportedOfflineZones[zone] = true
-	a.rep.addDoc(blocker, cpConfigCategory, "Zone control plane offline",
-		"The global control plane reports this zone's KDS connection as closed, so the zone's own control-plane config and version could not be audited reliably. Bring the zone online and re-run before upgrading, or audit the zone control plane directly.",
-		docUpgrade, "zone "+zone)
+	a.reportedUnreachableZones[zone] = true
+	title := "Zone control plane offline"
+	detail := "The global control plane holds no open KDS subscription for this zone, so the zone's own control-plane config and version were not audited. Bring the zone online and re-run before upgrading, or audit the zone control plane directly."
+	if disabled {
+		title = "Zone control plane disabled"
+		detail = "The zone is disabled (`zone.enabled: false`), so it reported no control-plane config or version to audit. Enable the zone and re-run before upgrading, or audit the zone control plane directly."
+	}
+	a.rep.addDoc(blocker, cpConfigCategory, title, detail, docUpgrade, "zone "+zone)
 }
 
 // latestZoneConfig returns the most recent subscription's parsed config (zones
@@ -3244,7 +3276,7 @@ func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch 
 			continue
 		}
 		if zoneKDSClosed(zo) {
-			a.flagOfflineZone(it.Name)
+			a.flagUnreachableZone(it.Name, zoneDisabled(zo))
 			continue
 		}
 		v, ok := latestZoneVersion(zo)
