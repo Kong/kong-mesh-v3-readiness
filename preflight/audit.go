@@ -274,6 +274,8 @@ type auditor struct {
 	// See outboundModeFor.
 	outboundModes map[string]outboundMode
 
+	reportedOfflineZones map[string]bool
+
 	// cniEnabled records, keyed like outboundModes, the Kubernetes control planes
 	// that run the CNI, so checkDataplaneFeatures flags only pods the 3.0 CNI
 	// plugin will refuse.
@@ -2924,6 +2926,8 @@ type zoneOverview struct {
 // to read here and carries the exact fields addCPConfigFindings inspects. Version
 // carries the zone CP's own reported version (kumaCp.version), letting a global
 // audit read every connected zone's version with no extra round-trips.
+// DisconnectTime marks when the zone's KDS stream closed, so zoneKDSClosed can tell
+// a zone that is connected right now from one that dropped off.
 type zoneSubscription struct {
 	Config  string `json:"config"`
 	Version struct {
@@ -2931,6 +2935,7 @@ type zoneSubscription struct {
 			Version string `json:"version"`
 		} `json:"kumaCp"`
 	} `json:"version"`
+	DisconnectTime string `json:"disconnectTime"`
 }
 
 // latestZoneVersion returns the most recent subscription's reported zone CP
@@ -3059,6 +3064,10 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 			a.rep.addGap("/zones+insights ("+it.Name+")", "zone insight could not be parsed — config NOT audited")
 			continue
 		}
+		if zoneKDSClosed(zo) {
+			a.flagOfflineZone(it.Name)
+			continue
+		}
 		cfg, ok := latestZoneConfig(zo)
 		if !ok {
 			a.rep.addGap("/zones+insights ("+it.Name+")",
@@ -3068,6 +3077,40 @@ func (a *auditor) checkZoneControlPlaneConfigs(ctx context.Context) error {
 		a.addCPConfigFindings(cfg, it.Name)
 	}
 	return nil
+}
+
+// zoneKDSClosed reports whether the zone is disconnected right now: every KDS
+// subscription the global holds for it has a DisconnectTime, or it holds none at
+// all. Kuma stamps DisconnectTime when a stream closes, so an absent value means
+// the zone still has a connection — including a payload that omits the timestamps
+// entirely, which must not read as offline.
+func zoneKDSClosed(zo zoneOverview) bool {
+	for _, s := range zo.ZoneInsight.Subscriptions {
+		if s.DisconnectTime == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// flagOfflineZone records the blocker for a zone that holds no open KDS
+// subscription. Its last known config and version are stale, so the fan-outs skip
+// it rather than audit a snapshot of a zone that is not running. An offline zone is
+// a fact the operator must act on before upgrading, not an unreadable collection:
+// recording it as a coverage gap would make the whole report inconclusive and hide
+// every other finding. Both fan-outs call this, so the first call records the
+// finding and the second is a no-op.
+func (a *auditor) flagOfflineZone(zone string) {
+	if a.reportedOfflineZones[zone] {
+		return
+	}
+	if a.reportedOfflineZones == nil {
+		a.reportedOfflineZones = make(map[string]bool, 1)
+	}
+	a.reportedOfflineZones[zone] = true
+	a.rep.addDoc(blocker, cpConfigCategory, "Zone control plane offline",
+		"The global control plane reports this zone's KDS connection as closed, so the zone's own control-plane config and version could not be audited reliably. Bring the zone online and re-run before upgrading, or audit the zone control plane directly.",
+		docUpgrade, "zone "+zone)
 }
 
 // latestZoneConfig returns the most recent subscription's parsed config (zones
@@ -3198,6 +3241,10 @@ func (a *auditor) checkZoneVersions(ctx context.Context, latestMin, latestPatch 
 		if err := json.Unmarshal(it.specBytes(), &zo); err != nil {
 			a.rep.addGap("/zones+insights ("+it.Name+", version)",
 				"zone insight could not be parsed — version NOT audited")
+			continue
+		}
+		if zoneKDSClosed(zo) {
+			a.flagOfflineZone(it.Name)
 			continue
 		}
 		v, ok := latestZoneVersion(zo)
